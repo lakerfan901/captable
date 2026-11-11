@@ -11,3 +11,10 @@ allowBuilds:
   # native build fails on current Node versions.
   canvas: false
   vue-demi: false
+
+# Patched versions of build-time transitive dependencies that their parents
+# (next, @sentry/nextjs) pin to vulnerable releases. Remove once the parents
+# are upgraded.
+overrides:
+  "postcss@<8.5.18": "^8.5.18"
+  "rollup@>=3.0.0 <3.30.0": "^3.30.0"
