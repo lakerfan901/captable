@@ -12,13 +12,18 @@ import { RiLock2Line } from "@remixicon/react";
 import { notFound } from "next/navigation";
 import { Fragment } from "react";
 
-const PublicUpdatePage = async ({
-  params: { publicId },
-  searchParams: { token },
-}: {
-  params: { publicId: string };
-  searchParams: { token: string };
+const PublicUpdatePage = async (props: {
+  params: Promise<{ publicId: string }>;
+  searchParams: Promise<{ token: string }>;
 }) => {
+  const searchParams = await props.searchParams;
+
+  const { token } = searchParams;
+
+  const params = await props.params;
+
+  const { publicId } = params;
+
   let decodedToken: JWTVerifyResult | null = null;
 
   try {

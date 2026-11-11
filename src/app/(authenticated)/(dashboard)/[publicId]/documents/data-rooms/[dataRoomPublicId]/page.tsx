@@ -5,11 +5,13 @@ import type { Bucket, DataRoom } from "@prisma/client";
 import { notFound } from "next/navigation";
 import DataRoomFiles from "../components/data-room-files";
 
-const DataRoomSettinsPage = async ({
-  params: { publicId, dataRoomPublicId },
-}: {
-  params: { publicId: string; dataRoomPublicId: string };
+const DataRoomSettinsPage = async (props: {
+  params: Promise<{ publicId: string; dataRoomPublicId: string }>;
 }) => {
+  const params = await props.params;
+
+  const { publicId, dataRoomPublicId } = params;
+
   const { dataRoom, documents } = await api.dataRoom.getDataRoom.query({
     dataRoomPublicId,
     include: {

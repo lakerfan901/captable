@@ -8,11 +8,13 @@ export const metadata: Metadata = {
   title: "Overview",
 };
 
-const OverviewPage = ({
-  params: { publicId },
-}: {
-  params: { publicId: string };
+const OverviewPage = async (props: {
+  params: Promise<{ publicId: string }>;
 }) => {
+  const params = await props.params;
+
+  const { publicId } = params;
+
   return (
     <>
       {/* <EmptyOverview firstName={firstName} publicCompanyId={publicCompanyId} /> */}

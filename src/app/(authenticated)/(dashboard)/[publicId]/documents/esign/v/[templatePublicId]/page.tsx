@@ -22,11 +22,13 @@ const variantMap: Record<TemplateStatus, BadgeVariant> = {
   PENDING: "secondary",
 };
 
-export default async function TemplateDetailViewPage({
-  params: { templatePublicId },
-}: {
-  params: { templatePublicId: string };
+export default async function TemplateDetailViewPage(props: {
+  params: Promise<{ templatePublicId: string }>;
 }) {
+  const params = await props.params;
+
+  const { templatePublicId } = params;
+
   const { allow } = await serverAccessControl();
 
   const [{ name, status, url, fields }, auditsData] = await Promise.all([

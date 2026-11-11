@@ -1,5 +1,5 @@
 import { SetPasswordForm } from "@/components/onboarding/set-password";
-import { type Metadata } from "next";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
@@ -7,19 +7,21 @@ export const metadata: Metadata = {
 };
 
 export type PageProps = {
-  params: {
+  params: Promise<{
     token: string;
-  };
-  searchParams: {
+  }>;
+  searchParams: Promise<{
     verificationToken: string;
     email: string;
-  };
+  }>;
 };
 
-export default async function SetPasswordPage({
-  params: { token },
-  searchParams,
-}: PageProps) {
+export default async function SetPasswordPage(props: PageProps) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
+
+  const { token } = params;
+
   const verificationToken = searchParams.verificationToken;
   const email = searchParams.email;
 

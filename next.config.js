@@ -39,16 +39,13 @@ const nextConfig = {
 
     return config;
   },
-  experimental: {
-    instrumentationHook: true,
-    serverComponentsExternalPackages: [
-      "pino",
-      "pino-pretty",
-      "pdf-lib",
-      "@aws-sdk/s3-request-presigner",
-      "@react-pdf/renderer",
-    ],
-  },
+  serverExternalPackages: [
+    "pino",
+    "pino-pretty",
+    "pdf-lib",
+    "@aws-sdk/s3-request-presigner",
+    "@react-pdf/renderer",
+  ],
   eslint: {
     ignoreDuringBuilds: true,
   },

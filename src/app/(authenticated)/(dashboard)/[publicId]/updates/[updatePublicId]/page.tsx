@@ -1,11 +1,6 @@
 "use server";
+import Editor from "@/components/update/editor-lazy";
 import { db } from "@/server/db";
-import dynamic from "next/dynamic";
-
-const Editor = dynamic(
-  () => import("../../../../../../components/update/editor"),
-  { ssr: false },
-);
 
 const getUpdate = async (publicId: string) => {
   return await db.update.findFirstOrThrow({
@@ -13,11 +8,13 @@ const getUpdate = async (publicId: string) => {
   });
 };
 
-const UpdatePage = async ({
-  params: { publicId, updatePublicId },
-}: {
-  params: { publicId: string; updatePublicId: string };
+const UpdatePage = async (props: {
+  params: Promise<{ publicId: string; updatePublicId: string }>;
 }) => {
+  const params = await props.params;
+
+  const { publicId, updatePublicId } = params;
+
   if (updatePublicId === "new") {
     return <Editor companyPublicId={publicId} mode="new" />;
   }

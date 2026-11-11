@@ -40,7 +40,7 @@ export default async function RootLayout({
       <body className="min-h-screen">
         <ProgressBarProvider>
           <NextAuthProvider session={session}>
-            <TRPCReactProvider cookies={cookies().toString()}>
+            <TRPCReactProvider cookies={(await cookies()).toString()}>
               <main>{children}</main>
               <Toaster richColors />
               {nodeEnv === "development" && <ScreenSize />}

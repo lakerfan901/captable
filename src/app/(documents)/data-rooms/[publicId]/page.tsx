@@ -7,22 +7,27 @@ import { db } from "@/server/db";
 import { RiFolder3Fill as FolderIcon } from "@remixicon/react";
 import { notFound } from "next/navigation";
 
-const DataRoomPage = async ({
-  params: { publicId },
-  searchParams: { token },
-}: {
-  params: { publicId: string };
-  searchParams: { token: string };
+const DataRoomPage = async (props: {
+  params: Promise<{ publicId: string }>;
+  searchParams: Promise<{ token: string }>;
 }) => {
+  const searchParams = await props.searchParams;
+
+  const { token } = searchParams;
+
+  const params = await props.params;
+
+  const { publicId } = params;
+
   let decodedToken: JWTVerifyResult | null = null;
 
   try {
     decodedToken = await decode(token);
-  } catch (error) {
+  } catch {
     return notFound();
   }
 
-  const { companyId, dataRoomId, recipientId } = decodedToken?.payload;
+  const { companyId, dataRoomId, recipientId } = decodedToken.payload;
   if (!companyId || !recipientId || !dataRoomId) {
     return notFound();
   }

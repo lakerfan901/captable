@@ -11,13 +11,13 @@ export const metadata: Metadata = {
 };
 
 interface SigningPageProps {
-  params: {
+  params: Promise<{
     token: string;
-  };
+  }>;
 }
 
 export default async function SigningPage(props: SigningPageProps) {
-  const { token } = props.params;
+  const { token } = await props.params;
 
   const {
     fields,

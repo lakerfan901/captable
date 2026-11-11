@@ -11,13 +11,16 @@ import { RolesProvider } from "@/providers/roles-provider";
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
-  params: { publicId: string };
+  params: Promise<{ publicId: string }>;
 };
 
-const DashboardLayout = async ({
-  children,
-  params: { publicId },
-}: DashboardLayoutProps) => {
+const DashboardLayout = async (props: DashboardLayoutProps) => {
+  const params = await props.params;
+
+  const { publicId } = params;
+
+  const { children } = props;
+
   const { user } = await withServerComponentSession();
 
   if (user.companyPublicId !== publicId) {

@@ -6,11 +6,13 @@ import { TemplateFieldProvider } from "@/providers/template-field-provider";
 import { withServerComponentSession } from "@/server/auth";
 import { api } from "@/trpc/server";
 
-const EsignTemplateDetailPage = async ({
-  params: { templatePublicId },
-}: {
-  params: { templatePublicId: string };
+const EsignTemplateDetailPage = async (props: {
+  params: Promise<{ templatePublicId: string }>;
 }) => {
+  const params = await props.params;
+
+  const { templatePublicId } = params;
+
   const session = await withServerComponentSession();
 
   const { name, status, url, fields, recipients } =

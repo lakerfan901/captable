@@ -4,7 +4,6 @@ import path from "node:path";
 import { customId } from "@/common/id";
 import { env } from "@/env";
 import {
-  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -99,13 +98,4 @@ export const getPresignedGetUrl = async (key: string) => {
   });
 
   return { key, url };
-};
-
-export const deleteBucketFile = (key: string) => {
-  return S3.send(
-    new DeleteObjectCommand({
-      Bucket: process.env.UPLOAD_BUCKET_PRIVATE,
-      Key: key,
-    }),
-  );
 };
