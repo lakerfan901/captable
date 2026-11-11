@@ -1,0 +1,13 @@
+# pnpm >= 10 blocks dependency build scripts unless they are reviewed here.
+allowBuilds:
+  "@biomejs/biome": true
+  "@prisma/client": true
+  "@prisma/engines": true
+  "@sentry/cli": true
+  esbuild: true
+  prisma: true
+  sharp: true
+  # Optional peer of pdfjs-dist; aliased away in next.config.js and its
+  # native build fails on current Node versions.
+  canvas: false
+  vue-demi: false
