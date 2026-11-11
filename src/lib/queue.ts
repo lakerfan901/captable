@@ -44,10 +44,7 @@ function createQueue() {
     log.info(logPrefix("Starting queue manager"));
 
     queue.on("error", (error) => {
-      log.error(logPrefix("error"), {
-        type: "queue",
-        error,
-      });
+      log.error({ type: "queue", err: error }, logPrefix("error"));
     });
 
     await queue.start();

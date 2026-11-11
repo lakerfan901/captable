@@ -1,7 +1,7 @@
 import { logger } from "@/lib/logger";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import type { StatusCode } from "hono/utils/http-status";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { ZodError } from "zod";
 
 import { z } from "@hono/zod-openapi";
@@ -46,7 +46,7 @@ export const ErrorSchema = z.object({
 
 interface generateErrorResponseOptions {
   description: string;
-  status: StatusCode;
+  status: ContentfulStatusCode;
 }
 
 const errorRegistryMap: Record<z.infer<typeof ErrorCode>, string> = {
@@ -99,7 +99,7 @@ export const ErrorResponses: ReturnType<typeof generateErrorResponse> = {
   }),
 };
 
-function codeToStatus(code: z.infer<typeof ErrorCode>): StatusCode {
+function codeToStatus(code: z.infer<typeof ErrorCode>): ContentfulStatusCode {
   switch (code) {
     case "BAD_REQUEST":
       return 400;
@@ -120,7 +120,7 @@ function codeToStatus(code: z.infer<typeof ErrorCode>): StatusCode {
   }
 }
 
-function statusToCode(status: StatusCode): z.infer<typeof ErrorCode> {
+function statusToCode(status: ContentfulStatusCode): z.infer<typeof ErrorCode> {
   switch (status) {
     case 400:
       return "BAD_REQUEST";
@@ -200,11 +200,14 @@ export class ApiError extends HTTPException {
 export function handleError(err: Error, c: Context): Response {
   if (err instanceof ApiError) {
     if (err.status >= 500) {
-      log.error("ApiError", {
-        name: err.name,
-        code: err.code,
-        status: err.status,
-      });
+      log.error(
+        {
+          name: err.name,
+          code: err.code,
+          status: err.status,
+        },
+        "ApiError",
+      );
     }
     return c.json(
       {
@@ -219,11 +222,14 @@ export function handleError(err: Error, c: Context): Response {
 
   if (err instanceof HTTPException) {
     if (err.status >= 500) {
-      log.error("HTTPException", {
-        name: err.name,
-        status: err.status,
-        message: err.message,
-      });
+      log.error(
+        {
+          name: err.name,
+          status: err.status,
+          message: err.message,
+        },
+        "HTTPException",
+      );
     }
     const code = statusToCode(err.status);
     return c.json(
@@ -241,12 +247,15 @@ export function handleError(err: Error, c: Context): Response {
    * This is a generic error, we should log it and return a 500
    */
 
-  log.error("UnhandledError", {
-    name: err.name,
-    message: err.message,
-    cause: err.cause,
-    stack: err.stack,
-  });
+  log.error(
+    {
+      name: err.name,
+      message: err.message,
+      cause: err.cause,
+      stack: err.stack,
+    },
+    "UnhandledError",
+  );
 
   return c.json(
     {
