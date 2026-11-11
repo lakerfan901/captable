@@ -14,6 +14,9 @@ await import("./src/env.js");
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   output: process.env.DOCKER_OUTPUT ? "standalone" : undefined,
+  // Pin the tracing root to this repo so a stray lockfile in a parent
+  // directory cannot change what the standalone build includes.
+  outputFileTracingRoot: import.meta.dirname,
   images: {
     remotePatterns: [
       {
