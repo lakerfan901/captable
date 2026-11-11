@@ -16,7 +16,7 @@ import "react-pdf/dist/esm/Page/TextLayer.css";
 type LoadCallback = Required<DocumentProps>["onLoadSuccess"];
 type PDFDocumentProxy = Parameters<LoadCallback>[0];
 
-pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 const options = {
   cMapUrl: "/cmaps/",

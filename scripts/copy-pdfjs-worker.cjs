@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
+// Copies the pdf.js worker that matches the installed react-pdf into /public.
+// Run this (`pnpm copy:pdfjs`) whenever react-pdf is upgraded: the worker
+// version must match the pdfjs-dist version react-pdf depends on.
+const path = require("node:path");
+const fs = require("node:fs");
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const path = require("path");
-const fs = require("fs");
+// pdfjs-dist is a dependency of react-pdf, so resolve it from there.
+const pdfjsDistPath = path.dirname(
+  require.resolve("pdfjs-dist/package.json", {
+    paths: [require.resolve("react-pdf/package.json")],
+  }),
+);
 
-const pdfjsDistPath = path.dirname(require.resolve("pdfjs-dist/package.json"));
+const pdfWorkerPath = path.join(pdfjsDistPath, "build", "pdf.worker.min.mjs");
 
-const pdfWorkerPath = path.join(pdfjsDistPath, "build", "pdf.worker.min.js");
-
-fs.copyFileSync(pdfWorkerPath, "./public/pdf.worker.min.js");
+fs.copyFileSync(pdfWorkerPath, "./public/pdf.worker.min.mjs");

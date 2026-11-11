@@ -6,7 +6,7 @@
       "node_modules",
       ".next",
       "dist",
-      "public/pdf.worker.min.js",
+      "public/pdf.worker.min.mjs",
       "./prisma/enums.ts",
       "./prisma/generated/*",
       "./src/components/ui/simple-multi-select.tsx"
@@ -26,7 +26,7 @@
       "node_modules",
       ".next",
       "dist",
-      "public/pdf.worker.min.js",
+      "public/pdf.worker.min.mjs",
       "./prisma/enums.ts",
       "./prisma/generated/*",
       "./src/components/ui/simple-multi-select.tsx"
@@ -44,7 +44,7 @@
       "node_modules",
       ".next",
       "dist",
-      "public/pdf.worker.min.js",
+      "public/pdf.worker.min.mjs",
       "./prisma/enums.ts",
       "./prisma/generated/*"
     ]
