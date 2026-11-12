@@ -728,22 +728,30 @@ export async function decideCommitment(
     },
     _sum: { acceptedCents: true },
   });
-  throwIfErrors(
-    validateAcceptance({
-      terms,
-      committedCents: commitment.committedCents,
-      acceptedCents: accepted,
-      acceptedOn,
-      signedOn: dateToWire(commitment.signedOn),
-      today,
-      heldCents: heldAtAcceptance,
-      keepCents: keep,
-      otherAcceptedCents: others._sum.acceptedCents ?? 0n,
-      minimumWaived: input.minimumWaived ?? false,
-      isReplacement: commitment.isReplacement,
-      skipClosingDateCheck: input.skipClosingDateCheck ?? false,
-    }),
-  );
+  const acceptanceErrors = validateAcceptance({
+    terms,
+    committedCents: commitment.committedCents,
+    acceptedCents: accepted,
+    acceptedOn,
+    signedOn: dateToWire(commitment.signedOn),
+    today,
+    heldCents: heldAtAcceptance,
+    keepCents: keep,
+    otherAcceptedCents: others._sum.acceptedCents ?? 0n,
+    minimumWaived: input.minimumWaived ?? false,
+    isReplacement: commitment.isReplacement,
+    skipClosingDateCheck: input.skipClosingDateCheck ?? false,
+  });
+  if (
+    heldAtAcceptance < held &&
+    acceptanceErrors.some((e) => e.code === "INITIAL_INSTALLMENT_SHORT")
+  ) {
+    acceptanceErrors.push({
+      code: "INITIAL_INSTALLMENT_SHORT",
+      message: `${formatCents(held - heldAtAcceptance)} received after ${acceptedOn} does not count toward the Initial Installment of an acceptance on that date.`,
+    });
+  }
+  throwIfErrors(acceptanceErrors);
   const status = rule(() =>
     decisionStatus(accepted, commitment.committedCents),
   );

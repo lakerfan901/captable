@@ -5,7 +5,8 @@
  *
  *   SKIP_ENV_VALIDATION=1 \
  *   DATABASE_URL=postgres://captable:password@localhost:54321/captable \
- *   node_modules/.bin/tsx --conditions=react-server \
+ *   node_modules/.bin/tsx \
+ *     --import ./src/server/llc/__integration__/register.mjs \
  *     src/server/llc/__integration__/ledger.integration.ts
  *
  * It creates one throwaway LLC company (plus a user and team member for the
