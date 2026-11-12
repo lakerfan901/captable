@@ -1,6 +1,7 @@
 import { RiGroup2Fill } from "@remixicon/react";
 import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
+import { ImportExhibitADialog } from "@/components/llc/member/import-exhibit-a-dialog";
 import { MemberFormDialog } from "@/components/llc/member/member-form-dialog";
 import { MemberTable } from "@/components/llc/member/member-table";
 import StakeholderDropdown from "@/components/stakeholder/stakeholder-dropdown";
@@ -23,8 +24,18 @@ const MembersPage = async () => {
     "read",
   ]);
 
+  const importAllowed =
+    allow(true, ["stakeholder", "create"], false) &&
+    allow(true, ["commitments", "create"], false);
   const addMember = allow(
-    <MemberFormDialog trigger={<Button>Add member</Button>} />,
+    <div className="flex gap-2">
+      {importAllowed && (
+        <ImportExhibitADialog
+          trigger={<Button variant="outline">Import Exhibit A</Button>}
+        />
+      )}
+      <MemberFormDialog trigger={<Button>Add member</Button>} />
+    </div>,
     ["stakeholder", "create"],
     null,
   );
