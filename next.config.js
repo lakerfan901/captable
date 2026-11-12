@@ -1,5 +1,5 @@
 import withBundleAnalyzer from "@next/bundle-analyzer";
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const bundleAnalyzer = withBundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
@@ -65,7 +65,11 @@ export default hasSentry
       project: process.env.SENTRY_PROJECT,
       silent: true,
       widenClientFileUpload: true,
-      hideSourceMaps: true,
-      disableLogger: true,
+      // Replaces the removed `disableLogger`; applies to Turbopack and webpack.
+      // (`hideSourceMaps` was removed: client source maps are hidden and
+      // deleted after upload by default.)
+      bundleSizeOptimizations: {
+        excludeDebugStatements: true,
+      },
     })
   : bundleAnalyzer(nextConfig);
