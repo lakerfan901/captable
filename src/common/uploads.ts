@@ -1,11 +1,11 @@
 import { env } from "@/env";
-import {
-  getPresignedGetUrl,
-  getPresignedPutUrl,
-  type getPresignedUrlOptions,
-} from "@/server/file-uploads";
+import { getPresignedPutUrl } from "@/server/file-upload-actions";
+import type { getPresignedUrlOptions } from "@/server/file-uploads";
 
 /**
+ * Browser-side upload. The presigned URL comes from an authorized server
+ * action; server code must use `uploadFile` from `@/server/file-uploads`.
+ *
  * usage
  * ```js
  * import { uploadFile } from '@/common/uploads'
@@ -37,7 +37,9 @@ export const uploadFile = async (
   const res = await fetch(url, {
     method: "PUT",
     headers: {
-      "Content-Type": "application/octet-stream",
+      // Public-bucket URLs are signed with the file's content type.
+      "Content-Type":
+        bucketMode === "publicBucket" ? file.type : "application/octet-stream",
     },
     body,
   });
@@ -67,23 +69,3 @@ export const uploadFile = async (
 };
 
 export type TUploadFile = Awaited<ReturnType<typeof uploadFile>>;
-
-export const getFileFromS3 = async (key: string) => {
-  const { url } = await getPresignedGetUrl(key);
-
-  const response = await fetch(url, {
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to get file "${key}", failed with status code ${response.status}`,
-    );
-  }
-
-  const buffer = await response.arrayBuffer();
-
-  const binaryData = new Uint8Array(buffer);
-
-  return binaryData;
-};

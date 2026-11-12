@@ -1,4 +1,5 @@
 import { generatePublicId } from "@/common/id";
+import { sanitizeUpdateHtml } from "@/lib/sanitize-update-html";
 import { Audit } from "@/server/audit";
 import { withAuth } from "@/trpc/api/trpc";
 import { UpdateMutationSchema } from "../schema";
@@ -13,7 +14,8 @@ export const saveUpdateProcedure = withAuth
       const userName = ctx.session.user.name;
       const { userAgent, requestIp } = ctx;
       const publicId = input.publicId ?? generatePublicId();
-      const { title, content, html } = input;
+      const { title, content } = input;
+      const html = sanitizeUpdateHtml(input.html);
 
       if (title.length === 0 || content.length === 0) {
         return {

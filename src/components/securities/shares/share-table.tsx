@@ -35,7 +35,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import { getPresignedGetUrl } from "@/server/file-uploads";
+import { getPresignedGetUrl } from "@/server/file-upload-actions";
 import { api } from "@/trpc/react";
 import {
   DropdownMenu,

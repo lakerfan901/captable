@@ -1,6 +1,7 @@
 import { Audit } from "@/server/audit";
 import type { TPrismaOrTransaction } from "@/server/db";
 import { withAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import {
   type TypeZodCreateBucketMutationSchema,
   ZodCreateBucketMutationSchema,
@@ -48,7 +49,14 @@ export const createBucketHandler = async ({
 export const createBucketProcedure = withAuth
   .input(ZodCreateBucketMutationSchema)
   .mutation(async ({ ctx: { db, userAgent, requestIp, session }, input }) => {
-    const { name, companyId, id } = session.user;
+    const { name, companyId, companyPublicId, id } = session.user;
+
+    // Browser uploads are always keyed under the caller's company publicId
+    // (see `authorizeUpload`). Refuse to record any other key, so a member
+    // cannot register another company's object under their own company.
+    if (!companyPublicId || !input.key.startsWith(`${companyPublicId}/`)) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Invalid file key" });
+    }
 
     return await createBucketHandler({
       input,
