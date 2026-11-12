@@ -159,7 +159,41 @@ model Company {
   billingCustomers BillingCustomer[]
   customRoles      CustomRole[]
 
+  entityType EntityTypeEnum @default(CORPORATION)
+  timezone   String         @default("America/Denver")
+
+  unitClasses     UnitClass[]
+  commitments     Commitment[]
+  capitalReceipts CapitalReceipt[]
+  emailLogs       EmailLog[]
+
+  resolutions         Resolution[]
+  recordSnapshots     RecordSnapshot[]
+  memberReports       MemberReport[]
+  complianceDeadlines ComplianceDeadline[]
+  unitTransfers       UnitTransfer[]
+
   BankAccount BankAccount[]
+
+  llcTerm                 LlcTerm?
+  callNotices             CallNotice[]
+  callNoticeLines         CallNoticeLine[]
+  callNoticeAllocations   CallNoticeAllocation[]
+  memberDefaults          MemberDefault[]
+  memberDefaultFundings   MemberDefaultFunding[]
+  memberDefaultPayments   MemberDefaultPayment[]
+  memberDefaultCharges    MemberDefaultCharge[]
+  memberDefaultCredits    MemberDefaultCredit[]
+  revenuePeriods          RevenuePeriod[]
+  expenseEntries          ExpenseEntry[]
+  managerPayments         ManagerPayment[]
+  reserveEntries          ReserveEntry[]
+  memberLoans             MemberLoan[]
+  memberLoanPayments      MemberLoanPayment[]
+  memberAdvances          MemberAdvance[]
+  memberAdvanceRecoveries MemberAdvanceRecovery[]
+  distributions           Distribution[]
+  distributionLines       DistributionLine[]
 
   @@unique([publicId])
 }
@@ -277,7 +311,7 @@ enum StakeholderRelationshipEnum {
 model Stakeholder {
   id                  String                      @id @default(cuid())
   name                String
-  email               String                      @unique
+  email               String
   institutionName     String?
   stakeholderType     StakeholderTypeEnum         @default(INDIVIDUAL)
   currentRelationship StakeholderRelationshipEnum @default(EMPLOYEE)
@@ -300,9 +334,28 @@ model Stakeholder {
   updates          UpdateRecipient[]
   dataRooms        DataRoomRecipient[]
 
+  holderType         HolderTypeEnum?
+  residenceState     String? // state of residence (or formation); NOT the address state
+  accreditationBasis AccreditationBasisEnum?
+  admittedOn         DateTime?               @db.Date
+  signerName         String?
+  signerTitle        String?
+  noticeEmail        String? // when null, notices go to `email`
+  phone              String?
+  isInsider          Boolean                 @default(false)
+  memberStatus       LlcMemberStatusEnum     @default(PROSPECT)
+
+  commitments     Commitment[]
+  capitalReceipts CapitalReceipt[]
+  documents       Document[]
+  esignRecipients EsignRecipient[]
+  packets         Template[]
+  emailLogs       EmailLog[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([companyId, email])
   @@index([companyId])
 }
 
@@ -422,6 +475,14 @@ model Document {
   publicId String
   name     String
 
+  recordCategory BooksRecordCategoryEnum? // OA 8.1 books-and-records category
+  recordYear     Int? // fiscal year the record relates to
+
+  kind String? // "exhibit-b" | "w9" | "wire-confirmation" | "other" (other areas may add keys)
+
+  stakeholderId String?
+  stakeholder   Stakeholder? @relation(fields: [stakeholderId], references: [id], onDelete: SetNull)
+
   bucketId String
   bucket   Bucket @relation(fields: [bucketId], references: [id], onDelete: Cascade)
 
@@ -457,6 +518,8 @@ model Document {
   @@index([optionId])
   @@index([safeId])
   @@index([convertibleNoteId])
+  @@index([stakeholderId])
+  @@index([companyId, recordCategory])
 }
 
 model DataRoom {
@@ -592,6 +655,8 @@ model TemplateField {
   /// [TemplateFieldMeta]
   meta Json @default("{}")
 
+  semanticKey String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -632,9 +697,22 @@ model Template {
   completedOn DateTime?
   eSignAudits EsignAudit[]
 
+  workflow         TemplateWorkflowEnum @default(STANDARD)
+  isMaster         Boolean              @default(false)
+  sourceTemplateId String? // master this envelope was cloned from (plain scalar)
+  signedDocumentId String? // Document created on completion (plain scalar)
+
+  stakeholderId String?
+  stakeholder   Stakeholder? @relation(fields: [stakeholderId], references: [id], onDelete: SetNull)
+
+  commitmentId String?     @unique
+  commitment   Commitment? @relation(fields: [commitmentId], references: [id], onDelete: SetNull)
+
   @@index([bucketId])
   @@index([uploaderId])
   @@index([companyId])
+  @@index([stakeholderId])
+  @@index([companyId, workflow, isMaster])
 }
 
 enum EsignRecipientStatus {
@@ -661,8 +739,15 @@ model EsignRecipient {
   templateFields TemplateField[]
   eSignAudits    EsignAudit[]
 
+  role         String? // "investor" | "manager" (null on STANDARD templates)
+  signingOrder Int?
+
+  stakeholderId String?
+  stakeholder   Stakeholder? @relation(fields: [stakeholderId], references: [id], onDelete: SetNull)
+
   @@index([memberId])
   @@index([templateId])
+  @@index([stakeholderId])
 }
 
 enum SecuritiesStatusEnum {
@@ -1142,4 +1227,1447 @@ model AccessToken {
 
   @@index([userId])
   @@index([typeEnum, clientId])
+}
+
+// ───────────────────────── LLC foundation (01-foundation) ─────────────────────────
+
+enum EntityTypeEnum {
+  CORPORATION
+  LLC
+}
+
+enum UnitClassKindEnum {
+  PREFERRED
+  COMMON
+}
+
+enum DayCountEnum {
+  ACTUAL_365
+}
+
+enum BalanceReturnStartRuleEnum {
+  LATER_OF_RECEIPT_AND_DUE
+  RECEIPT_DATE
+}
+
+enum HolderTypeEnum {
+  INDIVIDUAL
+  JOINT
+  TRUST
+  ENTITY
+}
+
+enum AccreditationBasisEnum {
+  NET_WORTH // natural person, net worth > $1,000,000 excluding primary residence
+  INCOME // natural person, income > $200,000 (or $300,000 joint) in each of the two most recent years
+  LICENSE // natural person holding a Series 7, 65 or 82 license in good standing
+  ENTITY_ASSETS // entity with total assets > $5,000,000 not formed to acquire the Units
+  ENTITY_ALL_OWNERS_ACCREDITED // entity in which all equity owners are accredited investors
+  TRUST_ASSETS // trust with total assets > $5,000,000, not formed to acquire the Units, directed by a sophisticated person
+}
+
+enum LlcMemberStatusEnum {
+  PROSPECT
+  MEMBER
+  FINANCIAL_INTEREST_ONLY
+}
+
+enum CommitmentStatusEnum {
+  PENDING
+  ACCEPTED
+  REDUCED
+  REJECTED
+}
+
+enum CapitalReceiptKindEnum {
+  INITIAL
+  BALANCE
+  REPLACEMENT
+  CREDIT
+  FORFEITURE
+}
+
+enum EmailLogStatusEnum {
+  SENT
+  FAILED
+}
+
+enum EmailBounceStateEnum {
+  NONE
+  BOUNCED
+  COMPLAINED
+}
+
+enum TemplateWorkflowEnum {
+  STANDARD
+  SUBSCRIPTION
+}
+
+model UnitClass {
+  id   String            @id @default(cuid())
+  name String
+  kind UnitClassKindEnum
+
+  // Issuance
+  pricePerUnitCents      BigInt? // PREFERRED: 100000 ($1,000). COMMON: null (not sold).
+  authorizedUnits        Decimal? @db.Decimal(18, 6) // COMMON: 100. PREFERRED: null (limited by offeringCapCents).
+  fractionalUnitsAllowed Boolean  @default(true)
+  votesPerUnit           Decimal  @default(0) @db.Decimal(18, 6)
+
+  // Economics (read by ECONOMICS)
+  prefReturnBps          Int                        @default(0) // 800 = 8.00% simple, cumulative, non-compounding
+  prefReturnDayCount     DayCountEnum               @default(ACTUAL_365)
+  balanceReturnStartRule BalanceReturnStartRuleEnum @default(LATER_OF_RECEIPT_AND_DUE)
+  residualSplitBps       Int                        @default(0) // PREFERRED 7000, COMMON 3000
+
+  // Offering terms (PREFERRED only; null on COMMON)
+  minCommitmentCents      BigInt? // 10000000 ($100,000)
+  minCommitmentFloorCents BigInt? // 5000000 ($50,000) lowest amount the Manager may waive to
+  offeringCapCents        BigInt? // 200000000 ($2,000,000) aggregate accepted commitments
+  initialInstallmentBps   Int       @default(4000)
+  finalClosingDate        DateTime? @db.Date
+  balanceOutsideDate      DateTime? @db.Date
+  acceptanceBusinessDays  Int       @default(10)
+  refundBusinessDays      Int       @default(5)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  commitments Commitment[]
+  receipts    CapitalReceipt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, kind])
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model Commitment {
+  id     String               @id @default(cuid())
+  status CommitmentStatusEnum @default(PENDING)
+
+  committedCents BigInt // as subscribed on Exhibit B
+  acceptedCents  BigInt @default(0) // 0 until decided
+
+  signedOn              DateTime?               @db.Date // date the signature page was received
+  investmentSummaryDate DateTime?               @db.Date
+  accreditationBasis    AccreditationBasisEnum?
+
+  acceptedOn        DateTime? @db.Date // decision date entered by the Manager (also used for REJECTED)
+  decidedAt         DateTime? // instant the decision was recorded
+  decidedByMemberId String? // team Member.id (plain scalar, no relation)
+  minimumWaived     Boolean   @default(false)
+  minimumWaiverNote String?
+  isReplacement     Boolean   @default(false) // Replacement Funder commitment, set only by ECONOMICS
+  rejectionReason   String?
+  notes             String?
+
+  // Section 4.8 clock
+  acceptanceDeadline DateTime? @db.Date
+  refundDueCents     BigInt    @default(0)
+  refundDueBy        DateTime? @db.Date
+  refundPaidCents    BigInt    @default(0)
+  refundPaidOn       DateTime? @db.Date
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  stakeholderId String
+  stakeholder   Stakeholder @relation(fields: [stakeholderId], references: [id], onDelete: Restrict)
+
+  unitClassId String
+  unitClass   UnitClass @relation(fields: [unitClassId], references: [id], onDelete: Restrict)
+
+  receipts CapitalReceipt[]
+  packet   Template?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([stakeholderId])
+  @@index([unitClassId])
+}
+
+model CapitalReceipt {
+  id   String                 @id @default(cuid())
+  kind CapitalReceiptKindEnum
+
+  receivedOn          DateTime  @db.Date
+  amountCents         BigInt // cash received; 0 for CREDIT, FORFEITURE and the Common issuance
+  appliedCents        BigInt    @default(0) // Capital Contribution; negative only for FORFEITURE
+  unitsIssued         Decimal   @default(0) @db.Decimal(18, 6) // negative only for FORFEITURE
+  appliedOn           DateTime? @db.Date // date the units were issued
+  prefReturnStartDate DateTime? @db.Date // null while held or when the class has no return
+
+  reference String? // wire reference
+  note      String?
+
+  // Optional link set by ECONOMICS (e.g. "callNotice", "memberDefault")
+  sourceType String?
+  sourceId   String?
+
+  recordedByMemberId String?
+  voidedAt           DateTime?
+  voidedByMemberId   String?
+  voidReason         String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  commitmentId String
+  commitment   Commitment @relation(fields: [commitmentId], references: [id], onDelete: Restrict)
+
+  // Denormalised from the commitment for cheap per-member and per-class sums
+  stakeholderId String
+  stakeholder   Stakeholder @relation(fields: [stakeholderId], references: [id], onDelete: Restrict)
+
+  unitClassId String
+  unitClass   UnitClass @relation(fields: [unitClassId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([commitmentId])
+  @@index([stakeholderId])
+  @@index([unitClassId])
+  @@index([companyId, receivedOn])
+  @@index([sourceType, sourceId])
+}
+
+model EmailLog {
+  id String @id @default(cuid())
+
+  toAddress   String // comma-separated when several
+  fromAddress String
+  subject     String
+  kind        String // template key, e.g. "esign.request" (list in F9)
+
+  status            EmailLogStatusEnum
+  sentAt            DateTime?
+  providerMessageId String?
+  smtpResponse      String?
+  errorMessage      String?
+  bodySha256        String?
+
+  bounceState EmailBounceStateEnum @default(NONE)
+  bouncedAt   DateTime?
+  bounceNote  String?
+
+  relatedType String? // e.g. "template", "commitment", "callNotice", "update"
+  relatedId   String?
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  stakeholderId String?
+  stakeholder   Stakeholder? @relation(fields: [stakeholderId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([stakeholderId])
+  @@index([relatedType, relatedId])
+}
+
+// ───────────────────────── LLC ECONOMICS ─────────────────────────
+
+enum LlcPrefCutoffEnum {
+  PAYMENT_DATE
+  PERIOD_END
+}
+
+enum LlcLotOrderEnum {
+  PRO_RATA
+  FIFO
+  LIFO
+}
+
+enum LlcOffsetOrderEnum {
+  BALANCE_INTEREST_COSTS
+  COSTS_INTEREST_BALANCE
+}
+
+enum LlcHolidayCalendarEnum {
+  US_FEDERAL
+  NONE
+}
+
+/// One row per LLC company: agreement dates, parameters (defaults = OA text) and interpretation switches.
+model LlcTerm {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Dates (finalClosingDate and balanceOutsideDate live on FOUNDATION's UnitClass)
+  replacementFunderOutsideDate DateTime  @db.Date /// 4.8(b) 2027-06-30
+  operationsCommencementDate   DateTime? @db.Date /// 1.21
+  ocdNoticeSentOn              DateTime? @db.Date
+  loiExtensionDays             Int       @default(0) /// 2.4, 0..loiExtensionMaxDays
+  loiDocumentId                String?
+
+  // Parameters
+  callNoticeBusinessDays       Int    @default(3)
+  forfeitureCureBusinessDays   Int    @default(5)
+  creditDateMaxDays            Int    @default(30)
+  defaultInterestBps           Int    @default(1200)
+  defaultInterestDayBasis      Int    @default(365)
+  forfeitureBps                Int    @default(5000)
+  replacementCreditBps         Int    @default(5000)
+  managementFeeBps             Int    @default(500)
+  minimumOperatingReserveCents BigInt @default(5000000)
+  orgExpenseCapCents           BigInt @default(4000000)
+  distributionDeadlineDays     Int    @default(45)
+  targetSaleYears              Int    @default(5)
+  loiExtensionMaxDays          Int    @default(180)
+  extensionRequestMonthsBefore Int    @default(9)
+  extensionConsentWindowDays   Int    @default(30)
+  dissolutionElectionDays      Int    @default(180)
+  ocdNoticeBusinessDays        Int    @default(10)
+
+  // Interpretation switches (section B)
+  prefAccrualCutoff                        LlcPrefCutoffEnum  @default(PAYMENT_DATE)
+  accrueOnDefaulterCapital                 Boolean            @default(true)
+  capitalReturnLotOrder                    LlcLotOrderEnum    @default(PRO_RATA)
+  forfeitureBaseNetOfReplacementFunding    Boolean            @default(false)
+  defaultOffsetOrder                       LlcOffsetOrderEnum @default(BALANCE_INTEREST_COSTS)
+  includeInsiderDistributionsInManagerList Boolean            @default(true)
+
+  // Calendar (the time zone is Company.timezone)
+  holidayCalendar               LlcHolidayCalendarEnum @default(US_FEDERAL)
+  saturdayHolidayObservedFriday Boolean                @default(true)
+  extraHolidays                 DateTime[]             @db.Date
+
+  /// Books are closed through this date (inclusive): no dated ledger row on or before it may be created.
+  booksClosedThrough DateTime? @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ───────── Call Notices (4.9) ─────────
+
+enum CallNoticeKindEnum {
+  CALL
+  OUTSIDE_DATE
+}
+
+enum CallNoticeStatusEnum {
+  DRAFT
+  SENT
+  SETTLED
+  CANCELLED
+}
+
+enum CallNoticeLineStatusEnum {
+  UNSENT
+  SENT
+  SEND_FAILED
+  PAID
+}
+
+model CallNotice {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  number        Int /// sequential per company, assigned at creation
+  kind          CallNoticeKindEnum   @default(CALL)
+  status        CallNoticeStatusEnum @default(DRAFT)
+  purpose       String? /// shown in the email ("to pay for the LLC's servers…")
+  bankAccountId String? /// BankAccount whose wire details are printed
+  sentAt        DateTime? /// first successful line send
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdById   String
+
+  lines CallNoticeLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, number])
+  @@index([companyId])
+  @@index([bankAccountId])
+}
+
+model CallNoticeLine {
+  id           String     @id @default(cuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  callNoticeId String
+  callNotice   CallNotice @relation(fields: [callNoticeId], references: [id], onDelete: Cascade)
+
+  stakeholderId     String
+  commitmentId      String
+  amountCalledCents BigInt
+
+  status       CallNoticeLineStatusEnum @default(UNSENT)
+  sentAt       DateTime? /// instant the email was accepted by the mail server (13.6)
+  sentOn       DateTime?                @db.Date /// calendar date of sentAt in Company.timezone
+  sentToEmail  String?
+  emailLogId   String?
+  dueOn        DateTime?                @db.Date /// set once at send (R26); for OUTSIDE_DATE = balanceOutsideDate
+  paidInFullOn DateTime?                @db.Date
+
+  allocations   CallNoticeAllocation[]
+  memberDefault MemberDefault?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([callNoticeId, commitmentId])
+  @@index([companyId])
+  @@index([callNoticeId])
+  @@index([stakeholderId])
+  @@index([commitmentId])
+}
+
+enum CallNoticeAllocationSourceEnum {
+  PAYMENT /// cash received against the line
+  PREPAID /// money received before the notice, matched when the notice was sent
+  OFFSET /// distribution withheld under 4.9(iii)
+}
+
+/// Links (part of) a CapitalReceipt to a line and fixes that slice's Preferred Return start. Immutable.
+model CallNoticeAllocation {
+  id               String         @id @default(cuid())
+  companyId        String
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  callNoticeLineId String
+  callNoticeLine   CallNoticeLine @relation(fields: [callNoticeLineId], references: [id], onDelete: Cascade)
+
+  capitalReceiptId     String
+  amountCents          BigInt /// negative on a reversal row
+  receivedOn           DateTime                       @db.Date
+  prefReturnStartOn    DateTime                       @db.Date /// max(receivedOn, line.dueOn)
+  source               CallNoticeAllocationSourceEnum
+  reversesAllocationId String?                        @unique
+  createdById          String
+  createdAt            DateTime                       @default(now())
+
+  @@index([companyId])
+  @@index([callNoticeLineId])
+  @@index([capitalReceiptId])
+}
+
+// ───────── Default (4.9(i)–(vii)) ─────────
+
+enum MemberDefaultStatusEnum {
+  OPEN
+  CURED
+  VOIDED
+}
+
+enum MemberDefaultCureMethodEnum {
+  PAID_IN_FULL
+  REPLACEMENT_FUNDED
+}
+
+model MemberDefault {
+  id               String         @id @default(cuid())
+  companyId        String
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  callNoticeLineId String         @unique
+  callNoticeLine   CallNoticeLine @relation(fields: [callNoticeLineId], references: [id], onDelete: Cascade)
+
+  stakeholderId String
+  commitmentId  String
+  status        MemberDefaultStatusEnum @default(OPEN)
+
+  // Stage 1: declared
+  dueOn            DateTime @db.Date
+  unpaidAtDueCents BigInt
+  forfeitureDate   DateTime @db.Date /// addBusinessDays(dueOn, 5), stored at declaration
+  declaredAt       DateTime @default(now())
+  declaredById     String
+
+  // Stage 2: forfeiture confirmed (all null until then)
+  forfeitedOn                  DateTime? @db.Date
+  unpaidAtForfeitureCents      BigInt?
+  capitalPaidAtForfeitureCents BigInt?
+  forfeitedAmountCents         BigInt?
+  forfeitureReceiptId          String? /// FOUNDATION CapitalReceipt of kind FORFEITURE
+  unreturnedDeductedCents      BigInt?
+  extinguishedReturnCents      BigInt?
+  unitsBefore                  Decimal?  @db.Decimal(18, 6)
+  unitsAfter                   Decimal?  @db.Decimal(18, 6)
+  forfeitureConfirmedAt        DateTime?
+  forfeitureConfirmedById      String?
+
+  // Stage 3: credit confirmed
+  creditDate            DateTime? @db.Date
+  fundedAtCreditCents   BigInt?
+  creditPoolACents      BigInt?
+  creditRedirectedCents BigInt?
+  creditPoolBCents      BigInt?
+  creditConfirmedAt     DateTime?
+  creditConfirmedById   String?
+
+  // Stage 4: cure or void
+  curedOn    DateTime?                    @db.Date
+  cureMethod MemberDefaultCureMethodEnum?
+  curedAt    DateTime?
+  curedById  String?
+  voidedAt   DateTime?
+  voidedById String?
+  voidReason String?
+
+  notes String?
+
+  fundings MemberDefaultFunding[]
+  payments MemberDefaultPayment[]
+  charges  MemberDefaultCharge[]
+  credits  MemberDefaultCredit[]
+
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([stakeholderId])
+  @@index([commitmentId])
+}
+
+/// 4.9(ii): a Replacement Funder funded part of the unpaid Balance. Immutable.
+model MemberDefaultFunding {
+  id              String        @id @default(cuid())
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberDefaultId String
+  memberDefault   MemberDefault @relation(fields: [memberDefaultId], references: [id], onDelete: Cascade)
+
+  funderStakeholderId String
+  funderCommitmentId  String /// the Replacement Funder commitment (isReplacement) created for this funding
+  funderIsInsider     Boolean /// snapshot of Stakeholder.isInsider when recorded
+  amountCents         BigInt
+  fundedOn            DateTime @db.Date
+  capitalReceiptId    String   @unique /// kind REPLACEMENT
+  createdById         String
+  createdAt           DateTime @default(now())
+
+  @@index([companyId])
+  @@index([memberDefaultId])
+  @@index([funderStakeholderId])
+}
+
+enum MemberDefaultPaymentSourceEnum {
+  CASH
+  DISTRIBUTION_OFFSET
+}
+
+/// Money from the Defaulting Member applied to Balance / interest / costs. Immutable (reversal row).
+model MemberDefaultPayment {
+  id              String        @id @default(cuid())
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberDefaultId String
+  memberDefault   MemberDefault @relation(fields: [memberDefaultId], references: [id], onDelete: Cascade)
+
+  paidOn             DateTime                       @db.Date
+  source             MemberDefaultPaymentSourceEnum
+  toBalanceCents     BigInt                         @default(0)
+  toInterestCents    BigInt                         @default(0)
+  toCostsCents       BigInt                         @default(0)
+  capitalReceiptId   String? /// receipt created for toBalanceCents
+  distributionLineId String? /// when source = DISTRIBUTION_OFFSET
+  reversesPaymentId  String?                        @unique
+  createdById        String
+  createdAt          DateTime                       @default(now())
+
+  @@index([companyId])
+  @@index([memberDefaultId])
+  @@index([distributionLineId])
+}
+
+/// 4.9(v): costs of collection and enforcement charged to the Defaulting Member. Immutable (reversal row).
+model MemberDefaultCharge {
+  id              String        @id @default(cuid())
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberDefaultId String
+  memberDefault   MemberDefault @relation(fields: [memberDefaultId], references: [id], onDelete: Cascade)
+
+  incurredOn       DateTime @db.Date
+  amountCents      BigInt
+  description      String
+  documentId       String?
+  reversesChargeId String?  @unique
+  createdById      String
+  createdAt        DateTime @default(now())
+
+  @@index([companyId])
+  @@index([memberDefaultId])
+}
+
+enum MemberDefaultCreditClauseEnum {
+  A
+  B
+}
+
+/// 4.9(iv)(A)/(B): one row per credited holder and clause. Immutable.
+model MemberDefaultCredit {
+  id              String        @id @default(cuid())
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberDefaultId String
+  memberDefault   MemberDefault @relation(fields: [memberDefaultId], references: [id], onDelete: Cascade)
+
+  stakeholderId    String
+  commitmentId     String
+  clause           MemberDefaultCreditClauseEnum
+  amountCents      BigInt
+  units            Decimal                       @db.Decimal(18, 6)
+  capitalReceiptId String                        @unique /// kind CREDIT
+  createdAt        DateTime                      @default(now())
+
+  @@unique([memberDefaultId, stakeholderId, clause])
+  @@index([companyId])
+  @@index([memberDefaultId])
+  @@index([stakeholderId])
+}
+
+// ───────── Revenue, fee, expenses, reserves, Manager ledger ─────────
+
+/// One row per calendar month, cash basis, entered by the Manager (6.18, 1.15, 8.2).
+model RevenuePeriod {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  month                  DateTime @db.Date /// first day of the month
+  customerReceiptsCents  BigInt   @default(0) /// cash received from customers for computing services
+  passThroughFeesCents   BigInt   @default(0) /// marketplace commissions, platform and payment-processing fees
+  otherIncomeCents       BigInt   @default(0) /// interest and other income (not in the fee base)
+  assetSaleProceedsCents BigInt   @default(0)
+  insuranceProceedsCents BigInt   @default(0)
+  utilizationBps         Int? /// 8.2 report, 0..10000
+  managementFeeBps       Int /// snapshot of LlcTerm.managementFeeBps at save
+  managementFeeCents     BigInt /// roundDiv((receipts − fees) × bps, 10000), stored at save
+  notes                  String?
+  updatedById            String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, month])
+  @@index([companyId])
+}
+
+enum ExpenseCategoryEnum {
+  COLOCATION
+  POWER
+  NETWORK
+  INSURANCE
+  REPAIR_AND_REPLACEMENT
+  SOFTWARE_AND_SUPPORT
+  PROFESSIONAL_FEES
+  TAXES_AND_FILING_FEES
+  BANK_FEES
+  ORGANIZATIONAL_OFFERING
+  EQUIPMENT_ACQUISITION
+  DEFAULT_COLLECTION
+  OTHER
+}
+
+enum FundingSourceEnum {
+  OPERATING_CASH
+  CAPITAL_CONTRIBUTIONS
+}
+
+/// Cost ledger: feeds Available Cash (OPERATING_CASH), unused capital (CAPITAL_CONTRIBUTIONS) and the 6.21 cap. Immutable.
+model ExpenseEntry {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  incurredOn         DateTime            @db.Date /// paid or payable date
+  category           ExpenseCategoryEnum
+  payee              String
+  amountCents        BigInt /// negative on a reversal row
+  fundingSource      FundingSourceEnum   @default(OPERATING_CASH)
+  countsTowardOrgCap Boolean             @default(false)
+  memo               String?
+  documentId         String?
+  managerPaymentId   String? /// set when the cost was reimbursed to / passed through the Manager
+  resolutionId       String? /// GOVERNANCE Resolution authorising an amount above the 6.21 cap
+  reversesEntryId    String?             @unique
+  createdById        String
+  createdAt          DateTime            @default(now())
+
+  @@index([companyId, incurredOn])
+  @@index([managerPaymentId])
+}
+
+enum ManagerPaymentCategoryEnum {
+  MANAGEMENT_FEE
+  EXPENSE_REIMBURSEMENT
+  PURCHASING_AGENT_PASS_THROUGH
+  OTHER
+}
+
+/// 8.2: every amount paid by the LLC to or through the Manager and its Affiliates. Immutable.
+model ManagerPayment {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  paidOn             DateTime                   @db.Date
+  payee              String /// e.g. "Octagon Compute LLC"
+  payeeStakeholderId String?
+  amountCents        BigInt /// negative on a reversal row
+  category           ManagerPaymentCategoryEnum
+  countsTowardOrgCap Boolean                    @default(false)
+  memo               String?
+  documentId         String?
+  resolutionId       String?
+  reversesPaymentId  String?                    @unique
+  createdById        String
+  createdAt          DateTime                   @default(now())
+
+  @@index([companyId, paidOn])
+}
+
+enum ReserveKindEnum {
+  MINIMUM_OPERATING
+  ANTICIPATED_EXPENSES
+  LIABILITIES
+  EQUIPMENT_REPAIR_AND_REPLACEMENT
+  COLOCATION_DEPOSITS
+  INSURANCE_DEDUCTIBLES
+  TAXES
+  WORKING_CAPITAL
+  WIND_DOWN
+}
+
+enum ReserveEntryTypeEnum {
+  ESTABLISH
+  RELEASE
+}
+
+/// 5.6(a) reserve ledger. Immutable.
+model ReserveEntry {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  effectiveOn     DateTime             @db.Date
+  kind            ReserveKindEnum
+  type            ReserveEntryTypeEnum
+  amountCents     BigInt /// always positive; negative only on a reversal row
+  fundingSource   FundingSourceEnum /// ESTABLISH: where the cash comes from. RELEASE: the pool it is released from
+  releaseTo       FundingSourceEnum? /// RELEASE only: pool that receives it (default = fundingSource)
+  reason          String
+  reversesEntryId String?              @unique
+  createdById     String
+  createdAt       DateTime             @default(now())
+
+  @@index([companyId, effectiveOn])
+}
+
+// ───────── Member loans (4.6) and tax advances (9.2) ─────────
+
+model MemberLoan {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  lenderStakeholderId String
+  principalCents      BigInt
+  interestBps         Int
+  madeOn              DateTime @db.Date
+  maturityOn          DateTime @db.Date
+  noteDocumentId      String?
+  resolutionId        String?
+  notes               String?
+  createdById         String
+
+  payments MemberLoanPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([lenderStakeholderId])
+}
+
+model MemberLoanPayment {
+  id           String     @id @default(cuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberLoanId String
+  memberLoan   MemberLoan @relation(fields: [memberLoanId], references: [id], onDelete: Cascade)
+
+  paidOn            DateTime          @db.Date
+  principalCents    BigInt            @default(0)
+  interestCents     BigInt            @default(0)
+  fundingSource     FundingSourceEnum @default(OPERATING_CASH)
+  distributionId    String? /// set when paid in a liquidation run (11.4(b))
+  reversesPaymentId String?           @unique
+  createdById       String
+  createdAt         DateTime          @default(now())
+
+  @@index([companyId, paidOn])
+  @@index([memberLoanId])
+}
+
+enum MemberAdvanceKindEnum {
+  TAX_WITHHOLDING
+  COMPOSITE_RETURN
+  ENTITY_LEVEL_TAX
+  IMPUTED_UNDERPAYMENT
+}
+
+/// 9.2: tax paid on a member's behalf. Immutable.
+model MemberAdvance {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  stakeholderId     String
+  paidOn            DateTime              @db.Date
+  kind              MemberAdvanceKindEnum
+  amountCents       BigInt
+  jurisdiction      String?
+  taxYear           Int?
+  memo              String?
+  documentId        String?
+  reversesAdvanceId String?               @unique
+  createdById       String
+  createdAt         DateTime              @default(now())
+
+  @@index([companyId])
+  @@index([stakeholderId])
+}
+
+enum MemberAdvanceRecoverySourceEnum {
+  DISTRIBUTION_OFFSET
+  CASH_REPAYMENT
+}
+
+model MemberAdvanceRecovery {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  stakeholderId      String
+  recoveredOn        DateTime                        @db.Date
+  amountCents        BigInt
+  source             MemberAdvanceRecoverySourceEnum
+  distributionLineId String?
+  reversesRecoveryId String?                         @unique
+  createdById        String
+  createdAt          DateTime                        @default(now())
+
+  @@index([companyId])
+  @@index([stakeholderId])
+  @@index([distributionLineId])
+}
+
+// ───────── Distributions (5.6, 11.4) ─────────
+
+enum DistributionTypeEnum {
+  OPERATING
+  RETURN_OF_UNUSED_CAPITAL
+  SALE_OR_LIQUIDATION
+}
+
+enum DistributionStatusEnum {
+  DRAFT
+  FINALIZED
+  REVERSED
+}
+
+model Distribution {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  number                 Int? /// sequential per company, assigned at finalize
+  type                   DistributionTypeEnum
+  status                 DistributionStatusEnum @default(DRAFT)
+  isLiquidation          Boolean                @default(false) /// 11.4 worksheet used
+  isReversal             Boolean                @default(false)
+  reversesDistributionId String?                @unique
+
+  periodStart DateTime? @db.Date
+  periodEnd   DateTime  @db.Date /// Available Cash is measured as of this date
+  paymentDate DateTime  @db.Date /// accrual cut-off (R7) and effective date of the ledger entries
+
+  /// Draft inputs (wizard state). Cents as JSON numbers. Shape: DistributionInputs (E15).
+  inputs Json
+
+  // Frozen at finalize (null while DRAFT)
+  availableCashCents      BigInt?
+  amountCents             BigInt? /// gross amount run through the waterfall
+  tierCCents              BigInt?
+  tierDCents              BigInt?
+  tierEPreferredCents     BigInt?
+  tierECommonCents        BigInt?
+  totalDefaultOffsetCents BigInt?
+  totalTaxOffsetCents     BigInt?
+  totalNetCents           BigInt?
+  reserveBalanceCents     BigInt? /// reported under 5.6(a)
+  /// Full computation snapshot (toWire output): Available Cash breakdown, positions before, config (E15).
+  snapshot                Json?
+  solvencyConfirmed       Boolean   @default(false) /// R15
+  finalizedAt             DateTime?
+  finalizedById           String?
+  reversedAt              DateTime?
+  reversedById            String?
+  reversalReason          String?
+  notes                   String?
+  createdById             String
+
+  lines DistributionLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+}
+
+model DistributionLine {
+  id             String       @id @default(cuid())
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  distributionId String
+  distribution   Distribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+
+  stakeholderId String
+
+  // Position immediately before this distribution
+  preferredUnits          Decimal @db.Decimal(18, 6)
+  commonUnits             Decimal @db.Decimal(18, 6)
+  unpaidReturnBeforeCents BigInt
+  unreturnedBeforeCents   BigInt
+
+  // Tiers (negative on the lines of a reversal distribution)
+  tierCCents          BigInt @default(0)
+  tierDCents          BigInt @default(0)
+  tierEPreferredCents BigInt @default(0)
+  tierECommonCents    BigInt @default(0)
+  grossCents          BigInt
+
+  // Netting
+  defaultOffsetBalanceCents  BigInt @default(0)
+  defaultOffsetInterestCents BigInt @default(0)
+  defaultOffsetCostsCents    BigInt @default(0)
+  taxAdvanceOffsetCents      BigInt @default(0)
+  netCents                   BigInt /// cash payable = gross − offsets
+
+  // Operational (may be set after finalize)
+  paidOn           DateTime? @db.Date
+  paymentReference String?
+  noticeEmailLogId String?
+  noticeSentAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([distributionId, stakeholderId])
+  @@index([companyId])
+  @@index([distributionId])
+  @@index([stakeholderId])
+}
+
+// ───────────────────────── LLC governance (03-governance) ─────────────────────────
+
+enum ResolutionTypeEnum {
+  GENERAL_CONSENT
+  RELATED_PARTY
+  PURCHASE_ORDER
+  TERM_EXTENSION
+  MANAGER_REMOVAL
+  SUCCESSOR_MANAGER
+  AMENDMENT
+  AUDIT_CALL
+  MEMBER_LOAN
+}
+
+enum ResolutionStatusEnum {
+  DRAFT
+  SENT
+  EFFECTIVE
+  FAILED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum VoteBasisEnum {
+  PREFERRED_MAJORITY
+  PREFERRED_SUPERMAJORITY
+  DISINTERESTED_MAJORITY
+  DISINTERESTED_67
+  DISINTERESTED_70
+}
+
+enum ResolutionRequirementKindEnum {
+  UNIT_VOTE
+  MANAGER_APPROVAL
+  COMMON_MEMBER_APPROVAL
+  AFFECTED_MEMBER_CONSENT
+}
+
+enum BallotChoiceEnum {
+  FOR
+  AGAINST
+  ABSTAIN
+}
+
+enum RecordSnapshotPurposeEnum {
+  RESOLUTION
+  MEMBER_REPORT
+}
+
+model RecordSnapshot {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  purpose    RecordSnapshotPurposeEnum
+  recordDate DateTime                  @db.Date
+  takenAt    DateTime                  @default(now())
+  takenById  String? // Member.id (team user); null when taken by a job
+
+  // Totals in Preferred Units, frozen. "Outstanding" follows OA 1.23 (R2).
+  preferredIssued          Decimal @db.Decimal(18, 6)
+  preferredOutstanding     Decimal @db.Decimal(18, 6)
+  disinterestedOutstanding Decimal @db.Decimal(18, 6)
+
+  entries    RecordSnapshotEntry[]
+  resolution Resolution?
+
+  @@index([companyId])
+}
+
+model RecordSnapshotEntry {
+  id         String         @id @default(cuid())
+  snapshotId String
+  snapshot   RecordSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  companyId  String
+
+  stakeholderId String
+  name          String
+  email         String // noticeEmail ?? email at snapshot time
+  memberStatus  String // FOUNDATION enum value copied as text
+  isMember      Boolean
+  isInsider     Boolean
+  isSuspended   Boolean
+
+  preferredUnits Decimal @db.Decimal(18, 6)
+  commonUnits    Decimal @db.Decimal(18, 6)
+
+  @@unique([snapshotId, stakeholderId])
+  @@index([snapshotId])
+  @@index([companyId, stakeholderId])
+}
+
+model Resolution {
+  id        String  @id @default(cuid())
+  publicId  String
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  type          ResolutionTypeEnum
+  status        ResolutionStatusEnum @default(DRAFT)
+  referenceCode String? // "R-2026-001", assigned on send
+  title         String
+  matterKey     String? // key of MATTERS (src/lib/governance/presets.ts)
+  params        Json                 @default("{}") // preset parameters, validated per type
+  body          Json                 @default("[]") // BlockNote blocks; editable only while DRAFT
+
+  // Frozen on send; never updated afterwards.
+  frozenContent Json? // { title, doc, lockedClauses, requirements }
+  frozenHash    String? // sha256 hex of canonicalJson(frozenContent)
+  recordDate    DateTime?       @db.Date
+  snapshotId    String?         @unique
+  snapshot      RecordSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  sentAt          DateTime?
+  closesAt        DateTime? // null for resolutions without ballots
+  effectiveAt     DateTime?
+  closedAt        DateTime? // FAILED / EXPIRED / WITHDRAWN instant
+  withdrawnReason String?
+  autoReminders   Boolean   @default(true)
+
+  // Delivery of a copy to the Members (PURCHASE_ORDER, R16)
+  copyDueOn       DateTime? @db.Date
+  copyDeliveredAt DateTime?
+
+  resultNotifiedAt   DateTime?
+  executedDocumentId String? // Document.id of the filed executed PDF
+  clonedFromId       String?
+  authorId           String // Member.id (team user)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requirements ResolutionRequirement[]
+  ballots      ResolutionBallot[]
+  events       ResolutionEvent[]
+
+  @@unique([publicId])
+  @@unique([companyId, referenceCode])
+  @@index([companyId, status])
+  @@index([companyId, type])
+  @@index([authorId])
+  @@index([executedDocumentId])
+}
+
+model ResolutionRequirement {
+  id           String     @id @default(cuid())
+  resolutionId String
+  resolution   Resolution @relation(fields: [resolutionId], references: [id], onDelete: Cascade)
+  companyId    String
+  position     Int
+
+  kind          ResolutionRequirementKindEnum
+  basis         VoteBasisEnum? // UNIT_VOTE only
+  stakeholderId String? // AFFECTED_MEMBER_CONSENT only
+  section       String // OA citation shown in the UI and PDF, e.g. "12.1(c)"
+
+  // UNIT_VOTE, frozen on send
+  denominatorUnits Decimal? @db.Decimal(18, 6)
+  minimumForUnits  Decimal? @db.Decimal(18, 6)
+
+  // Set once, when first satisfied
+  satisfiedAt     DateTime?
+  forUnitsAtClose Decimal?  @db.Decimal(18, 6) // UNIT_VOTE: For-weight when satisfied or when the resolution closed
+
+  // MANAGER_APPROVAL / COMMON_MEMBER_APPROVAL signature (write-once)
+  approvedByMemberId String? // Member.id (team user) who signed
+  approverName       String?
+  approverCapacity   String?
+  approvedAt         DateTime?
+  approvalIp         String?
+  approvalUserAgent  String?
+
+  @@unique([resolutionId, position])
+  @@index([resolutionId])
+  @@index([companyId])
+}
+
+model ResolutionBallot {
+  id           String     @id @default(cuid())
+  resolutionId String
+  resolution   Resolution @relation(fields: [resolutionId], references: [id], onDelete: Cascade)
+  companyId    String
+
+  // Frozen copy of the snapshot entry this ballot belongs to
+  stakeholderId       String
+  name                String
+  email               String
+  preferredUnits      Decimal @db.Decimal(18, 6)
+  countsPreferred     Boolean // eligible for PREFERRED_* requirements (R2)
+  countsDisinterested Boolean // eligible for DISINTERESTED_* requirements (R2 + R3)
+
+  // Link state (mutable delivery metadata)
+  tokenVersion     Int       @default(1)
+  tokenExpiresAt   DateTime
+  tokenRevokedAt   DateTime?
+  invitedAt        DateTime?
+  inviteEmailLogId String?
+  lastReminderAt   DateTime?
+  reminderCount    Int       @default(0)
+  firstViewedAt    DateTime?
+  viewCount        Int       @default(0)
+
+  // The vote: WRITE-ONCE (all set together, only while submittedAt IS NULL)
+  choice          BallotChoiceEnum?
+  deemed          Boolean           @default(false) // true = deemed Against under OA 2.5
+  signedName      String?
+  signerCapacity  String?
+  submittedAt     DateTime?
+  submitIp        String?
+  submitUserAgent String?
+  bodyHash        String? // must equal Resolution.frozenHash
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([resolutionId, stakeholderId])
+  @@index([resolutionId])
+  @@index([companyId, stakeholderId])
+}
+
+model ResolutionEvent {
+  id           String     @id @default(cuid())
+  resolutionId String
+  resolution   Resolution @relation(fields: [resolutionId], references: [id], onDelete: Cascade)
+  companyId    String
+  ballotId     String?
+
+  type      String // one of RESOLUTION_EVENT_TYPES (src/server/governance/events.ts)
+  dedupeKey String? // set for events that must happen at most once (email sends)
+  actorType String // "user" | "stakeholder" | "system"
+  actorId   String?
+  summary   String
+  ip        String?
+  userAgent String?
+
+  occurredAt DateTime @default(now())
+
+  @@unique([resolutionId, dedupeKey])
+  @@index([resolutionId])
+  @@index([companyId])
+  @@index([ballotId])
+}
+
+enum MemberReportTypeEnum {
+  QUARTERLY
+  ANNUAL
+  TAX_K1
+  NOTICE
+}
+
+enum MemberReportStatusEnum {
+  DRAFT
+  SENT
+}
+
+enum MemberReportAttachmentKindEnum {
+  GENERAL
+  BALANCE_SHEET
+  INCOME_STATEMENT
+  K1
+}
+
+model MemberReport {
+  id        String  @id @default(cuid())
+  publicId  String
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  type   MemberReportTypeEnum
+  status MemberReportStatusEnum @default(DRAFT)
+  title  String
+
+  fiscalYear    Int?
+  fiscalQuarter Int? // 1-4, QUARTERLY only
+  periodStart   DateTime? @db.Date
+  periodEnd     DateTime? @db.Date
+  noticeKind    String? // NOTICE only: key of NOTICE_KINDS (src/lib/governance/report-figures.ts)
+  relatedType   String? // e.g. "UNIT_TRANSFER", "COMPLIANCE_DEADLINE"
+  relatedId     String?
+
+  figures    Json @default("{}") // ReportFigures (QUARTERLY / ANNUAL)
+  commentary Json @default("[]") // BlockNote blocks; editable only while DRAFT
+
+  frozenContent Json? // { title, type, period, figures, doc } at send
+  frozenHash    String?
+  dueOn         DateTime? @db.Date
+  sentAt        DateTime?
+  sentById      String? // Member.id
+  authorId      String // Member.id
+
+  filedDocumentId String? // Document.id of the filed PDF
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recipients  MemberReportRecipient[]
+  attachments MemberReportAttachment[]
+
+  @@unique([publicId])
+  @@index([companyId, type])
+  @@index([companyId, status])
+  @@index([authorId])
+}
+
+model MemberReportRecipient {
+  id        String       @id @default(cuid())
+  reportId  String
+  report    MemberReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  companyId String
+
+  stakeholderId String
+  name          String
+  email         String
+
+  tokenVersion   Int       @default(1)
+  tokenExpiresAt DateTime
+  tokenRevokedAt DateTime?
+
+  sentAt        DateTime?
+  emailLogId    String?
+  sendCount     Int       @default(0)
+  firstViewedAt DateTime?
+  viewCount     Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([reportId, stakeholderId])
+  @@index([reportId])
+  @@index([companyId, stakeholderId])
+}
+
+model MemberReportAttachment {
+  id        String       @id @default(cuid())
+  reportId  String
+  report    MemberReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  companyId String
+
+  kind          MemberReportAttachmentKindEnum @default(GENERAL)
+  name          String
+  bucketId      String // Bucket.id; key is checked against the company namespace on every read
+  stakeholderId String? // null = visible to every recipient; set = private to that holder (K-1)
+
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+  @@index([bucketId])
+  @@index([companyId, stakeholderId])
+}
+
+enum ComplianceDeadlineStatusEnum {
+  OPEN
+  DONE
+  NOT_APPLICABLE
+}
+
+model ComplianceDeadline {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  ruleKey     String // key of COMPLIANCE_RULES, or "CUSTOM"
+  dedupeKey   String // `${ruleKey}:${periodKey}`; unique per company, makes generation idempotent
+  title       String
+  section     String? // OA citation
+  description String?
+  dueOn       DateTime @db.Date
+
+  status     ComplianceDeadlineStatusEnum @default(OPEN)
+  source     String // "RULE" | "ECONOMICS" | "RESOLUTION" | "TRANSFER" | "MANUAL"
+  sourceType String? // "RESOLUTION" | "UNIT_TRANSFER" | null
+  sourceId   String?
+
+  completedAt     DateTime?
+  completedById   String? // Member.id; null when completed by the system
+  satisfiedByType String? // "RESOLUTION" | "MEMBER_REPORT" | "DOCUMENT" | "MANUAL"
+  satisfiedById   String?
+  note            String?
+
+  remindedBuckets Int[]     @default([])
+  lastReminderAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, dedupeKey])
+  @@index([companyId, status, dueOn])
+}
+
+enum UnitTransferKindEnum {
+  VOLUNTARY
+  PERMITTED_TRANSFEREE
+  INVOLUNTARY
+  DEATH_INCAPACITY
+}
+
+enum UnitTransferStatusEnum {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+enum UnitTransferRofrOutcomeEnum {
+  NOT_APPLICABLE
+  PENDING
+  NOT_EXERCISED
+  EXERCISED_BY_MANAGER
+  EXERCISED_BY_MEMBERS
+}
+
+enum UnitTransferConsentEnum {
+  NOT_REQUIRED
+  PENDING
+  GRANTED
+  DENIED
+}
+
+model UnitTransfer {
+  id        String  @id @default(cuid())
+  publicId  String
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  kind   UnitTransferKindEnum
+  status UnitTransferStatusEnum @default(OPEN)
+
+  fromStakeholderId String
+  toStakeholderId   String? // may be unknown while the ROFR runs
+  unitClassId       String // FOUNDATION UnitClass.id
+  unitClassKind     String // "PREFERRED" | "COMMON", copied
+  units             Decimal @db.Decimal(18, 6)
+
+  // 7.1 Transfer Notice / 7.2 notice of Involuntary Transfer / notice of death or permitted transfer
+  noticeReceivedOn   DateTime @db.Date
+  proposedPriceCents BigInt? // integer cents
+  terms              String?
+  bonaFideOffer      Boolean  @default(false)
+
+  // Copy to the other Preferred Members (5 business days)
+  noticeCopyDueOn    DateTime? @db.Date
+  noticeCopyReportId String? // MemberReport.id (type NOTICE); its sentAt is the delivery time
+
+  // Right of first refusal (7.1) / purchase option (7.2)
+  managerRofrEndsOn DateTime?                   @db.Date
+  memberRofrEndsOn  DateTime?                   @db.Date
+  closeByOn         DateTime?                   @db.Date
+  rofrOutcome       UnitTransferRofrOutcomeEnum @default(NOT_APPLICABLE)
+  rofrDecidedOn     DateTime?                   @db.Date
+  rofrNote          String?
+
+  managerConsent     UnitTransferConsentEnum @default(NOT_REQUIRED)
+  managerConsentOn   DateTime?               @db.Date
+  managerConsentNote String?
+  securitiesOpinion  String? // "RECEIVED" | "WAIVED" (7.6)
+
+  priceEstablishedOn DateTime? @db.Date
+  purchaseCloseByOn  DateTime? @db.Date // 7.7
+
+  transferNoticeOn DateTime? @db.Date // 7.9.1 written notice of transfer received by the Manager
+  effectiveOn      DateTime? @db.Date // first day of the following month
+
+  // 7.1 last sentences (Common Units)
+  requiredResolutionId String?
+  exemptUnder71        Boolean @default(false)
+  exemptNote           String?
+
+  // 7.8 admission of the transferee as Substitute Member
+  admissionSignaturePage  Boolean   @default(false)
+  admissionExpensesPaid   Boolean   @default(false)
+  admissionQualified      Boolean   @default(false)
+  admissionManagerConsent Boolean   @default(false)
+  admittedOn              DateTime? @db.Date
+
+  completedAt   DateTime?
+  completedById String?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  notes         String?
+  authorId      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([publicId])
+  @@index([companyId, status])
+  @@index([companyId, fromStakeholderId])
+  @@index([companyId, toStakeholderId])
+}
+
+enum BooksRecordCategoryEnum {
+  MEMBER_LIST
+  ARTICLES_AND_AGREEMENT
+  TAX_RETURNS
+  FINANCIAL_STATEMENTS
+  CONSENTS_AND_MINUTES
+  OTHER_STATUTORY
 }
