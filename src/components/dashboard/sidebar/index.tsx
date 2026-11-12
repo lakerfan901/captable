@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type RemixiconComponentType,
   RiEqualizer2Fill,
   RiEqualizer2Line,
   RiFileTextFill,
@@ -40,170 +41,51 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { TGetCompanyList } from "@/server/company";
 import { CompanySwitcher } from "./company-switcher";
+import {
+  type EntityType,
+  getCompanyNav,
+  getNavSections,
+  type NavIconKey,
+} from "./nav-config";
 import { NavLink } from "./nav-link";
 
-const navigation = [
-  {
-    name: "Overview",
-    href: "/",
-    icon: RiHome2Line,
-    activeIcon: RiHome2Fill,
-  },
-  {
-    name: "Cap table",
-    href: "/captable",
-    icon: RiPieChartLine,
-    activeIcon: RiPieChartFill,
-  },
-  {
-    name: "Stakeholders",
-    href: "/stakeholders",
-    icon: RiGroup2Line,
-    activeIcon: RiGroup2Fill,
-  },
-  {
-    name: "Share classes",
-    href: "/share-classes",
-    icon: RiFolderChart2Line,
-    activeIcon: RiFolderChart2Fill,
-  },
-  {
-    name: "Equity plans",
-    href: "/equity-plans",
-    icon: RiFolderChart2Line,
-    activeIcon: RiFolderChart2Fill,
-  },
-  {
-    name: "Securities",
-    href: "/securities",
-    icon: RiSafeLine,
-    activeIcon: RiSafeFill,
-    subNav: [
-      {
-        name: "Shares",
-        href: "/shares",
-      },
-      {
-        name: "Stock options",
-        href: "/options",
-      },
-      {
-        name: "Transactions",
-        href: "/transactions",
-      },
-    ],
-  },
-  {
-    name: "Fundraise",
-    href: "/fundraise",
-    icon: RiMoneyDollarCircleLine,
-    activeIcon: RiMoneyDollarCircleFill,
-    subNav: [
-      {
-        name: "SAFEs",
-        href: "/safes",
-      },
-
-      {
-        name: "Convertible notes",
-        href: "/convertible-notes",
-      },
-
-      {
-        name: "Investments",
-        href: "/investments",
-      },
-    ],
-  },
-
-  {
-    name: "Documents",
-    href: "/documents",
-    icon: RiFolder5Line,
-    activeIcon: RiFolder5Fill,
-    subNav: [
-      {
-        name: "Data rooms",
-        href: "/data-rooms",
-      },
-      {
-        name: "eSign documents",
-        href: "/esign",
-      },
-      {
-        name: "All documents",
-        href: "/",
-      },
-      // {
-      //   name: "Share documents",
-      //   href: "/share",
-      // },
-    ],
-  },
-
-  {
-    name: "Updates",
-    href: "/updates",
-    icon: RiMailSendLine,
-    activeIcon: RiMailSendFill,
-  },
-
-  {
-    name: "Reports",
-    href: "/reports",
-    icon: RiFolderChartLine,
-    activeIcon: RiFolderChartFill,
-  },
-
-  {
-    name: "Audits",
-    href: "/audits",
-    icon: RiListIndefinite,
-    activeIcon: RiListCheck3,
-  },
-];
-
-const company = [
-  {
-    id: 1,
-    name: "Team",
-    rootPath: "/settings/team",
-    href: "/settings/team",
-    icon: RiGroup2Line,
-    activeIcon: RiGroup2Fill,
-  },
-  {
-    id: 2,
-    name: "Settings",
-    rootPath: "/settings/company",
-    href: "/settings/company",
-    icon: RiEqualizer2Line,
-    activeIcon: RiEqualizer2Fill,
-  },
-  {
-    id: 3,
-    name: "Form 3921",
-    href: "/3921",
-    icon: RiFileTextLine,
-    activeIcon: RiFileTextFill,
-  },
-  {
-    id: 4,
-    name: "409A Valuation",
-    href: "/409a",
-    icon: RiFileTextLine,
-    activeIcon: RiFileTextFill,
-  },
-];
+const ICONS: Record<
+  NavIconKey,
+  { icon: RemixiconComponentType; activeIcon: RemixiconComponentType }
+> = {
+  home: { icon: RiHome2Line, activeIcon: RiHome2Fill },
+  pieChart: { icon: RiPieChartLine, activeIcon: RiPieChartFill },
+  group: { icon: RiGroup2Line, activeIcon: RiGroup2Fill },
+  folderChart2: { icon: RiFolderChart2Line, activeIcon: RiFolderChart2Fill },
+  safe: { icon: RiSafeLine, activeIcon: RiSafeFill },
+  money: { icon: RiMoneyDollarCircleLine, activeIcon: RiMoneyDollarCircleFill },
+  folder: { icon: RiFolder5Line, activeIcon: RiFolder5Fill },
+  mailSend: { icon: RiMailSendLine, activeIcon: RiMailSendFill },
+  folderChart: { icon: RiFolderChartLine, activeIcon: RiFolderChartFill },
+  list: { icon: RiListIndefinite, activeIcon: RiListCheck3 },
+  equalizer: { icon: RiEqualizer2Line, activeIcon: RiEqualizer2Fill },
+  fileText: { icon: RiFileTextLine, activeIcon: RiFileTextFill },
+};
 
 interface SideBarProps {
   className?: string;
   publicId: string;
   companies: TGetCompanyList;
+  entityType: EntityType;
 }
 
-export function SideBar({ className, publicId, companies }: SideBarProps) {
+export function SideBar({
+  className,
+  publicId,
+  companies,
+  entityType,
+}: SideBarProps) {
   const currentPath = usePathname();
+  const sections = getNavSections(entityType);
+  const company = getCompanyNav(entityType).map((item) => ({
+    ...item,
+    ...ICONS[item.icon],
+  }));
 
   const basePath = `/${publicId}`;
 
@@ -218,91 +100,108 @@ export function SideBar({ className, publicId, companies }: SideBarProps) {
           </div>
 
           <div className="overflow-auto py-2">
-            <ul className="space-y-1">
-              {navigation.map((item) => {
-                const href = basePath + item.href;
-                const isActive =
-                  currentPath === href ||
-                  (currentPath === basePath && item.href === "/") ||
-                  (currentPath.includes(`${item.href}/`) && item.href !== "/");
+            {sections.map((section) => (
+              <div
+                key={section.title ?? "main"}
+                className={section.title ? "pt-3" : undefined}
+              >
+                {section.title ? (
+                  <div className="text-xs font-semibold leading-6 text-gray-400">
+                    {section.title}
+                  </div>
+                ) : null}
+                <ul className="space-y-1">
+                  {section.items.map((navItem) => {
+                    const item = { ...navItem, ...ICONS[navItem.icon] };
+                    const href = basePath + item.href;
+                    const isActive =
+                      currentPath === href ||
+                      (currentPath === basePath && item.href === "/") ||
+                      (currentPath.includes(`${item.href}/`) &&
+                        item.href !== "/");
 
-                return (
-                  <li key={item.name}>
-                    {item.subNav ? (
-                      <Accordion type="single" collapsible>
-                        <AccordionItem value="item-1" className="border-none">
-                          <div className="flex">
-                            {isActive ? (
-                              <item.activeIcon
-                                className={cn(
-                                  "ml-1 mr-1 mt-1 inline-block",
-                                  "text-primary",
-                                  "h-6 w-6 shrink-0",
-                                )}
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <item.icon
-                                className={cn(
-                                  "ml-1 mr-1 mt-1 inline-block",
-                                  "text-gray-400 group-hover:text-primary",
-                                  "h-6 w-6 shrink-0",
-                                )}
-                                aria-hidden="true"
-                              />
-                            )}
-
-                            <AccordionTrigger
-                              className={cn(
-                                isActive
-                                  ? "bg-gray-50 font-semibold text-primary"
-                                  : "text-gray-700 hover:bg-gray-50 hover:text-primary",
-                                "group flex gap-x-3 rounded-md px-2 py-1 text-sm leading-6 hover:no-underline",
-                              )}
+                    return (
+                      <li key={item.name}>
+                        {item.subNav ? (
+                          <Accordion type="single" collapsible>
+                            <AccordionItem
+                              value="item-1"
+                              className="border-none"
                             >
-                              {item.name}
-                            </AccordionTrigger>
-                          </div>
+                              <div className="flex">
+                                {isActive ? (
+                                  <item.activeIcon
+                                    className={cn(
+                                      "ml-1 mr-1 mt-1 inline-block",
+                                      "text-primary",
+                                      "h-6 w-6 shrink-0",
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <item.icon
+                                    className={cn(
+                                      "ml-1 mr-1 mt-1 inline-block",
+                                      "text-gray-400 group-hover:text-primary",
+                                      "h-6 w-6 shrink-0",
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                )}
 
-                          <AccordionContent>
-                            <ul className="space-y-1">
-                              {item.subNav.map((subItem) => {
-                                const href =
-                                  basePath + item.href + subItem.href;
-                                const isActive =
-                                  (subItem.href !== "/" &&
-                                    currentPath.includes(
-                                      item.href + subItem.href,
-                                    )) ||
-                                  href === `${currentPath}/`;
+                                <AccordionTrigger
+                                  className={cn(
+                                    isActive
+                                      ? "bg-gray-50 font-semibold text-primary"
+                                      : "text-gray-700 hover:bg-gray-50 hover:text-primary",
+                                    "group flex gap-x-3 rounded-md px-2 py-1 text-sm leading-6 hover:no-underline",
+                                  )}
+                                >
+                                  {item.name}
+                                </AccordionTrigger>
+                              </div>
 
-                                return (
-                                  <li key={subItem.name}>
-                                    <NavLink
-                                      active={isActive}
-                                      name={subItem.name}
-                                      href={href}
-                                      className="ml-9"
-                                    />
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </AccordionContent>
-                        </AccordionItem>
-                      </Accordion>
-                    ) : (
-                      <NavLink
-                        active={isActive}
-                        name={item.name}
-                        href={href}
-                        icon={isActive ? item.activeIcon : item.icon}
-                      />
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                              <AccordionContent>
+                                <ul className="space-y-1">
+                                  {item.subNav.map((subItem) => {
+                                    const href =
+                                      basePath + item.href + subItem.href;
+                                    const isActive =
+                                      (subItem.href !== "/" &&
+                                        currentPath.includes(
+                                          item.href + subItem.href,
+                                        )) ||
+                                      href === `${currentPath}/`;
+
+                                    return (
+                                      <li key={subItem.name}>
+                                        <NavLink
+                                          active={isActive}
+                                          name={subItem.name}
+                                          href={href}
+                                          className="ml-9"
+                                        />
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
+                        ) : (
+                          <NavLink
+                            active={isActive}
+                            name={item.name}
+                            href={href}
+                            icon={isActive ? item.activeIcon : item.icon}
+                          />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
 
             <div className="py-3">
               <div className="text-xs font-semibold leading-6 text-gray-400">

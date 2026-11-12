@@ -3,13 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import type { TGetCompanyList } from "@/server/company";
 import { SideBar } from "../sidebar";
+import type { EntityType } from "../sidebar/nav-config";
 
 interface SideBarProps {
   publicId: string;
   companies: TGetCompanyList;
+  entityType: EntityType;
 }
 
-export function MobileDrawer({ publicId, companies }: SideBarProps) {
+export function MobileDrawer({
+  publicId,
+  companies,
+  entityType,
+}: SideBarProps) {
   return (
     <div>
       <Sheet>
@@ -24,7 +30,11 @@ export function MobileDrawer({ publicId, companies }: SideBarProps) {
         </SheetTrigger>
         <SheetContent side="left" className="px-0">
           <div className="flex flex-col">
-            <SideBar publicId={publicId} companies={companies} />
+            <SideBar
+              publicId={publicId}
+              companies={companies}
+              entityType={entityType}
+            />
           </div>
         </SheetContent>
       </Sheet>

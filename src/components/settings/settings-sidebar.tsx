@@ -57,6 +57,13 @@ const companyNav = [
     icon: RiBankLine,
     activeIcon: RiBankFill,
   },
+
+  {
+    name: "Entity and LLC terms",
+    href: "/settings/llc",
+    icon: RiBuildingLine,
+    activeIcon: RiBuildingFill,
+  },
 ];
 
 const accountNav = [
