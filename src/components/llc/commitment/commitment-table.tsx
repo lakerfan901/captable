@@ -29,7 +29,10 @@ import { useEntity } from "@/providers/entity-provider";
 import type { CommitmentDTO } from "@/trpc/routers/commitment-router/dto";
 import type { UnitClassDTO } from "@/trpc/routers/unit-class-router/schema";
 import { CommitmentStatusBadge } from "./commitment-status-badge";
+import { DecideCommitmentDialog } from "./decide-commitment-dialog";
 import { RecordReceiptDialog } from "./record-receipt-dialog";
+import { RecordRefundDialog } from "./record-refund-dialog";
+import { RejectCommitmentDialog } from "./reject-commitment-dialog";
 
 function MemberCell({ row }: { row: CommitmentDTO }) {
   const { publicId } = useParams<{ publicId: string }>();
@@ -73,17 +76,25 @@ function RefundDueCell({ row, today }: { row: CommitmentDTO; today: string }) {
 function RowActions({
   row,
   unitClass,
+  acceptedTotalCents,
 }: {
   row: CommitmentDTO;
   unitClass: UnitClassDTO | null;
+  acceptedTotalCents: number;
 }) {
   const { publicId } = useParams<{ publicId: string }>();
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [decideOpen, setDecideOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
   const canRecord = row.status !== "REJECTED";
+  const canDecide = row.status === "PENDING";
+  const canRefund = row.refundOutstandingCents > 0;
+  // A pending commitment has acceptedCents 0, so the class total is the rest.
+  const otherAcceptedCents = acceptedTotalCents - row.acceptedCents;
 
-  if (!canRecord && !row.packetPublicId) return null;
+  if (!canRecord && !canRefund && !row.packetPublicId) return null;
 
-  // F7b adds: Accept or reduce, Reject, Record refund.
   return (
     <>
       <DropdownMenu>
@@ -98,6 +109,23 @@ function RowActions({
             <Allow action="create" subject="commitments">
               <DropdownMenuItem onSelect={() => setReceiptOpen(true)}>
                 Record receipt
+              </DropdownMenuItem>
+            </Allow>
+          ) : null}
+          {canDecide ? (
+            <Allow action="update" subject="commitments">
+              <DropdownMenuItem onSelect={() => setDecideOpen(true)}>
+                Accept or reduce
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setRejectOpen(true)}>
+                Reject
+              </DropdownMenuItem>
+            </Allow>
+          ) : null}
+          {canRefund ? (
+            <Allow action="update" subject="commitments">
+              <DropdownMenuItem onSelect={() => setRefundOpen(true)}>
+                Record refund
               </DropdownMenuItem>
             </Allow>
           ) : null}
@@ -118,6 +146,30 @@ function RowActions({
           onOpenChange={setReceiptOpen}
         />
       ) : null}
+      {canDecide ? (
+        <>
+          <DecideCommitmentDialog
+            commitment={row}
+            unitClass={unitClass}
+            otherAcceptedCents={otherAcceptedCents}
+            open={decideOpen}
+            onOpenChange={setDecideOpen}
+          />
+          <RejectCommitmentDialog
+            commitment={row}
+            unitClass={unitClass}
+            open={rejectOpen}
+            onOpenChange={setRejectOpen}
+          />
+        </>
+      ) : null}
+      {canRefund ? (
+        <RecordRefundDialog
+          commitment={row}
+          open={refundOpen}
+          onOpenChange={setRefundOpen}
+        />
+      ) : null}
     </>
   );
 }
@@ -125,10 +177,13 @@ function RowActions({
 export function CommitmentTable({
   commitments,
   unitClass,
+  acceptedTotalCents,
 }: {
   commitments: CommitmentDTO[];
-  /** The PREFERRED class (receipt previews); null when missing. */
+  /** The PREFERRED class (receipt and decision previews); null when missing. */
   unitClass: UnitClassDTO | null;
+  /** Σ acceptedCents of the class's ACCEPTED/REDUCED commitments (cap check). */
+  acceptedTotalCents: number;
 }) {
   const { timezone } = useEntity();
   const today = todayInTimeZone(timezone);
@@ -197,11 +252,15 @@ export function CommitmentTable({
         id: "actions",
         header: "",
         cell: ({ row }) => (
-          <RowActions row={row.original} unitClass={unitClass} />
+          <RowActions
+            row={row.original}
+            unitClass={unitClass}
+            acceptedTotalCents={acceptedTotalCents}
+          />
         ),
       },
     ],
-    [unitClass, today],
+    [unitClass, today, acceptedTotalCents],
   );
 
   const table = useTable({
