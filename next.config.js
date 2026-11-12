@@ -34,18 +34,15 @@ const nextConfig = {
       },
     ],
   },
-  webpack: (config, { isServer }) => {
-    /**
-     * Critical: prevents " ⨯ ./node_modules/canvas/build/Release/canvas.node
-     * Module parse failed: Unexpected character '�' (1:0)" error
-     */
-    config.resolve.alias.canvas = false;
-
-    if (isServer) {
-      config.ignoreWarnings = [{ module: /opentelemetry/ }];
-    }
-
-    return config;
+  // Turbopack is the default bundler for `next dev` and `next build` since
+  // Next.js 16, so there is no custom `webpack` function any more (a `webpack`
+  // key makes a Turbopack build fail).
+  turbopack: {
+    resolveAlias: {
+      // pdfjs-dist (via react-pdf) optionally requires the native `canvas`
+      // package, which must never be bundled.
+      canvas: "./src/lib/empty-module.ts",
+    },
   },
   serverExternalPackages: [
     "pino",
@@ -54,9 +51,6 @@ const nextConfig = {
     "@aws-sdk/s3-request-presigner",
     "@react-pdf/renderer",
   ],
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
 };
 
 const hasSentry = !!(

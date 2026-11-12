@@ -20,7 +20,7 @@
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "plugins": [{ "name": "next" }],
     "incremental": true,
 
@@ -40,7 +40,8 @@
     "**/*.js",
     ".next/types/**/*.ts",
     "src/components/onboarding/verify-email",
-    "src/app/(unauthenticated)/forgot-password"
+    "src/app/(unauthenticated)/forgot-password",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

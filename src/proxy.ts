@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { type NextRequest, userAgent } from "next/server";
 import { env } from "./env";
 
-const log = logger.child({ module: "middleware" });
+const log = logger.child({ module: "proxy" });
 // This function can be marked `async` if using `await` inside
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (env.LOGS || env.NODE_ENV === "production" || env.NODE_ENV === "staging") {
     const { url, method } = request;
     // `request.ip` and `request.geo` were removed in Next.js 15; read the
