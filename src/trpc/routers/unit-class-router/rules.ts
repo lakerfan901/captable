@@ -1,4 +1,5 @@
 // Pure validation for unit class updates. Relative imports only (vitest).
+import { formatCents } from "../../../lib/money";
 
 export type UnitClassKind = "PREFERRED" | "COMMON";
 export type BalanceReturnStartRule =
@@ -106,10 +107,15 @@ export function changedFields(
   return UNIT_CLASS_FIELDS.filter((f) => !sameValue(f, current[f], next[f]));
 }
 
-/** Returns the first rule violation as a human message, or null when valid. */
+/**
+ * Returns the first rule violation as a human message, or null when valid.
+ * `acceptedCents` is the class's accepted total (Σ `acceptedCents` of its
+ * ACCEPTED/REDUCED commitments), read after the class row lock.
+ */
 export function validateUnitClassUpdate(
   current: UnitClassCurrent,
   next: UnitClassUpdate,
+  ledger: { acceptedCents: number } = { acceptedCents: 0 },
 ): string | null {
   if (current.kind === "PREFERRED") {
     if (next.pricePerUnitCents === null || next.pricePerUnitCents <= 0) {
@@ -123,6 +129,9 @@ export function validateUnitClassUpdate(
     }
     if (!(floor > 0 && floor <= min && min <= cap)) {
       return "The waiver floor must be above zero and not above the minimum commitment, and the minimum must not exceed the offering cap (Sections 3.7 and 4.8).";
+    }
+    if (cap < ledger.acceptedCents) {
+      return `The offering cap cannot be set below the ${formatCents(ledger.acceptedCents)} already accepted (Section 4.8).`;
     }
   } else {
     if (

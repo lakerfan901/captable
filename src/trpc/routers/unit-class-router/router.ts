@@ -3,6 +3,7 @@ import { fromDateOnly } from "@/lib/date-only";
 import { centsToNumber, formatCents } from "@/lib/money";
 import { Audit } from "@/server/audit";
 import type { TPrismaOrTransaction } from "@/server/db";
+import { lockUnitClass } from "@/server/llc/commitments";
 import { dateToWire, unitsToWire } from "@/server/llc/serialize";
 import { createTRPCRouter, withLlcAccessControl } from "@/trpc/api/trpc";
 import {
@@ -129,6 +130,10 @@ export const unitClassRouter = createTRPCRouter({
       const { id, confirmAmendment, amendmentReason, ...terms } = input;
 
       return ctx.db.$transaction(async (tx) => {
+        // Take the class row lock first (the same lock every ledger write
+        // takes), so `termsLocked`, units issued and the accepted total are
+        // read after any acceptance in flight has committed (M2).
+        await lockUnitClass(tx, companyId, id);
         const [current] = await loadUnitClasses(tx, companyId, id);
         if (!current) {
           throw new TRPCError({
@@ -136,12 +141,20 @@ export const unitClassRouter = createTRPCRouter({
             message: "Unit class not found.",
           });
         }
-
-        const error = validateUnitClassUpdate(current, {
-          ...terms,
-          confirmAmendment,
-          amendmentReason,
+        const accepted = await tx.commitment.aggregate({
+          where: {
+            companyId,
+            unitClassId: id,
+            status: { in: ["ACCEPTED", "REDUCED"] },
+          },
+          _sum: { acceptedCents: true },
         });
+
+        const error = validateUnitClassUpdate(
+          current,
+          { ...terms, confirmAmendment, amendmentReason },
+          { acceptedCents: centsToNumber(accepted._sum.acceptedCents ?? 0n) },
+        );
         if (error) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error });
         }

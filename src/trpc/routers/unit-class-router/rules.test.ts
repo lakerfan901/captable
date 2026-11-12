@@ -150,4 +150,21 @@ describe("validateUnitClassUpdate", () => {
       ),
     ).toBe("Cannot authorize fewer units than are issued");
   });
+
+  it("M2: rejects an offering cap below the accepted total, even as an amendment", () => {
+    const locked = { ...preferred, termsLocked: true };
+    const next = update(locked, {
+      offeringCapCents: 10000000,
+      confirmAmendment: true,
+      amendmentReason: "reduce the offering",
+    });
+    expect(
+      validateUnitClassUpdate(locked, next, { acceptedCents: 25000000 }),
+    ).toBe(
+      "The offering cap cannot be set below the $250,000.00 already accepted (Section 4.8).",
+    );
+    expect(
+      validateUnitClassUpdate(locked, next, { acceptedCents: 10000000 }),
+    ).toBeNull();
+  });
 });
