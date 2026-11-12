@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { NavBar } from "@/components/dashboard/navbar";
 import { SideBar } from "@/components/dashboard/sidebar";
@@ -26,7 +27,10 @@ const DashboardLayout = async (props: DashboardLayoutProps) => {
   const { user } = await withServerComponentSession();
 
   if (user.companyPublicId !== publicId) {
-    redirect(`/${user.companyPublicId}`);
+    // The switch page verifies membership of `publicId` from the database and
+    // falls back to the current company when the user is not a member.
+    const next = (await headers()).get("x-pathname") ?? `/${publicId}`;
+    redirect(`/switch/${publicId}?next=${encodeURIComponent(next)}`);
   }
 
   const [companies, permissionsData, entity] = await Promise.all([

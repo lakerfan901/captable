@@ -18,7 +18,12 @@ export function proxy(request: NextRequest) {
 
     log.info({ method, time, url, ip, device, browser, isBot });
   }
-  return NextResponse.next();
+  // Forward the requested path to server components (used by the dashboard
+  // layout to send a cross-company deep link through /switch). Always
+  // overwritten here, so a client-supplied value never reaches them.
+  const headers = new Headers(request.headers);
+  headers.set("x-pathname", request.nextUrl.pathname + request.nextUrl.search);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {
