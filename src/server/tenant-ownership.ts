@@ -55,12 +55,12 @@ export interface TenantOwnershipLoaders {
 }
 
 export type CompanyOwnedRefs = {
-  bucketIds?: (string | null | undefined)[];
-  stakeholderIds?: (string | null | undefined)[];
-  shareClassIds?: (string | null | undefined)[];
-  equityPlanIds?: (string | null | undefined)[];
-  documentIds?: (string | null | undefined)[];
-  memberIds?: (string | null | undefined)[];
+  bucketIds?: readonly (string | null | undefined)[];
+  stakeholderIds?: readonly (string | null | undefined)[];
+  shareClassIds?: readonly (string | null | undefined)[];
+  equityPlanIds?: readonly (string | null | undefined)[];
+  documentIds?: readonly (string | null | undefined)[];
+  memberIds?: readonly (string | null | undefined)[];
 };
 
 /**
@@ -81,7 +81,9 @@ export function isBucketOwnedByCompany(
   );
 }
 
-function uniqueIds(ids: (string | null | undefined)[] | undefined): string[] {
+function uniqueIds(
+  ids: readonly (string | null | undefined)[] | undefined,
+): string[] {
   return [...new Set((ids ?? []).filter((id): id is string => !!id))];
 }
 
@@ -113,7 +115,10 @@ export async function findForeignReference(
     }
   }
 
-  const scoped: [CompanyScopedEntity, (string | null | undefined)[]?][] = [
+  const scoped: [
+    CompanyScopedEntity,
+    (readonly (string | null | undefined)[])?,
+  ][] = [
     ["stakeholder", refs.stakeholderIds],
     ["shareClass", refs.shareClassIds],
     ["equityPlan", refs.equityPlanIds],
