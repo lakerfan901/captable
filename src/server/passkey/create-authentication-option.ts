@@ -3,7 +3,6 @@ import { db } from "@/server/db";
 import type { PasskeyAudit } from "@/trpc/routers/passkey-router/schema";
 import type { Passkey } from "@prisma/client";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
-import type { AuthenticatorTransportFuture } from "@simplewebauthn/types";
 import { Audit } from "../audit";
 
 type CreatePasskeyAuthenticationOptions = {
@@ -55,9 +54,7 @@ export const createPasskeyAuthenticationOptions = async ({
       ? [
           {
             id: Buffer.from(preferredPasskey.credentialId).toString("utf8"),
-            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-            transports:
-              preferredPasskey.transports as AuthenticatorTransportFuture[],
+            transports: preferredPasskey.transports,
           },
         ]
       : undefined,

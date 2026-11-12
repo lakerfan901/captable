@@ -1,4 +1,5 @@
 import { isSentryEnabled } from "@/constants/sentry";
+import * as Sentry from "@sentry/nextjs";
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
@@ -15,3 +16,7 @@ export async function register() {
     await import("../sentry.edge.config");
   }
 }
+
+// Reports errors from Server Components, route handlers and the proxy. It is a
+// no-op when Sentry was not initialised in `register()`.
+export const onRequestError = Sentry.captureRequestError;

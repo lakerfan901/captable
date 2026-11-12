@@ -4,7 +4,6 @@ import { db } from "@/server/db";
 import type { PasskeyAudit } from "@/trpc/routers/passkey-router/schema";
 import { generateRegistrationOptions } from "@simplewebauthn/server";
 import { isoUint8Array } from "@simplewebauthn/server/helpers";
-import type { AuthenticatorTransportFuture } from "@simplewebauthn/types";
 import { Audit } from "../audit";
 
 type CreatePasskeyRegistrationOptions = {
@@ -39,8 +38,7 @@ export const createPasskeyRegistrationOptions = async ({
     attestationType: "none",
     excludeCredentials: passkeys.map((passkey) => ({
       id: Buffer.from(passkey.credentialId).toString("utf8"),
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      transports: passkey.transports as AuthenticatorTransportFuture[],
+      transports: passkey.transports,
     })),
   });
 

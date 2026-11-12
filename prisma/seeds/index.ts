@@ -3,7 +3,6 @@ import colors from "colors";
 import inquirer from "inquirer";
 colors.enable();
 
-import type { QuestionCollection } from "inquirer";
 import seedCompanies from "./companies";
 import seedTeam from "./team";
 
@@ -13,14 +12,13 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const seed = async () => {
-  const inquiry = await inquirer.prompt({
-    type: "confirm",
-    name: "answer",
-    message: "Are you sure you want to NUKE 🚀 and re-seed the database?",
-  } as QuestionCollection);
-
-  // const answer = true;
-  const answer = inquiry.answer as boolean;
+  const { answer } = await inquirer.prompt<{ answer: boolean }>([
+    {
+      type: "confirm",
+      name: "answer",
+      message: "Are you sure you want to NUKE 🚀 and re-seed the database?",
+    },
+  ]);
 
   if (answer) {
     await nuke();

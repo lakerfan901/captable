@@ -239,10 +239,10 @@ export const authOptions: NextAuthOptions = {
           expectedChallenge: challengeToken.token,
           expectedOrigin: origin,
           expectedRPID: rpId,
-          authenticator: {
-            //@ts-expect-error error
-            credentialID: new Uint8Array(Array.from(passkey.credentialId)),
-            credentialPublicKey: new Uint8Array(passkey.credentialPublicKey),
+          credential: {
+            // Stored as the UTF-8 bytes of the base64url credential ID.
+            id: Buffer.from(passkey.credentialId).toString("utf8"),
+            publicKey: new Uint8Array(passkey.credentialPublicKey),
             counter: Number(passkey.counter),
           },
         }).catch(() => null);
