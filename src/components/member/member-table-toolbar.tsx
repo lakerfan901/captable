@@ -7,7 +7,7 @@ import { statusValues } from "./data";
 
 export function MemberTableToolbar() {
   const { table } = useDataTable();
-  const isFiltered = table.getState().columnFilters.length > 0;
+  const isFiltered = table.state.columnFilters.length > 0;
 
   return (
     <div className="flex w-full items-center justify-between">

@@ -4,15 +4,13 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-  type VisibilityState,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  type ColumnVisibilityState,
+  useTable,
 } from "@tanstack/react-table";
+import {
+  type DataTableFeatures,
+  dataTableFeatures,
+} from "@/components/ui/data-table/features";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +46,7 @@ type SafesType = {
   safes: Safe;
 };
 
-export const columns: ColumnDef<Safe[number]>[] = [
+export const columns: ColumnDef<DataTableFeatures, Safe[number]>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -298,10 +296,11 @@ export const SafeTable = ({ safes }: SafesType) => {
     [],
   );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
 
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data: safes ?? [],
     columns: columns,
     enableRowSelection: true,
@@ -309,12 +308,6 @@ export const SafeTable = ({ safes }: SafesType) => {
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
     state: {
       sorting,
       columnFilters,

@@ -21,15 +21,13 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-  type VisibilityState,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  type ColumnVisibilityState,
+  useTable,
 } from "@tanstack/react-table";
+import {
+  type DataTableFeatures,
+  dataTableFeatures,
+} from "@/components/ui/data-table/features";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import React, { useState } from "react";
@@ -119,7 +117,7 @@ const UpdateActions = (row: { original: Update[number] }) => {
   );
 };
 
-export const columns: ColumnDef<Update[number]>[] = [
+export const columns: ColumnDef<DataTableFeatures, Update[number]>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -179,10 +177,11 @@ const UpdateTable = ({ updates }: UpdateTableType) => {
     [],
   );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
 
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data: updates,
     columns: columns,
     enableRowSelection: true,
@@ -190,12 +189,6 @@ const UpdateTable = ({ updates }: UpdateTableType) => {
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
     state: {
       sorting,
       columnFilters,

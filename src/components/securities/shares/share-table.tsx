@@ -4,15 +4,13 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-  type VisibilityState,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  type ColumnVisibilityState,
+  useTable,
 } from "@tanstack/react-table";
+import {
+  type DataTableFeatures,
+  dataTableFeatures,
+} from "@/components/ui/data-table/features";
 import * as React from "react";
 
 import { dayjsExt } from "@/common/dayjs";
@@ -82,7 +80,7 @@ const StatusColorProvider = (type: string) => {
   }
 };
 
-export const columns: ColumnDef<Share[number]>[] = [
+export const columns: ColumnDef<DataTableFeatures, Share[number]>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -352,10 +350,11 @@ const ShareTable = ({ shares }: SharesType) => {
     [],
   );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
 
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data: shares ?? [],
     columns: columns,
     enableRowSelection: true,
@@ -363,12 +362,6 @@ const ShareTable = ({ shares }: SharesType) => {
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
     state: {
       sorting,
       columnFilters,

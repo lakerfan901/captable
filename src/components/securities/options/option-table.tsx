@@ -4,15 +4,13 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-  type VisibilityState,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  type ColumnVisibilityState,
+  useTable,
 } from "@tanstack/react-table";
+import {
+  type DataTableFeatures,
+  dataTableFeatures,
+} from "@/components/ui/data-table/features";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +46,7 @@ type OptionsType = {
   options: Option;
 };
 
-export const columns: ColumnDef<Option[number]>[] = [
+export const columns: ColumnDef<DataTableFeatures, Option[number]>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -290,10 +288,11 @@ const OptionTable = ({ options }: OptionsType) => {
     [],
   );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
 
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data: options ?? [],
     columns: columns,
     enableRowSelection: true,
@@ -301,12 +300,6 @@ const OptionTable = ({ options }: OptionsType) => {
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
     state: {
       sorting,
       columnFilters,

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { RiAddCircleLine, RiCheckLine } from "@remixicon/react";
-import { type Column } from "@tanstack/react-table";
+import type { CellData, Column, RowData } from "@tanstack/react-table";
 import * as React from "react";
 import { Badge } from "../badge";
 import { Button } from "../button";
@@ -15,9 +15,13 @@ import {
 } from "../command";
 import { Popover, PopoverContent, PopoverTrigger } from "../popover";
 import { Separator } from "../separator";
+import type { DataTableFeatures } from "./features";
 
-interface DataTableFacetedFilterProps<TData, TValue> {
-  column?: Column<TData, TValue>;
+interface DataTableFacetedFilterProps<
+  TData extends RowData,
+  TValue extends CellData,
+> {
+  column?: Column<DataTableFeatures, TData, TValue>;
   title?: string;
   options: {
     label: string;
@@ -26,7 +30,10 @@ interface DataTableFacetedFilterProps<TData, TValue> {
   }[];
 }
 
-export function DataTableFacetedFilter<TData, TValue>({
+export function DataTableFacetedFilter<
+  TData extends RowData,
+  TValue extends CellData,
+>({
   column,
   title,
   options,
