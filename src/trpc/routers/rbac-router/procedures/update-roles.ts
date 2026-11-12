@@ -1,6 +1,7 @@
 import { getRoleById } from "@/lib/rbac/access-control";
 import { Audit } from "@/server/audit";
 import { withAccessControl } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { ZodUpdateRoleMutationSchema } from "../schema";
 import { extractPermission } from "./create-role";
 
@@ -27,6 +28,17 @@ export const updateRolesProcedure = withAccessControl
 
         if (!id.customRoleId) {
           throw new Error("role id not found");
+        }
+
+        // Editing the permissions of the role you hold is self-escalation.
+        if (
+          membership.role !== "ADMIN" &&
+          membership.customRoleId === id.customRoleId
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You cannot change the permissions of your own role.",
+          });
         }
 
         const role = await db.customRole.update({

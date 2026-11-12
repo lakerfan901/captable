@@ -335,6 +335,8 @@ export async function checkMembership({ session, tx }: checkMembershipOptions) {
     where: {
       id: session.user.memberId,
       companyId: session.user.companyId,
+      // A JWT outlives deactivation; only ACTIVE members pass.
+      status: "ACTIVE",
       isOnboarded: true,
     },
     select: {
