@@ -1,35 +1,43 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.7.3/schema.json",
-  "organizeImports": {
-    "enabled": true,
-    "ignore": [
-      "node_modules",
-      ".next",
-      "dist",
-      "public/pdf.worker.min.mjs",
-      "./prisma/enums.ts",
-      "./prisma/generated/*",
-      "./src/components/ui/simple-multi-select.tsx"
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
+  "assist": {
+    "actions": { "source": { "organizeImports": "on" } },
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/.next",
+      "!**/dist",
+      "!**/public/pdf.worker.min.mjs",
+      "!prisma/enums.ts",
+      "!prisma/generated/**/*",
+      "!src/components/ui/simple-multi-select.tsx"
     ]
+  },
+  "markdown": { "formatter": { "enabled": false } },
+  "css": {
+    "parser": { "tailwindDirectives": true },
+    "formatter": { "enabled": false },
+    "linter": { "enabled": false }
   },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "useAwait": "error"
       },
       "correctness": { "noUnusedVariables": "warn" },
       "style": { "useImportType": "error" }
     },
-    "ignore": [
-      "node_modules",
-      ".next",
-      "dist",
-      "public/pdf.worker.min.mjs",
-      "./prisma/enums.ts",
-      "./prisma/generated/*",
-      "./src/components/ui/simple-multi-select.tsx"
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/.next",
+      "!**/dist",
+      "!**/public/pdf.worker.min.mjs",
+      "!prisma/enums.ts",
+      "!prisma/generated/**/*",
+      "!src/components/ui/simple-multi-select.tsx"
     ]
   },
   "formatter": {
@@ -40,13 +48,14 @@
     "lineEnding": "lf",
     "lineWidth": 80,
     "attributePosition": "auto",
-    "ignore": [
-      "node_modules",
-      ".next",
-      "dist",
-      "public/pdf.worker.min.mjs",
-      "./prisma/enums.ts",
-      "./prisma/generated/*"
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/.next",
+      "!**/dist",
+      "!**/public/pdf.worker.min.mjs",
+      "!prisma/enums.ts",
+      "!prisma/generated/**/*"
     ]
   }
 }

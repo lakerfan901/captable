@@ -1,7 +1,7 @@
 const path = require("node:path");
 
 const buildBiomeCommand = (filenames) =>
-  `biome check --apply --no-errors-on-unmatched ${filenames
+  `biome check --write --no-errors-on-unmatched ${filenames
     .map((f) => path.relative(process.cwd(), f))
     .join(" ")}`;
 

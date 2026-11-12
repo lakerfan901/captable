@@ -21,7 +21,7 @@
     "start": "next start",
     "postinstall": "prisma generate",
     "prepare": "husky",
-    "lint": "biome check --apply ./src",
+    "lint": "biome check --write ./src",
     "email:dev": "mailpit",
     "format": "biome format --write ./src && prisma format",
     "email:preview": "email dev --dir ./src/emails",
@@ -124,7 +124,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.7.3",
+    "@biomejs/biome": "2.6.6",
     "@faker-js/faker": "^10.6.0",
     "@flydotio/dockerfile": "^0.7.15",
     "@next/bundle-analyzer": "^16.4.6",
