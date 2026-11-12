@@ -72,6 +72,9 @@ export const eSignCompletePDFWorker = defineWorker(config, async (job) => {
     recipients.map((recipient) => ({
       data: {
         fileUrl: file.url,
+        fileKey: bucketData.key,
+        companyId,
+        templateId,
         documentName: templateName,
         recipient,
         company,
