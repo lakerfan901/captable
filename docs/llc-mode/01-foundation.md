@@ -486,12 +486,12 @@ model EmailLog {
 1. Before editing the schema, confirm there is no drift: against a scratch Postgres 15 with all existing migrations applied, `node_modules/.bin/prisma migrate diff` from the migrations directory to the unedited schema must report no difference (check the flag names with `node_modules/.bin/prisma migrate diff --help`; Prisma 7 renamed them). If it reports a difference, stop and report.
 2. Apply C2–C4 of this file and section C of `02-economics.md` and `03-governance.md` to `prisma/schema.prisma` (shared columns once), run `node_modules/.bin/prisma format` and `node_modules/.bin/prisma validate`.
 3. Generate without applying: `node_modules/.bin/prisma migrate dev --create-only --name llc_mode` (local database from `compose.yml`).
-4. Hand-edit the generated `migration.sql` so that the `Stakeholder` email part reads, in this order:
+4. Hand-edit the generated `migration.sql` so that the `Stakeholder` email part reads, in this order (the index is dropped first: lower-casing while the global case-sensitive index still exists fails on case variants in different companies), and wrap the whole file in `BEGIN;` … `COMMIT;` (`prisma migrate deploy` does not run a migration in a transaction by itself):
 
 ```sql
 -- Emails become unique per company and are stored lower-cased.
-UPDATE "Stakeholder" SET "email" = lower("email") WHERE "email" <> lower("email");
 DROP INDEX "Stakeholder_email_key";
+UPDATE "Stakeholder" SET "email" = lower("email") WHERE "email" <> lower("email");
 CREATE UNIQUE INDEX "Stakeholder_companyId_email_key" ON "Stakeholder"("companyId", "email");
 ```
 
@@ -500,7 +500,7 @@ CREATE UNIQUE INDEX "Stakeholder_companyId_email_key" ON "Stakeholder"("companyI
    - New tables and enum types cannot affect existing rows.
    - New columns are nullable or have a constant default; on Postgres 15 `ADD COLUMN … DEFAULT <constant>` does not rewrite the table. The live tables hold one company, one user and no cap-table rows.
    - `Company.entityType` defaults to `CORPORATION`, so the live company behaves exactly as before until the owner switches it (F2).
-   - The email index swap cannot fail on data: values that were globally unique are unique per company. The `UPDATE` can only collide if two rows differ by letter case alone; the migration runs in one transaction, so a collision aborts it with nothing changed. Run `SELECT lower(email), count(*) FROM "Stakeholder" GROUP BY 1 HAVING count(*) > 1;` on production first (expected: zero rows).
+   - The email index swap cannot fail on data: values that were globally unique are unique per company. The new index can only fail if two rows of the same company differ by letter case alone; the migration runs in one explicit transaction (`BEGIN;`/`COMMIT;` in the file), so a collision aborts it with nothing changed (the failed row in `_prisma_migrations` then needs `prisma migrate resolve --rolled-back`). Run `SELECT lower(email), count(*) FROM "Stakeholder" GROUP BY 1 HAVING count(*) > 1;` on production first (expected: zero rows).
    - No backfill is needed for any other column.
 7. Run `node_modules/.bin/prisma migrate dev` (applies it locally), `node_modules/.bin/prisma generate`, commit `prisma/schema.prisma`, the migration folder and the regenerated `prisma/enums.ts`.
 8. Rollback plan: the migration is forward-only. Because it is additive, the previous application image keeps working against the migrated database (the old Prisma client ignores unknown columns and tables), except that a duplicate stakeholder email across companies would no longer be rejected.
