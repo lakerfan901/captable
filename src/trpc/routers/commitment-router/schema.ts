@@ -49,8 +49,9 @@ export const ZodCreateCommitmentSchema = z.object({
 export const ZodUpdateCommitmentSchema = z.object({
   id: ZId,
   committedCents: ZPositiveCents.optional(),
-  signedOn: ZDateOnly.optional(),
-  investmentSummaryDate: ZDateOnly.optional(),
+  // `null` clears the date; leaving the key out keeps the stored value.
+  signedOn: ZDateOnly.nullable().optional(),
+  investmentSummaryDate: ZDateOnly.nullable().optional(),
   accreditationBasis: ZAccreditationBasis.optional(),
   notes: z.string().max(2000).optional(),
 });
