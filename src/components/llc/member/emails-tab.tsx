@@ -1,10 +1,12 @@
-import { Alert, AlertDescription } from "@/components/ui/alert";
+"use client";
 
-// FOUNDATION F10 replaces this stub; keep the prop type.
-export function EmailsTab(_props: { stakeholderId: string }) {
+import { EmailLogTable } from "@/components/llc/email/email-log-table";
+
+export function EmailsTab({ stakeholderId }: { stakeholderId: string }) {
   return (
-    <Alert>
-      <AlertDescription>Nothing here yet</AlertDescription>
-    </Alert>
+    <EmailLogTable
+      stakeholderId={stakeholderId}
+      emptyText="No emails have been sent to this member yet."
+    />
   );
 }
