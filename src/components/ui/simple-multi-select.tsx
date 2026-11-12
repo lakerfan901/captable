@@ -143,8 +143,10 @@ const MultiSelector = ({
     >
       <Command
         onKeyDown={handleKeyDown}
+        // v3 `space-y-2` semantics: cmdk renders a visually hidden <label>
+        // first, which would take v4's margin-bottom instead of the trigger.
         className={cn(
-          "overflow-visible bg-transparent flex flex-col space-y-2",
+          "overflow-visible bg-transparent flex flex-col [&>:not([hidden])~:not([hidden])]:mt-2",
           className,
         )}
         dir={dir}
