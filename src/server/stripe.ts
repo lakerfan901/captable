@@ -1,5 +1,10 @@
 import { env } from "@/env";
 import { invariant } from "@/lib/error";
+import {
+  PricingPlanInterval,
+  PricingType,
+  SubscriptionStatus,
+} from "@/prisma/enums";
 import Stripe from "stripe";
 import { type TPrismaOrTransaction, db } from "./db";
 
@@ -9,9 +14,11 @@ const toDateTime = (secs: number) => {
   return t;
 };
 
+// Pinned to the API version that this stripe-node major is generated for, so
+// the TypeScript types match the responses. Bump it together with `stripe`.
 export const stripe = new Stripe(env.STRIPE_API_KEY ?? "", {
   typescript: true,
-  apiVersion: "2024-04-10",
+  apiVersion: "2026-10-28.endive",
 });
 
 export { Stripe };
@@ -52,15 +59,46 @@ export async function deletePriceRecord(price: Stripe.Price) {
 
 const TRIAL_PERIOD_DAYS = 0;
 
+// Stripe's enums are open-ended (new values can appear without an SDK
+// release); the database enums are not.
+const toPricingType = (type: Stripe.Price.Type): PricingType => {
+  invariant(
+    Object.hasOwn(PricingType, type),
+    `Unsupported Stripe price type: ${type}`,
+  );
+  return type as PricingType;
+};
+
+const toPricingPlanInterval = (
+  interval: Stripe.Price.Recurring.Interval | undefined,
+): PricingPlanInterval | undefined => {
+  if (interval === undefined) return undefined;
+  invariant(
+    Object.hasOwn(PricingPlanInterval, interval),
+    `Unsupported Stripe price interval: ${interval}`,
+  );
+  return interval as PricingPlanInterval;
+};
+
+const toSubscriptionStatus = (
+  status: Stripe.Subscription.Status,
+): SubscriptionStatus => {
+  invariant(
+    Object.hasOwn(SubscriptionStatus, status),
+    `Unsupported Stripe subscription status: ${status}`,
+  );
+  return status as SubscriptionStatus;
+};
+
 export async function upsertPriceRecord(price: Stripe.Price) {
   const priceData = {
     id: price.id,
     productId: typeof price.product === "string" ? price.product : "",
     active: price.active,
     currency: price.currency,
-    type: price.type,
+    type: toPricingType(price.type),
     unitAmount: price.unit_amount,
-    interval: price.recurring?.interval,
+    interval: toPricingPlanInterval(price.recurring?.interval),
     intervalCount: price.recurring?.interval_count,
     trialPeriodDays: price.recurring?.trial_period_days ?? TRIAL_PERIOD_DAYS,
   };
@@ -98,7 +136,7 @@ export const manageSubscriptionStatusChange = async (
   const data = {
     customerId: customer.id,
     metadata: subscription.metadata,
-    status: subscription.status,
+    status: toSubscriptionStatus(subscription.status),
     priceId: item.price.id,
     quantity: item.quantity ?? 1,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -108,11 +146,13 @@ export const manageSubscriptionStatusChange = async (
     canceledAt: subscription.canceled_at
       ? toDateTime(subscription.canceled_at)
       : undefined,
-    currentPeriodStart: subscription.current_period_start
-      ? toDateTime(subscription.current_period_start)
+    // Since API version 2025-03-31.basil the billing period lives on the
+    // subscription item rather than the subscription.
+    currentPeriodStart: item.current_period_start
+      ? toDateTime(item.current_period_start)
       : undefined,
-    currentPeriodEnd: subscription.current_period_end
-      ? toDateTime(subscription.current_period_end)
+    currentPeriodEnd: item.current_period_end
+      ? toDateTime(item.current_period_end)
       : undefined,
     created: toDateTime(subscription.created),
     endedAt: subscription.ended_at
