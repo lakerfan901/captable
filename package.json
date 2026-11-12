@@ -99,7 +99,7 @@
     "papaparse": "^5.7.0",
     "pdf-lib": "^1.17.1",
     "pg": "^8.23.1",
-    "pg-boss": "^10.4.2",
+    "pg-boss": "^12.38.2",
     "pino": "^9.14.0",
     "pino-pretty": "^11.3.0",
     "prisma-extension-pagination": "^0.7.6",
