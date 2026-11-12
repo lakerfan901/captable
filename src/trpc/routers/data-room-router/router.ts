@@ -327,6 +327,7 @@ export const dataRoomRouter = createTRPCRouter({
             link,
             email,
             senderEmail,
+            companyId,
           });
 
           await db.$transaction(async (tx) => {

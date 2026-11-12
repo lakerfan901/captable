@@ -38,15 +38,18 @@ export const sendMemberInviteEmailWorker = defineWorker(config, async (job) => {
   const inviteLink = `${baseUrl}/verify-member/${verificationToken}?${params.toString()}`;
   console.log("sending invite email to", email, ": ", inviteLink);
 
-  await sendMail({
-    to: email,
-    subject: `Join ${company.name} on ${constants.title}`,
-    html: await render(
-      MemberInviteEmail({
-        inviteLink,
-        companyName: company.name,
-        invitedBy: `${user.name || user.email}`,
-      }),
-    ),
-  });
+  await sendMail(
+    {
+      to: email,
+      subject: `Join ${company.name} on ${constants.title}`,
+      html: await render(
+        MemberInviteEmail({
+          inviteLink,
+          companyName: company.name,
+          invitedBy: `${user.name || user.email}`,
+        }),
+      ),
+    },
+    { kind: "team.invite", companyId: company.id },
+  );
 });

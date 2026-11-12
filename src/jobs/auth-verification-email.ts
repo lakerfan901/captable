@@ -25,9 +25,12 @@ export const authVerificationEmailWorker = defineWorker(config, async (job) => {
     }),
   );
 
-  await sendMail({
-    to: email,
-    subject: "Confirm your email",
-    html,
-  });
+  await sendMail(
+    {
+      to: email,
+      subject: "Confirm your email",
+      html,
+    },
+    { kind: "auth.verify-email" },
+  );
 });

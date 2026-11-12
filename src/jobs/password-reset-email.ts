@@ -26,9 +26,12 @@ export const passwordResetEmailWorker = defineWorker(config, async (job) => {
     }),
   );
 
-  await sendMail({
-    to: email,
-    subject: "Reset your password",
-    html,
-  });
+  await sendMail(
+    {
+      to: email,
+      subject: "Reset your password",
+      html,
+    },
+    { kind: "auth.password-reset" },
+  );
 });

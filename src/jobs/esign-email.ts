@@ -59,7 +59,7 @@ export const eSignNotificationEmailWorker = defineWorker(
 
     const baseUrl = env.NEXT_PUBLIC_BASE_URL;
 
-    await db.$transaction(async (tx) => {
+    const templateId = await db.$transaction(async (tx) => {
       const recipient = await tx.esignRecipient.update({
         where: {
           id: job.data.recipient.id,
@@ -86,6 +86,8 @@ export const eSignNotificationEmailWorker = defineWorker(
         },
         tx,
       );
+
+      return recipient.templateId;
     });
 
     const html = await render(
@@ -96,14 +98,22 @@ export const eSignNotificationEmailWorker = defineWorker(
         ...rest,
       }),
     );
-    await sendMail({
-      to: email,
-      ...(sender?.email && { replyTo: sender.email }),
-      subject: "eSign Document Request",
-      html,
-      headers: {
-        "X-From-Name": sender?.name || "Captable",
+    await sendMail(
+      {
+        to: email,
+        ...(sender?.email && { replyTo: sender.email }),
+        subject: "eSign Document Request",
+        html,
+        headers: {
+          "X-From-Name": sender?.name || "Captable",
+        },
       },
-    });
+      {
+        kind: "esign.request",
+        companyId,
+        relatedType: "template",
+        relatedId: templateId,
+      },
+    );
   },
 );

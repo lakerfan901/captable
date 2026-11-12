@@ -16,6 +16,7 @@ const config = defineWorkerConfig({
     email: z.string().email(),
     recipientName: z.string().nullish(),
     senderEmail: z.string().email().nullish(),
+    companyId: z.string().optional(),
   }),
 });
 
@@ -30,23 +31,27 @@ export const shareUpdateEmailWorker = defineWorker(config, async (job) => {
     senderName,
     email,
     senderEmail,
+    companyId,
   } = job.data;
-  await sendMail({
-    to: email,
-    ...(senderEmail && { replyTo: senderEmail }),
-    subject: `${senderName} shared an update - ${update.title}`,
-    html: await render(
-      ShareUpdateEmail({
-        senderName: senderName,
-        recipientName,
-        companyName,
-        updateTitle: update.title,
-        link,
-      }),
-    ),
+  await sendMail(
+    {
+      to: email,
+      ...(senderEmail && { replyTo: senderEmail }),
+      subject: `${senderName} shared an update - ${update.title}`,
+      html: await render(
+        ShareUpdateEmail({
+          senderName: senderName,
+          recipientName,
+          companyName,
+          updateTitle: update.title,
+          link,
+        }),
+      ),
 
-    headers: {
-      "X-From-Name": senderName,
+      headers: {
+        "X-From-Name": senderName,
+      },
     },
-  });
+    { kind: "update.share", companyId },
+  );
 });

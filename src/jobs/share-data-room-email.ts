@@ -14,6 +14,7 @@ const config = defineWorkerConfig({
     companyName: z.string(),
     recipientName: z.string().nullish(),
     senderEmail: z.string().email().nullish(),
+    companyId: z.string().optional(),
   }),
 });
 
@@ -28,23 +29,27 @@ export const shareDataRoomEmailWorker = defineWorker(config, async (job) => {
     senderName,
     email,
     senderEmail,
+    companyId,
   } = job.data;
-  await sendMail({
-    to: email,
-    ...(senderEmail && { replyTo: senderEmail }),
-    subject: `${senderName} shared a data room - ${dataRoom}`,
-    html: await render(
-      ShareDataRoomEmail({
-        senderName: senderName,
-        recipientName,
-        companyName,
-        dataRoom,
-        link,
-      }),
-    ),
+  await sendMail(
+    {
+      to: email,
+      ...(senderEmail && { replyTo: senderEmail }),
+      subject: `${senderName} shared a data room - ${dataRoom}`,
+      html: await render(
+        ShareDataRoomEmail({
+          senderName: senderName,
+          recipientName,
+          companyName,
+          dataRoom,
+          link,
+        }),
+      ),
 
-    headers: {
-      "X-From-Name": senderName,
+      headers: {
+        "X-From-Name": senderName,
+      },
     },
-  });
+    { kind: "dataroom.share", companyId },
+  );
 });

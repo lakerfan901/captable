@@ -107,6 +107,7 @@ export const shareUpdateProcedure = withAuth
           link,
           email,
           senderEmail,
+          companyId,
         });
       }
     };
