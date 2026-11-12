@@ -3,8 +3,10 @@ import { getAuthenticatorOptions } from "@/lib/authenticator";
 import { CredentialDeviceTypeEnum } from "@/prisma/enums";
 import { db } from "@/server/db";
 import type { PasskeyAudit } from "@/trpc/routers/passkey-router/schema";
-import { verifyRegistrationResponse } from "@simplewebauthn/server";
-import type { RegistrationResponseJSON } from "@simplewebauthn/types";
+import {
+  type RegistrationResponseJSON,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
 import { Audit } from "../audit";
 
 type CreatePasskeyOptions = {
@@ -76,22 +78,20 @@ export const createPasskey = async ({
     throw new Error("Verification failed");
   }
 
-  const {
-    credentialPublicKey,
-    credentialID,
-    counter,
-    credentialDeviceType,
-    credentialBackedUp,
-  } = verification.registrationInfo;
+  const { credential, credentialDeviceType, credentialBackedUp } =
+    verification.registrationInfo;
 
   await db.$transaction(async (tx) => {
     const passkey = await tx.passkey.create({
       data: {
         userId,
         name: passkeyName,
-        credentialId: Buffer.from(credentialID),
-        credentialPublicKey: Buffer.from(credentialPublicKey),
-        counter,
+        // `credential.id` is the base64url credential ID; it is stored as its
+        // UTF-8 bytes, matching how existing rows were written and how
+        // sign-in looks them up.
+        credentialId: Buffer.from(credential.id),
+        credentialPublicKey: Buffer.from(credential.publicKey),
+        counter: credential.counter,
         credentialDeviceType:
           credentialDeviceType === "singleDevice"
             ? CredentialDeviceTypeEnum.SINGLE_DEVICE

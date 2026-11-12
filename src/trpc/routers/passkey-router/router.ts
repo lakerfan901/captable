@@ -4,7 +4,7 @@ import { createPasskeyRegistrationOptions } from "@/server/passkey/create-regist
 import { deletePasskey } from "@/server/passkey/delete-passkey";
 import { findPasskeys } from "@/server/passkey/find-passkeys";
 import { updatePasskey } from "@/server/passkey/update-passkey";
-import type { RegistrationResponseJSON } from "@simplewebauthn/types";
+import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { TRPCError } from "@trpc/server";
 import cookie from "cookie";
 
