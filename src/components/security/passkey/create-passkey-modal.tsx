@@ -93,9 +93,9 @@ const PasskeyModal = ({ title, subtitle, trigger }: PasskeyModalType) => {
       const passkeyRegistrationOptions =
         await createPasskeyRegistrationOptions();
 
-      const registrationResult = await startRegistration(
-        passkeyRegistrationOptions,
-      );
+      const registrationResult = await startRegistration({
+        optionsJSON: passkeyRegistrationOptions,
+      });
 
       await createPasskey({
         passkeyName,

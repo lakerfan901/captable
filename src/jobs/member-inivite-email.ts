@@ -2,7 +2,7 @@ import MemberInviteEmail from "@/emails/MemberInviteEmail";
 import { env } from "@/env";
 import { constants } from "@/lib/constants";
 import { sendMail } from "@/server/mailer";
-import { render } from "@react-email/components";
+import { render } from "react-email";
 import { z } from "zod";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
 

@@ -10,8 +10,8 @@ import {
   useState,
 } from "react";
 import { Document, type DocumentProps, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
 
 type LoadCallback = Required<DocumentProps>["onLoadSuccess"];
 type PDFDocumentProxy = Parameters<LoadCallback>[0];
@@ -65,6 +65,7 @@ export const PdfViewer = ({
         onLoadSuccess={onDocumentLoadSuccess}
         options={options}
         className="w-full overflow-hidden rounded"
+        suspense={false}
       >
         {Array.from(new Array(numPages), (el, index) => (
           <Page
@@ -128,6 +129,7 @@ export function PdfViewerRoot({
         <Document
           onLoadSuccess={onDocumentLoadSuccess}
           options={options}
+          suspense={false}
           {...rest}
         >
           {children}

@@ -79,7 +79,7 @@ const SignInForm = ({ isGoogleAuthEnabled }: LoginFormProps) => {
       const options = await createPasskeySigninOptions();
 
       if (options) {
-        const credential = await startAuthentication(options);
+        const credential = await startAuthentication({ optionsJSON: options });
 
         const result = await signIn("webauthn", {
           credential: JSON.stringify(credential),
