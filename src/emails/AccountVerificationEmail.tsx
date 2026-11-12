@@ -11,7 +11,7 @@ import {
   Section,
   Tailwind,
   Text,
-} from "@react-email/components";
+} from "react-email";
 import * as React from "react";
 import { constants } from "../lib/constants";
 
@@ -41,7 +41,7 @@ export const AccountVerificationEmail = ({
               </Button>
             </Section>
           </Section>
-          <Text className="!text-[14px] leading-[24px] text-black">
+          <Text className="text-[14px]! leading-[24px] text-black">
             or copy and paste this URL into your browser:{" "}
             <Link
               href={verifyLink}
@@ -53,7 +53,7 @@ export const AccountVerificationEmail = ({
           <Hr className="mx-0 my-[26px] w-full border border-solid border-neutral-200" />
           <Link
             href={constants.url}
-            className="text-sm !text-gray-400 no-underline"
+            className="text-sm text-gray-400! no-underline"
           >
             {constants.title}
           </Link>

@@ -18,7 +18,7 @@ export const SharePageLayout = ({
   medium,
   children,
 }: SharePageLayoutProps) => (
-  <div className="flex min-h-screen justify-center bg-gradient-to-br from-indigo-50 via-white to-cyan-100 px-5 pb-5 pt-12">
+  <div className="flex min-h-screen justify-center bg-linear-to-br from-indigo-50 via-white to-cyan-100 px-5 pb-5 pt-12">
     <div className="mx-auto flex w-[1080px] max-w-sm flex-col sm:max-w-4xl">
       <div className="mb-16 flex items-center gap-3">
         <Avatar className="h-12 w-12 rounded">

@@ -14,7 +14,7 @@ import {
   Section,
   Tailwind,
   Text,
-} from "@react-email/components";
+} from "react-email";
 import {
   ArrowRight,
   SignatureIcon,
@@ -92,7 +92,7 @@ const EsignEmail = ({
                 Sign the document
               </Button>
             </Section>
-            <Text className="!text-[14px] leading-[24px] text-black">
+            <Text className="text-[14px]! leading-[24px] text-black">
               or copy and paste this URL into your browser:{" "}
               <Link
                 href={signingLink}

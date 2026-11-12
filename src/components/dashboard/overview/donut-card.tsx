@@ -3,14 +3,9 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { DonutChart } from "@tremor/react";
 import { Fragment, useEffect, useState } from "react";
+import { DonutChart } from "./donut-chart";
 import DonutSelector from "./donut-selector";
-
-type DonutTooltipProps = {
-  name: string;
-  value: number;
-};
 
 const DonutCard = () => {
   const [isClient, setIsClient] = useState(false);
@@ -113,24 +108,15 @@ const DonutCard = () => {
                 data={selected === "stakeholder" ? stakeholders : shareClasses}
                 category="value"
                 index="key"
-                showLabel={false}
                 showAnimation={true}
-                customTooltip={({ payload }) => {
-                  if (Array.isArray(payload) && payload.length > 0) {
-                    const data = payload[0] as DonutTooltipProps;
-
-                    return (
-                      <div className="rounded bg-white p-2 shadow-md">
-                        <p className="text-xs text-primary/80">
-                          <span className="font-semibold">{data.name}</span>:{" "}
-                          {data.value}%
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                }}
+                customTooltip={(data) => (
+                  <div className="rounded bg-white p-2 shadow-md">
+                    <p className="text-xs text-primary/80">
+                      <span className="font-semibold">{data.name}</span>:{" "}
+                      {data.value}%
+                    </p>
+                  </div>
+                )}
               />
             </div>
           </CardContent>

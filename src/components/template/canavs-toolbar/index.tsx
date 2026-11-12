@@ -121,7 +121,7 @@ export function CanvasToolbar({ recipients }: CanvasToolbarProps) {
     <>
       <div className="sticky inset-x-0 top-14 z-30 col-span-12 mt-5 ">
         <Toolbar.Root
-          className="flex w-full items-center justify-between rounded bg-white/50 p-2 shadow backdrop-blur-lg"
+          className="flex w-full items-center justify-between rounded bg-white/50 p-2 shadow-sm backdrop-blur-lg"
           aria-label="Formatting options"
         >
           <FormField

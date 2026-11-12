@@ -61,7 +61,7 @@ export function Uploader({
   const { mutateAsync } = api.bucket.create.useMutation();
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
-  const onDrop = useCallback(async (acceptedFiles: FileWithPath[]) => {
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
     try {
       if (!multiple && acceptedFiles.length > 1) {
         toast.error("Files exceeded, please upload only one file.");

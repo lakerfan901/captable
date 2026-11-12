@@ -34,7 +34,7 @@ const EmptyState = ({
         <div
           className={cn(
             bordered && "rounded-xl border",
-            "bg-white px-6 shadow-sm",
+            "bg-white px-6 shadow-xs",
           )}
         >
           <div className="mx-auto w-full max-w-2xl py-16 text-center">

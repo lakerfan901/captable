@@ -6,15 +6,13 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-  type VisibilityState,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  type ColumnVisibilityState,
+  useTable,
 } from "@tanstack/react-table";
+import {
+  type DataTableFeatures,
+  dataTableFeatures,
+} from "@/components/ui/data-table/features";
 
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -36,7 +34,7 @@ interface AuditTableProps {
   audits: Audit;
 }
 
-export const columns: ColumnDef<Audit[number]>[] = [
+export const columns: ColumnDef<DataTableFeatures, Audit[number]>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -112,10 +110,11 @@ export function AuditTable({ audits }: AuditTableProps) {
     [],
   );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
 
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data: audits,
     columns: columns,
     enableRowSelection: true,
@@ -123,12 +122,6 @@ export function AuditTable({ audits }: AuditTableProps) {
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
     state: {
       sorting,
       columnFilters,

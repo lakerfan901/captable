@@ -65,7 +65,7 @@ const DataRoomFiles = ({
                   name="title"
                   required
                   type="text"
-                  className="h4 min-w-[300px] bg-transparent px-2 text-gray-800 outline-none focus:ring-0	focus:ring-offset-0"
+                  className="h4 min-w-[300px] bg-transparent px-2 text-gray-800 outline-hidden focus:ring-0	focus:ring-offset-0"
                   placeholder={`Data room's folder name`}
                   defaultValue={dataRoom.name}
                   onChange={async (e) => {

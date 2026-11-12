@@ -5,7 +5,7 @@ import UpdateRenderer from "@/components/update/renderer";
 import { type JWTVerifyResult, decode } from "@/lib/jwt";
 import { UpdateStatusEnum } from "@/prisma/enums";
 import { db } from "@/server/db";
-import { render } from "@react-email/components";
+import { render } from "react-email";
 import { RiLock2Line } from "@remixicon/react";
 import { notFound } from "next/navigation";
 import { Fragment } from "react";

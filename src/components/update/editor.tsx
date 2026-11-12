@@ -281,7 +281,7 @@ const UpdatesEditor = ({
               name="title"
               required
               type="text"
-              className="h4 min-w-[300px] bg-transparent px-2 text-gray-800 outline-none focus:ring-0	focus:ring-offset-0"
+              className="h4 min-w-[300px] bg-transparent px-2 text-gray-800 outline-hidden focus:ring-0	focus:ring-offset-0"
               placeholder={`Investor update - ${formattedDate}`}
               defaultValue={title}
               onChange={(e) => {
@@ -376,7 +376,7 @@ const UpdatesEditor = ({
         </div>
       </form>
 
-      <Card className="mx-auto mt-3 min-h-[80vh] w-[28rem] sm:w-[38rem] md:w-full	">
+      <Card className="mx-auto mt-3 min-h-[80vh] w-md sm:w-152 md:w-full	">
         <BlockNoteView
           className="py-5"
           editor={editor}

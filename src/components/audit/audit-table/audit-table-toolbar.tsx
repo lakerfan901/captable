@@ -6,7 +6,7 @@ import { getActions } from "@/server/audit/schema";
 
 export function AuditTableToolbar() {
   const { table } = useDataTable();
-  const isFiltered = table.getState().columnFilters.length > 0;
+  const isFiltered = table.state.columnFilters.length > 0;
   const actions = getActions();
 
   return (

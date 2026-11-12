@@ -209,12 +209,12 @@ export const CompanyForm = ({ type, data }: CompanyFormProps) => {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-        <div className="col-span-full space-y-2 flex flex-col sm:flex-row items-center gap-x-3 sm:gap-x-8">
+        <div className="col-span-full flex flex-col sm:flex-row items-center gap-x-3 sm:gap-x-8">
           <Avatar className="h-20 w-20 rounded">
             <AvatarImage src={imageUrl || "/placeholders/company.svg"} />
           </Avatar>
 
-          <div className="flex items-start space-x-3">
+          <div className="mt-2 flex items-start space-x-3">
             <div>
               <Button
                 onClick={handleLogoChange}

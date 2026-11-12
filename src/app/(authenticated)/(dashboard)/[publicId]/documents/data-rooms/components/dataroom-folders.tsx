@@ -48,11 +48,11 @@ const Folders = ({ companyPublicId, folders }: FolderProps) => {
             <li key={folder.id}>
               <Link
                 href={`/${companyPublicId}/documents/data-rooms/${folder.publicId}`}
-                className="col-span-1 flex cursor-pointer rounded-md shadow-sm hover:shadow-lg"
+                className="col-span-1 flex cursor-pointer rounded-md shadow-xs hover:shadow-lg"
               >
                 <div
                   className={cn(
-                    "flex w-14 flex-shrink-0 items-center justify-center rounded-l-md border text-sm font-medium ",
+                    "flex w-14 shrink-0 items-center justify-center rounded-l-md border text-sm font-medium ",
                   )}
                 >
                   <FolderIcon
@@ -71,10 +71,10 @@ const Folders = ({ companyPublicId, folders }: FolderProps) => {
                         : `${folder._count.documents} files`}
                     </p>
                   </div>
-                  <div className="flex-shrink-0 pr-2">
+                  <div className="shrink-0 pr-2">
                     <button
                       type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-transparent focus:ring-offset-2"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent bg-white text-gray-400 hover:text-gray-500 focus:outline-hidden focus:ring-2 focus:ring-transparent focus:ring-offset-2"
                     >
                       <span className="sr-only">Open options</span>
                       <MoreIcon className="h-5 w-5" aria-hidden="true" />

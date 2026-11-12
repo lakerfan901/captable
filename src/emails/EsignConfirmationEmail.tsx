@@ -8,7 +8,7 @@ import {
   Preview,
   Tailwind,
   Text,
-} from "@react-email/components";
+} from "react-email";
 
 import type { TSchema } from "../jobs/esign-confirmation-email";
 
@@ -44,7 +44,7 @@ const ESignConfirmationEmail = ({
               document.
             </Text>
 
-            <Text className="mt-[20px] !text-[14px] leading-[24px] text-black">
+            <Text className="mt-[20px] text-[14px]! leading-[24px] text-black">
               - {senderName}
             </Text>
 

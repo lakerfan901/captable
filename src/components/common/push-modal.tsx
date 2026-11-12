@@ -51,7 +51,7 @@ const Modal = ({
               <div className="flex justify-center">
                 <CaptableLogo className="mb-3 h-10 w-10 rounded" />
               </div>
-              <DialogTitle className="mb-4 text-center">{title}</DialogTitle>
+              <DialogTitle className="text-center">{title}</DialogTitle>
               {subtitle && (
                 <DialogDescription className="text-center">
                   {subtitle}

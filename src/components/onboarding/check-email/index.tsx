@@ -32,8 +32,8 @@ const CheckEmailComponent = () => {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-cyan-100">
-      <div className="grid w-full max-w-md grid-cols-1 gap-5 rounded-xl border bg-white p-10 shadow">
+    <div className="flex h-screen items-center justify-center bg-linear-to-br from-indigo-50 via-white to-cyan-100">
+      <div className="grid w-full max-w-md grid-cols-1 gap-5 rounded-xl border bg-white p-10 shadow-sm">
         <div className="flex flex-col gap-y-2 text-center">
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-teal-100">
             <span className="text-teal-500">

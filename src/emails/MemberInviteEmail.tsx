@@ -11,7 +11,7 @@ import {
   Section,
   Tailwind,
   Text,
-} from "@react-email/components";
+} from "react-email";
 import { constants } from "../lib/constants";
 
 interface MemberInviteEmailProps {
@@ -54,7 +54,7 @@ export const MemberInviteEmail = ({
                 Join the team
               </Button>
             </Section>
-            <Text className="!text-[14px] leading-[24px] text-black">
+            <Text className="text-[14px]! leading-[24px] text-black">
               or copy and paste this URL into your browser:{" "}
               <Link
                 href={inviteLink}
@@ -67,7 +67,7 @@ export const MemberInviteEmail = ({
             <Hr className="mx-0 my-[26px] w-full border border-solid border-neutral-200" />
             <Link
               href={constants.url}
-              className="text-sm !text-gray-400 no-underline"
+              className="text-sm text-gray-400! no-underline"
             >
               {constants.title}
             </Link>

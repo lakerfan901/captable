@@ -12,15 +12,13 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-  type VisibilityState,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  type ColumnVisibilityState,
+  useTable,
 } from "@tanstack/react-table";
+import {
+  type DataTableFeatures,
+  dataTableFeatures,
+} from "@/components/ui/data-table/features";
 
 import { dayjsExt } from "@/common/dayjs";
 import { DataTable } from "@/components/ui/data-table/data-table";
@@ -60,7 +58,7 @@ const humanizeDeviceType = (type: string) => {
   }
 };
 
-export const columns: ColumnDef<Passkey[number]>[] = [
+export const columns: ColumnDef<DataTableFeatures, Passkey[number]>[] = [
   {
     accessorKey: "name",
     header: ({ column }) => {
@@ -177,7 +175,7 @@ export const columns: ColumnDef<Passkey[number]>[] = [
           <DropdownMenu>
             <div className="items-end justify-end text-right">
               <DropdownMenuTrigger
-                className="border-0 border-white outline-none focus:outline-none"
+                className="border-0 border-white outline-hidden focus:outline-hidden"
                 asChild
               >
                 <Button variant="ghost" className="h-8 w-8 p-0">
@@ -222,10 +220,11 @@ const PasskeyTable = ({ passkey }: PasskeyType) => {
     [],
   );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
 
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data: passkey ?? [],
     columns: columns,
     enableRowSelection: true,
@@ -233,12 +232,6 @@ const PasskeyTable = ({ passkey }: PasskeyType) => {
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
     state: {
       sorting,
       columnFilters,

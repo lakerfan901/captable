@@ -3,7 +3,6 @@
 import Modal from "@/components/common/push-modal";
 import { api } from "@/trpc/react";
 import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
-import { Button } from "@tremor/react";
 import ShareClassForm from "./share-class-form";
 
 type ShareClassType = {

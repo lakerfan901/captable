@@ -143,8 +143,10 @@ const MultiSelector = ({
     >
       <Command
         onKeyDown={handleKeyDown}
+        // v3 `space-y-2` semantics: cmdk renders a visually hidden <label>
+        // first, which would take v4's margin-bottom instead of the trigger.
         className={cn(
-          "overflow-visible bg-transparent flex flex-col space-y-2",
+          "overflow-visible bg-transparent flex flex-col [&>:not([hidden])~:not([hidden])]:mt-2",
           className,
         )}
         dir={dir}
@@ -221,7 +223,7 @@ const MultiSelectorInput = forwardRef<
       onFocus={() => setOpen(true)}
       onClick={() => setActiveIndex(-1)}
       className={cn(
-        "ml-2 bg-transparent outline-none placeholder:text-muted-foreground flex-1",
+        "ml-2 bg-transparent outline-hidden placeholder:text-muted-foreground flex-1",
         className,
         activeIndex !== -1 && "caret-transparent",
       )}

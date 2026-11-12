@@ -73,7 +73,7 @@ const CreateAccessToken = () => {
         <Fragment>
           <span className="font-semibold">Your access token</span>
           <Card
-            className="cursor-copy break-words p-3 mt-2"
+            className="cursor-copy wrap-break-word p-3 mt-2"
             onClick={() => {
               copy(accessToken as string);
               toast.success("Access token copied to clipboard.");

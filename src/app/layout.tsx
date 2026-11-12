@@ -42,7 +42,8 @@ export default async function RootLayout({
           <NextAuthProvider session={session}>
             <TRPCReactProvider cookies={(await cookies()).toString()}>
               <main>{children}</main>
-              <Toaster richColors />
+              {/* sonner 2 lowered the default viewport offset; keep v1's 32px */}
+              <Toaster richColors offset="32px" />
               {nodeEnv === "development" && <ScreenSize />}
             </TRPCReactProvider>
           </NextAuthProvider>

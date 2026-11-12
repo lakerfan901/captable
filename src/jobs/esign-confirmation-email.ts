@@ -1,6 +1,6 @@
 import ESignConfirmationEmail from "@/emails/EsignConfirmationEmail";
 import { sendMail } from "@/server/mailer";
-import { render } from "@react-email/components";
+import { render } from "react-email";
 import { z } from "zod";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
 
