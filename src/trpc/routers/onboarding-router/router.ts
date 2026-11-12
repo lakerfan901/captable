@@ -1,5 +1,6 @@
 import { generatePublicId } from "@/common/id";
 import { Audit } from "@/server/audit";
+import { ensureDefaultUnitClasses } from "@/server/llc/seed-unit-classes";
 import { createTRPCRouter, withAuth } from "@/trpc/api/trpc";
 import { ZodOnboardingMutationSchema } from "./schema";
 
@@ -18,8 +19,16 @@ export const onboardingRouter = createTRPCRouter({
               ...input.company,
               incorporationDate: new Date(input.company.incorporationDate),
               publicId,
+              entityType:
+                input.company.incorporationType === "llc"
+                  ? "LLC"
+                  : "CORPORATION",
             },
           });
+
+          if (company.entityType === "LLC") {
+            await ensureDefaultUnitClasses(tx, company.id);
+          }
 
           const user = await tx.user.update({
             where: {
