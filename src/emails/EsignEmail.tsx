@@ -56,19 +56,15 @@ const EsignEmail = ({
               Hello {recipient?.name},
             </Text>
             {message ? (
-              <>
-                <Text className="text-[14px] leading-[24px] text-black">
-                  {message}
-                </Text>
-              </>
+              <Text className="text-[14px] leading-[24px] text-black">
+                {message}
+              </Text>
             ) : (
-              <>
-                <Text className="text-[14px] leading-[24px] text-black">
-                  <strong>{sender?.name}</strong> from{" "}
-                  <strong>{company?.name}</strong> has sent you{" "}
-                  <strong>{`"${documentName}"`}</strong>
-                </Text>
-              </>
+              <Text className="text-[14px] leading-[24px] text-black">
+                <strong>{sender?.name}</strong> from{" "}
+                <strong>{company?.name}</strong> has sent you{" "}
+                <strong>{`"${documentName}"`}</strong>
+              </Text>
             )}
             <Section className="max-w-[435px]">
               <Row className="gap-x-6">

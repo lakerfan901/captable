@@ -69,7 +69,7 @@ export const LinearCombobox = ({
               {selectedOption.label}
             </>
           ) : defaultOption ? (
-            <>{defaultOption.label}</>
+            defaultOption.label
           ) : (
             <>Select an Option</>
           )}

@@ -452,7 +452,7 @@ const MultipleSelector = React.forwardRef<
           {open && (
             <CommandList className="no-scrollbar absolute top-0 z-10 w-full rounded-md border bg-popover text-popover-foreground shadow-md outline-hidden animate-in">
               {isLoading ? (
-                <>{loadingIndicator}</>
+                loadingIndicator
               ) : (
                 <>
                   {EmptyItem()}
@@ -466,58 +466,56 @@ const MultipleSelector = React.forwardRef<
                       heading={key}
                       className="h-full overflow-auto"
                     >
-                      <>
-                        {dropdowns.map((option) => {
-                          return (
-                            <CommandItem
-                              key={option.value}
-                              value={option.value}
-                              disabled={option.disable}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }}
-                              onSelect={() => {
-                                if (selected.length >= maxSelected) {
-                                  onMaxSelected?.(selected.length);
-                                  return;
-                                }
-                                setInputValue("");
-                                const newOptions = [...selected, option];
-                                setSelected(newOptions);
-                                onChange?.(newOptions);
-                              }}
-                              className={cn(
-                                "cursor-pointer",
-                                option.disable &&
-                                  "cursor-default text-muted-foreground",
-                              )}
-                            >
-                              {customLabel ? (
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-8 w-8 rounded-full">
-                                    <AvatarImage
-                                      src={
-                                        option.image ?? "/placeholders/user.svg"
-                                      }
-                                    />
-                                  </Avatar>
-                                  <span className="flex flex-col font-medium">
-                                    <span className="text-sm">
-                                      {option.label}
-                                    </span>
-                                    <span className="text-xs text-primary/50">
-                                      {option.subLabel}
-                                    </span>
+                      {dropdowns.map((option) => {
+                        return (
+                          <CommandItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={option.disable}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onSelect={() => {
+                              if (selected.length >= maxSelected) {
+                                onMaxSelected?.(selected.length);
+                                return;
+                              }
+                              setInputValue("");
+                              const newOptions = [...selected, option];
+                              setSelected(newOptions);
+                              onChange?.(newOptions);
+                            }}
+                            className={cn(
+                              "cursor-pointer",
+                              option.disable &&
+                                "cursor-default text-muted-foreground",
+                            )}
+                          >
+                            {customLabel ? (
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-8 w-8 rounded-full">
+                                  <AvatarImage
+                                    src={
+                                      option.image ?? "/placeholders/user.svg"
+                                    }
+                                  />
+                                </Avatar>
+                                <span className="flex flex-col font-medium">
+                                  <span className="text-sm">
+                                    {option.label}
                                   </span>
-                                </div>
-                              ) : (
-                                <>{option.label}</>
-                              )}
-                            </CommandItem>
-                          );
-                        })}
-                      </>
+                                  <span className="text-xs text-primary/50">
+                                    {option.subLabel}
+                                  </span>
+                                </span>
+                              </div>
+                            ) : (
+                              option.label
+                            )}
+                          </CommandItem>
+                        );
+                      })}
                     </CommandGroup>
                   ))}
                 </>

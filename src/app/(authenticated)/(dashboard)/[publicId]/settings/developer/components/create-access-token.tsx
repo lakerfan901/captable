@@ -70,23 +70,19 @@ const CreateAccessToken = () => {
           },
         }}
       >
-        <Fragment>
-          <span className="font-semibold">Your access token</span>
-          <Card
-            className="cursor-copy wrap-break-word p-3 mt-2"
-            onClick={() => {
-              copy(accessToken as string);
-              toast.success("Access token copied to clipboard.");
-            }}
-          >
-            <code className="text-sm font-mono text-rose-600">
-              {accessToken}
-            </code>
-          </Card>
-          <span className="text-xs text-gray-700">
-            Click the access token above to copy
-          </span>
-        </Fragment>
+        <span className="font-semibold">Your access token</span>
+        <Card
+          className="cursor-copy wrap-break-word p-3 mt-2"
+          onClick={() => {
+            copy(accessToken as string);
+            toast.success("Access token copied to clipboard.");
+          }}
+        >
+          <code className="text-sm font-mono text-rose-600">{accessToken}</code>
+        </Card>
+        <span className="text-xs text-gray-700">
+          Click the access token above to copy
+        </span>
       </Modal>
     </Fragment>
   );

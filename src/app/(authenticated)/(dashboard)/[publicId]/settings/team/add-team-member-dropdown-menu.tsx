@@ -50,10 +50,8 @@ export const AddTeamMemberDropdownMenu = ({
                 });
               }}
             >
-              <>
-                <RiAccountCircleFill className="mr-2 h-4 w-4" />
-                Invite a team member
-              </>
+              <RiAccountCircleFill className="mr-2 h-4 w-4" />
+              Invite a team member
             </Button>
           </li>
 

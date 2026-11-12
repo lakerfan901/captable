@@ -57,51 +57,50 @@ const ForgotPassword = () => {
           Enter your email and we&apos;ll email you a special link to reset your
           password.
         </div>
-        <>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-              <div className="grid gap-4">
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="grid gap-4">
-                        <FormLabel htmlFor="email">Email</FormLabel>
-                        <FormControl>
-                          <Input
-                            id="email"
-                            type="email"
-                            autoCapitalize="none"
-                            autoComplete="email"
-                            autoCorrect="off"
-                            autoFocus
-                            required
-                            disabled={isSubmitting}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage className="text-xs font-light" />
-                      </div>
-                    </FormItem>
-                  )}
-                />
-                <Button loading={isSubmitting} type="submit">
-                  Reset Password
-                </Button>
-              </div>
-            </form>
-          </Form>
-          <span className="text-center text-sm text-gray-500">
-            Remembered your password?{" "}
-            <Link
-              href="/login"
-              className="underline underline-offset-4 hover:text-primary"
-            >
-              Login
-            </Link>
-          </span>
-        </>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            <div className="grid gap-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="grid gap-4">
+                      <FormLabel htmlFor="email">Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="email"
+                          type="email"
+                          autoCapitalize="none"
+                          autoComplete="email"
+                          autoCorrect="off"
+                          autoFocus
+                          required
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage className="text-xs font-light" />
+                    </div>
+                  </FormItem>
+                )}
+              />
+              <Button loading={isSubmitting} type="submit">
+                Reset Password
+              </Button>
+            </div>
+          </form>
+        </Form>
+        <span className="text-center text-sm text-gray-500">
+          Remembered your password?{" "}
+          <Link
+            href="/login"
+            className="underline underline-offset-4 hover:text-primary"
+          >
+            Login
+          </Link>
+        </span>
       </div>
     </div>
   );

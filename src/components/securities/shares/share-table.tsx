@@ -317,10 +317,8 @@ export const columns: ColumnDef<DataTableFeatures, Share[number]>[] = [
               asChild
             >
               <Button variant="ghost" className="h-8 w-8 p-0">
-                <>
-                  <span className="sr-only">Open menu</span>
-                  <RiMore2Fill aria-hidden className="h-4 w-4" />
-                </>
+                <span className="sr-only">Open menu</span>
+                <RiMore2Fill aria-hidden className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
           </div>

@@ -123,26 +123,24 @@ const PublicUpdatePage = async (props: {
         </Fragment>
       }
     >
-      <Fragment>
-        <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10 rounded-full">
-            <AvatarImage src={author.user.image || "/placeholders/user.svg"} />
-          </Avatar>
+      <div className="flex items-center gap-3">
+        <Avatar className="h-10 w-10 rounded-full">
+          <AvatarImage src={author.user.image || "/placeholders/user.svg"} />
+        </Avatar>
 
-          <div>
-            <p className="text-lg font-semibold">{author.user.name}</p>
-            <p className="text-sm text-muted-foreground">{author.title}</p>
-          </div>
+        <div>
+          <p className="text-lg font-semibold">{author.user.name}</p>
+          <p className="text-sm text-muted-foreground">{author.title}</p>
         </div>
+      </div>
 
-        <div className="mt-5">
-          <article
-            className="prose"
-            //biome-ignore lint/security/noDangerouslySetInnerHtml: allow dangerouslySetInnerHtml
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        </div>
-      </Fragment>
+      <div className="mt-5">
+        <article
+          className="prose"
+          //biome-ignore lint/security/noDangerouslySetInnerHtml: allow dangerouslySetInnerHtml
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </div>
     </SharePageLayout>
   );
 };

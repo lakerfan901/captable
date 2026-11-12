@@ -42,10 +42,8 @@ export default function StakeholderDropdown() {
                 });
               }}
             >
-              <>
-                <RiAccountCircleFill className="mr-2 h-4 w-4" />
-                Add one stakeholder
-              </>
+              <RiAccountCircleFill className="mr-2 h-4 w-4" />
+              Add one stakeholder
             </Button>
           </li>
 
@@ -70,10 +68,8 @@ export default function StakeholderDropdown() {
                 });
               }}
             >
-              <>
-                <RiGroup2Fill className="mr-2 h-4 w-4" />
-                Import multiple stakeholders
-              </>
+              <RiGroup2Fill className="mr-2 h-4 w-4" />
+              Import multiple stakeholders
             </Button>
           </li>
         </ul>

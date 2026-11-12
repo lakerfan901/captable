@@ -39,29 +39,27 @@ const ActivityCard = async ({ className, publicId }: Props) => {
                     />
 
                     <div className="relative flex items-start space-x-3">
-                      <>
-                        <div>
-                          <div className="relative px-1">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-100 ring-8 ring-white">
-                              <RiAccountCircleFill
-                                className="h-5 w-5 text-teal-500"
-                                aria-hidden="true"
-                              />
-                            </div>
+                      <div>
+                        <div className="relative px-1">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-100 ring-8 ring-white">
+                            <RiAccountCircleFill
+                              className="h-5 w-5 text-teal-500"
+                              aria-hidden="true"
+                            />
                           </div>
                         </div>
-                        <div className="min-w-0 flex-1 py-1.5">
-                          <div className="text-sm text-gray-500">
-                            <span className="font-medium text-primary/80">
-                              {activityItem.summary}
-                            </span>{" "}
-                            <br />
-                            <span className="whitespace-nowrap text-xs">
-                              {dayjsExt().to(activityItem.occurredAt)}
-                            </span>
-                          </div>
+                      </div>
+                      <div className="min-w-0 flex-1 py-1.5">
+                        <div className="text-sm text-gray-500">
+                          <span className="font-medium text-primary/80">
+                            {activityItem.summary}
+                          </span>{" "}
+                          <br />
+                          <span className="whitespace-nowrap text-xs">
+                            {dayjsExt().to(activityItem.occurredAt)}
+                          </span>
                         </div>
-                      </>
+                      </div>
                     </div>
                   </div>
                 </li>
