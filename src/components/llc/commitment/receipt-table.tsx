@@ -1,9 +1,13 @@
 "use client";
 
+import { RiMore2Fill } from "@remixicon/react";
 import { type ColumnDef, useTable } from "@tanstack/react-table";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
+import { Allow } from "@/components/rbac/allow";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table/data-table";
 import { DataTableBody } from "@/components/ui/data-table/data-table-body";
 import { DataTableContent } from "@/components/ui/data-table/data-table-content";
@@ -13,10 +17,17 @@ import {
   type DataTableFeatures,
   dataTableFeatures,
 } from "@/components/ui/data-table/features";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatDateOnly } from "@/lib/date-only";
 import { formatCents } from "@/lib/money";
 import { trimUnits } from "@/server/llc/serialize";
 import type { ReceiptDTO } from "@/trpc/routers/commitment-router/dto";
+import { VoidReceiptDialog } from "./void-receipt-dialog";
 
 export type ReceiptRow = ReceiptDTO & { stakeholderName: string };
 
@@ -46,7 +57,34 @@ function ReceiptState({ row }: { row: ReceiptRow }) {
   return <Badge variant="warning">Held</Badge>;
 }
 
-// F7b adds the row menu (Void).
+function ReceiptActions({ row }: { row: ReceiptRow }) {
+  const [voidOpen, setVoidOpen] = useState(false);
+  if (row.voided) return null;
+  return (
+    <Allow action="delete" subject="commitments">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="h-8 w-8 p-0">
+            <span className="sr-only">Open menu</span>
+            <RiMore2Fill className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setVoidOpen(true)}>
+            Void
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <VoidReceiptDialog
+        receipt={row}
+        stakeholderName={row.stakeholderName}
+        open={voidOpen}
+        onOpenChange={setVoidOpen}
+      />
+    </Allow>
+  );
+}
+
 const columns: ColumnDef<DataTableFeatures, ReceiptRow>[] = [
   {
     id: "receivedOn",
@@ -95,6 +133,11 @@ const columns: ColumnDef<DataTableFeatures, ReceiptRow>[] = [
     id: "state",
     header: "Status",
     cell: ({ row }) => <ReceiptState row={row.original} />,
+  },
+  {
+    id: "actions",
+    header: "",
+    cell: ({ row }) => <ReceiptActions row={row.original} />,
   },
 ];
 

@@ -2,6 +2,7 @@ import { RiHandCoinLine } from "@remixicon/react";
 import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import { CommitmentTable } from "@/components/llc/commitment/commitment-table";
+import { IssueCommonUnitsDialog } from "@/components/llc/commitment/issue-common-units-dialog";
 import { NewCommitmentDialog } from "@/components/llc/commitment/new-commitment-dialog";
 import { ReceiptTable } from "@/components/llc/commitment/receipt-table";
 import { Button } from "@/components/ui/button";
@@ -43,14 +44,23 @@ export default async function CommitmentsPage() {
     )
     .reduce((sum, c) => sum + c.acceptedCents, 0);
 
-  // F7b adds "Issue common units" next to this.
+  const common = classes.find((c) => c.kind === "COMMON") ?? null;
+  const memberOptions = stakeholders.map((s) => ({ id: s.id, name: s.name }));
+
   const newCommitment = allow(
-    <NewCommitmentDialog
-      trigger={<Button>New commitment</Button>}
-      stakeholders={stakeholders.map((s) => ({ id: s.id, name: s.name }))}
-      unitClass={preferred}
-      acceptedTotalCents={acceptedTotalCents}
-    />,
+    <>
+      <NewCommitmentDialog
+        trigger={<Button>New commitment</Button>}
+        stakeholders={memberOptions}
+        unitClass={preferred}
+        acceptedTotalCents={acceptedTotalCents}
+      />
+      <IssueCommonUnitsDialog
+        trigger={<Button variant="outline">Issue common units</Button>}
+        stakeholders={memberOptions}
+        unitClass={common}
+      />
+    </>,
     ["commitments", "create"],
     null,
   );
@@ -86,7 +96,11 @@ export default async function CommitmentsPage() {
         </TabsList>
         <TabsContent value="commitments">
           <Card className="mx-auto mt-3 w-md sm:w-152 md:w-full">
-            <CommitmentTable commitments={commitments} unitClass={preferred} />
+            <CommitmentTable
+              commitments={commitments}
+              unitClass={preferred}
+              acceptedTotalCents={acceptedTotalCents}
+            />
           </Card>
         </TabsContent>
         <TabsContent value="receipts">
