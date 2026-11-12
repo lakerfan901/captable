@@ -19,7 +19,11 @@ export const updateRolesProcedure = withAccessControl
       const permissions = extractPermission(input.permissions);
       const { user } = session;
       await db.$transaction(async (tx) => {
-        const id = await getRoleById({ id: input.roleId, tx });
+        const id = await getRoleById({
+          id: input.roleId,
+          companyId: membership.companyId,
+          tx,
+        });
 
         if (!id.customRoleId) {
           throw new Error("role id not found");

@@ -1,10 +1,11 @@
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
-import { withAuth } from "@/trpc/api/trpc";
+import { withAccessControl } from "@/trpc/api/trpc";
 import { ZodToggleActivationMutationSchema } from "../schema";
 
-export const toggleActivation = withAuth
+export const toggleActivation = withAccessControl
   .input(ZodToggleActivationMutationSchema)
+  .meta({ policies: { members: { allow: ["update"] } } })
   .mutation(async ({ ctx: { session, db, requestIp, userAgent }, input }) => {
     const user = session.user;
     const { memberId, status } = input;

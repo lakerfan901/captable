@@ -1,14 +1,18 @@
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { type TPrismaOrTransaction } from "@/server/db";
-import { withAuth, type withAuthTrpcContextType } from "@/trpc/api/trpc";
+import {
+  withAccessControl,
+  type withAuthTrpcContextType,
+} from "@/trpc/api/trpc";
 import {
   type TypeZodRemoveMemberMutationSchema,
   ZodRemoveMemberMutationSchema,
 } from "../schema";
 
-export const removeMemberProcedure = withAuth
+export const removeMemberProcedure = withAccessControl
   .input(ZodRemoveMemberMutationSchema)
+  .meta({ policies: { members: { allow: ["delete"] } } })
   .mutation(async (args) => {
     const data = await args.ctx.db.$transaction(async (db) => {
       const data = await removeMemberHandler({

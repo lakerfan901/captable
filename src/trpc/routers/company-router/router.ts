@@ -42,12 +42,14 @@ export const companyRouter = createTRPCRouter({
   switchCompany: withAuth
     .input(ZodSwitchCompanyMutationSchema)
     .mutation(async ({ ctx, input }) => {
-      const { db } = ctx;
+      const { db, session } = ctx;
 
       await db.$transaction(async (tx) => {
         const member = await tx.member.findFirst({
           where: {
             id: input.id,
+            userId: session.user.id,
+            status: "ACTIVE",
             isOnboarded: true,
           },
         });

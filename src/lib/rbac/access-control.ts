@@ -133,10 +133,12 @@ export async function getPermissions({ db, session }: getPermissionsOptions) {
 
 interface getRoleByIdOption {
   id?: string | null | undefined;
+  /** Company the role must belong to (custom roles are per company). */
+  companyId: string;
   tx: TPrismaOrTransaction;
 }
 
-export const getRoleById = async ({ id, tx }: getRoleByIdOption) => {
+export const getRoleById = async ({ id, companyId, tx }: getRoleByIdOption) => {
   if (!id || id === "") {
     return { role: null, customRoleId: null };
   }
@@ -146,7 +148,7 @@ export const getRoleById = async ({ id, tx }: getRoleByIdOption) => {
   }
 
   const { id: customRoleId } = await tx.customRole.findFirstOrThrow({
-    where: { id },
+    where: { id, companyId },
     select: { id: true },
   });
 

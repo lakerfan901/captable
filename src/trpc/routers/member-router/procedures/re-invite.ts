@@ -7,11 +7,12 @@ import {
   generateMemberIdentifier,
   revokeExistingInviteTokens,
 } from "@/server/member";
-import { withAuth } from "@/trpc/api/trpc";
+import { withAccessControl } from "@/trpc/api/trpc";
 import { ZodReInviteMutationSchema } from "../schema";
 
-export const reInviteProcedure = withAuth
+export const reInviteProcedure = withAccessControl
   .input(ZodReInviteMutationSchema)
+  .meta({ policies: { members: { allow: ["create"] } } })
   .mutation(async ({ ctx: { session, db, requestIp, userAgent }, input }) => {
     const user = session.user;
 

@@ -18,7 +18,7 @@ export const deleteRoleProcedure = withAccessControl
       session,
     } = ctx;
     await ctx.db.$transaction(async (tx) => {
-      const role = await getRoleById({ id: input.roleId, tx });
+      const role = await getRoleById({ id: input.roleId, companyId, tx });
       const { user } = session;
       if (!role.customRoleId) {
         throw new Error("default roles cannot be deleted");

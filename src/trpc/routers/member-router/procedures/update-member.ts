@@ -1,6 +1,7 @@
 import { getRoleById } from "@/lib/rbac/access-control";
 import { Audit } from "@/server/audit";
 import { withAccessControl } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { ZodUpdateMemberMutationSchema } from "../schema";
 
 export const updateMemberProcedure = withAccessControl
@@ -20,7 +21,27 @@ export const updateMemberProcedure = withAccessControl
       const user = session.user;
 
       await db.$transaction(async (tx) => {
-        const role = await getRoleById({ tx, id: roleId });
+        const role = await getRoleById({ tx, id: roleId, companyId });
+
+        if (roleId !== undefined) {
+          const isRoleChange =
+            role.role !== membership.role ||
+            role.customRoleId !== membership.customRoleId;
+
+          if (memberId === membership.memberId && isRoleChange) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "You cannot change your own role.",
+            });
+          }
+
+          if (role.role === "ADMIN" && membership.role !== "ADMIN") {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Only admins can grant the admin role.",
+            });
+          }
+        }
 
         const member = await tx.member.update({
           where: {

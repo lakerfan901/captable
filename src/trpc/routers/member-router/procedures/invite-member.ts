@@ -20,7 +20,7 @@ export const inviteMemberProcedure = withAccessControl
     const {
       userAgent,
       requestIp,
-      membership: { companyId },
+      membership: { companyId, role: callerRole },
     } = ctx;
 
     const { expires, memberInviteTokenHash } = await generateInviteToken();
@@ -73,7 +73,14 @@ export const inviteMemberProcedure = withAccessControl
           });
         }
 
-        const role = await getRoleById({ id: roleId, tx });
+        const role = await getRoleById({ id: roleId, companyId, tx });
+
+        if (role.role === "ADMIN" && callerRole !== "ADMIN") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only admins can grant the admin role.",
+          });
+        }
 
         //  create member
         const member = await tx.member.upsert({
