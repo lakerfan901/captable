@@ -41,7 +41,7 @@ const OverviewPage = async (props: {
             </div>
           </section>
 
-          {/* Tremor chart */}
+          {/* Ownership donut chart */}
           <section className="mt-6">
             <DonutCard />
           </section>

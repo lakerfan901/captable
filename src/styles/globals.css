@@ -40,15 +40,6 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-
-  --text-tremor-label: 0.75rem;
-  --text-tremor-label--line-height: 1rem;
-  --text-tremor-default: 0.875rem;
-  --text-tremor-default--line-height: 1.25rem;
-  --text-tremor-title: 1.125rem;
-  --text-tremor-title--line-height: 1.75rem;
-  --text-tremor-metric: 1.875rem;
-  --text-tremor-metric--line-height: 2.25rem;
 }
 
 /*
@@ -93,10 +84,6 @@
     cursor: pointer;
   }
 }
-
-/* Tremor chart colors (was the `safelist` in tailwind.config.ts). */
-@source inline("{hover:,}{bg,text,border}-{slate,gray,zinc,neutral,stone,red,orange,amber,yellow,lime,green,emerald,teal,cyan,sky,blue,indigo,violet,purple,fuchsia,pink,rose}-{50,{100..900..100},950}");
-@source inline("{ring,stroke,fill}-{slate,gray,zinc,neutral,stone,red,orange,amber,yellow,lime,green,emerald,teal,cyan,sky,blue,indigo,violet,purple,fuchsia,pink,rose}-{50,{100..900..100},950}");
 
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
