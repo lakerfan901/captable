@@ -12,34 +12,57 @@ export const addStakeholdersProcedure = withAccessControl
     }) => {
       try {
         const { user } = session;
-        await db.$transaction(async (tx) => {
-          // insert companyId in every input
-          const inputDataWithCompanyId = input.map((stakeholder) => ({
-            ...stakeholder,
-            companyId: membership.companyId,
-          }));
+        const { companyId } = membership;
 
-          await tx.stakeholder.createMany({
-            data: inputDataWithCompanyId,
-            skipDuplicates: true,
+        // Emails are stored lower-cased and are unique per company.
+        const data = input.map((stakeholder) => ({
+          ...stakeholder,
+          email: stakeholder.email.trim().toLowerCase(),
+          companyId,
+        }));
+
+        const seen = new Set<string>();
+        const duplicates = new Set<string>();
+        for (const row of data) {
+          if (seen.has(row.email)) duplicates.add(row.email);
+          seen.add(row.email);
+        }
+
+        const existing = await db.stakeholder.findMany({
+          where: { companyId, email: { in: [...seen] } },
+          select: { email: true },
+        });
+        for (const row of existing) duplicates.add(row.email);
+
+        if (duplicates.size) {
+          return {
+            success: false,
+            message: `These emails already exist: ${[...duplicates].join(", ")}`,
+          };
+        }
+
+        await db.$transaction(async (tx) => {
+          const created = await tx.stakeholder.createManyAndReturn({
+            data,
+            select: { id: true, name: true },
           });
 
-          inputDataWithCompanyId.map(async (inp) => {
+          for (const stakeholder of created) {
             await Audit.create(
               {
                 action: "stakeholder.added",
-                companyId: user.companyId,
+                companyId,
                 actor: { type: "user", id: user.id },
                 context: {
                   userAgent,
                   requestIp,
                 },
-                target: [{ type: "stakeholder", id: inp.id }],
-                summary: `${user.name} added stakeholder ${inp.name} for the company ID ${inp.companyId}`,
+                target: [{ type: "stakeholder", id: stakeholder.id }],
+                summary: `${user.name} added stakeholder ${stakeholder.name} for the company ID ${companyId}`,
               },
               tx,
             );
-          });
+          }
         });
 
         return {

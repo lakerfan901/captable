@@ -17,6 +17,10 @@ interface createDocumentHandlerOptions
   companyId: string;
   uploaderName?: string | null | undefined;
   uploaderId?: string;
+  /** Files the document on a member (stakeholder of the same company). */
+  stakeholderId?: string;
+  /** Free document kind key, e.g. "w9". */
+  kind?: string;
   db: TPrismaOrTransaction;
 }
 
@@ -28,9 +32,15 @@ export const createDocumentHandler = async ({
   companyId,
   uploaderName,
   uploaderId,
+  stakeholderId,
+  kind,
 }: createDocumentHandlerOptions) => {
-  // The bucket id may come from the client: refuse another company's bucket.
-  await assertCompanyOwns(db, companyId, { bucketIds: [input.bucketId] });
+  // The bucket (and stakeholder) id may come from the client: refuse another
+  // company's rows.
+  await assertCompanyOwns(db, companyId, {
+    bucketIds: [input.bucketId],
+    ...(stakeholderId ? { stakeholderIds: [stakeholderId] } : {}),
+  });
 
   const publicId = generatePublicId();
 
@@ -40,6 +50,8 @@ export const createDocumentHandler = async ({
       uploaderId,
       publicId,
       ...input,
+      ...(stakeholderId ? { stakeholderId } : {}),
+      ...(kind ? { kind } : {}),
     },
   });
 

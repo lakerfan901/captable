@@ -28,6 +28,9 @@ export const updateStakeholderProcedure = withAccessControl
             },
             data: {
               ...rest,
+              ...(rest.email !== undefined
+                ? { email: rest.email.trim().toLowerCase() }
+                : {}),
             },
             select: {
               id: true,
@@ -56,6 +59,17 @@ export const updateStakeholderProcedure = withAccessControl
           message: "Successfully updated the stakeholder",
         };
       } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          (error as { code?: unknown }).code === "P2002"
+        ) {
+          return {
+            success: false,
+            message:
+              "Another stakeholder of this company already uses this email.",
+          };
+        }
         console.log(error);
         return {
           success: false,
