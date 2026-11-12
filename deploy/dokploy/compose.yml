@@ -27,7 +27,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      minio-init:
+      minio-policy:
         condition: service_completed_successfully
     environment: &app-env
       NODE_ENV: production
@@ -80,10 +80,13 @@ services:
       timeout: 5s
       retries: 20
 
+  # MinIO no longer publishes images on Docker Hub or Quay; Chainguard builds the
+  # same server and client from source. These images have no shell.
   minio:
-    image: minio/minio
+    image: chainguard/minio:latest
     restart: unless-stopped
-    command: server /data --address ":9000"
+    user: "0:0"
+    command: ["server", "/data", "--address", ":9000"]
     environment:
       MINIO_ROOT_USER: captable
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -92,25 +95,30 @@ services:
     expose:
       - "9000"
 
-  # Creates the two buckets once and exits.
+  # Creates the two buckets, then exits. Retries until MinIO accepts connections.
   minio-init:
-    image: minio/mc
-    restart: "no"
+    image: chainguard/minio-client:latest
+    restart: on-failure
     depends_on:
       - minio
-    environment:
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    entrypoint: sh
+    environment: &mc-env
+      MC_HOST_s3: http://captable:${MINIO_ROOT_PASSWORD}@minio:9000
+      MC_CONFIG_DIR: /tmp/.mc
     command:
-      - -c
-      - |
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-          mc alias set s3 http://minio:9000 captable "$$MINIO_ROOT_PASSWORD" && break
-          sleep 3
-        done
-        mc mb --ignore-existing s3/captable-private-bucket
-        mc mb --ignore-existing s3/captable-public-bucket
-        mc anonymous set download s3/captable-public-bucket
+      - mb
+      - --ignore-existing
+      - s3/captable-private-bucket
+      - s3/captable-public-bucket
+
+  # Makes the public bucket (logos, avatars) readable without credentials.
+  minio-policy:
+    image: chainguard/minio-client:latest
+    restart: on-failure
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment: *mc-env
+    command: ["anonymous", "set", "download", "s3/captable-public-bucket"]
 
   # Mail catcher used when EMAIL_SERVER is not set. Not exposed publicly.
   smtp:
