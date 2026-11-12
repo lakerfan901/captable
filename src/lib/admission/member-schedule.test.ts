@@ -46,6 +46,7 @@ const input = (
       offeringCapCents: 200_000_000,
       finalClosingDate: "2026-11-30",
       initialInstallmentBps: 4000,
+      pricePerUnitCents: 100_000,
     },
     {
       id: "common",
@@ -54,6 +55,7 @@ const input = (
       offeringCapCents: null,
       finalClosingDate: null,
       initialInstallmentBps: 4000,
+      pricePerUnitCents: null,
     },
   ],
   members: [],
@@ -141,6 +143,7 @@ describe("buildMemberSchedule", () => {
     expect(s.indicators.committedCents).toBe(125_000_000);
     expect(s.indicators.remainingCents).toBe(75_000_000);
     expect(s.indicators.capUsedBps).toBe(6250);
+    expect(s.indicators.pricePerUnitCents).toBe(100_000);
     expect(s.indicators.daysToFinalClosing).toBe(18);
     const after = buildMemberSchedule(
       input({ members: [member("a")], positions, today: "2026-12-02" }),
@@ -250,6 +253,7 @@ describe("buildMemberSchedule", () => {
             offeringCapCents: null,
             finalClosingDate: null,
             initialInstallmentBps: 4000,
+            pricePerUnitCents: 100_000,
           },
         ],
       }),

@@ -50,6 +50,7 @@ export async function loadMemberSchedule(
           offeringCapCents: true,
           finalClosingDate: true,
           initialInstallmentBps: true,
+          pricePerUnitCents: true,
         },
       }),
       db.stakeholder.findMany({
@@ -124,6 +125,10 @@ export async function loadMemberSchedule(
         c.offeringCapCents === null ? null : centsToNumber(c.offeringCapCents),
       finalClosingDate: dateToWire(c.finalClosingDate),
       initialInstallmentBps: c.initialInstallmentBps,
+      pricePerUnitCents:
+        c.pricePerUnitCents === null
+          ? null
+          : centsToNumber(c.pricePerUnitCents),
     })),
     members: stakeholders.map((s) => ({
       id: s.id,

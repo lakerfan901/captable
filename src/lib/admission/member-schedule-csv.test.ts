@@ -20,6 +20,7 @@ const schedule = (prefName: string) =>
         offeringCapCents: 200_000_000,
         finalClosingDate: "2026-11-30",
         initialInstallmentBps: 4000,
+        pricePerUnitCents: 100_000,
       },
       {
         id: "common",
@@ -28,6 +29,7 @@ const schedule = (prefName: string) =>
         offeringCapCents: null,
         finalClosingDate: null,
         initialInstallmentBps: 4000,
+        pricePerUnitCents: null,
       },
     ],
     members: [

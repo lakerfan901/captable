@@ -25,6 +25,7 @@ export type MemberScheduleInput = {
     offeringCapCents: Cents | null;
     finalClosingDate: DateOnly | null;
     initialInstallmentBps: number;
+    pricePerUnitCents: Cents | null;
   }[];
   members: {
     id: string;
@@ -95,6 +96,7 @@ export type MemberScheduleDTO = {
     finalClosingDate: DateOnly | null;
     daysToFinalClosing: number | null;
     initialInstallmentBps: number;
+    pricePerUnitCents: Cents | null;
     pendingCount: number;
     pendingCommittedCents: Cents;
     overdueDecisions: number;
@@ -269,6 +271,7 @@ export function buildMemberSchedule(
         ? null
         : diffInDays(input.today, finalClosingDate),
     initialInstallmentBps: preferredClass?.initialInstallmentBps ?? 0,
+    pricePerUnitCents: preferredClass?.pricePerUnitCents ?? null,
     pendingCount: input.pending.count,
     pendingCommittedCents: input.pending.committedCents,
     overdueDecisions: input.pending.overdueDecisions,
