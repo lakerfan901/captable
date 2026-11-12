@@ -36,9 +36,13 @@ describe("validateSpecialReceipt: REPLACEMENT", () => {
     expect(codes(replacement({ isReplacement: false }))).toEqual(["NOT_OPEN"]);
   });
 
-  it("refuses a replacement commitment that is not ACCEPTED", () => {
+  it("refuses a replacement commitment that is not accepted", () => {
     expect(codes(replacement({ status: "PENDING" }))).toEqual(["NOT_OPEN"]);
-    expect(codes(replacement({ status: "REDUCED" }))).toEqual(["NOT_OPEN"]);
+    expect(codes(replacement({ status: "REJECTED" }))).toEqual(["NOT_OPEN"]);
+  });
+
+  it("G1: funds a replacement commitment accepted at a reduced amount", () => {
+    expect(codes(replacement({ status: "REDUCED" }))).toEqual([]);
   });
 
   it("refuses an applied amount that differs from the cash received", () => {

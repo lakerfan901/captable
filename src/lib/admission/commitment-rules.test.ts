@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   type AcceptanceInput,
   allocateHeldReceipts,
+  appliedOnDate,
   computeSubscriptionClock,
   decisionStatus,
   defaultKeepCents,
   deriveReceiptKind,
+  heldOnOrBefore,
   type OfferingTerms,
   outstandingBalanceCents,
+  planAcceptance,
   prefReturnStartDate,
   refundDueCents,
   requiredInitialInstallmentCents,
@@ -498,5 +501,116 @@ describe("validateCashReceipt", () => {
         amountCents: $(500_000),
       }),
     ).toEqual([]);
+  });
+});
+
+describe("H2: acceptance date versus receipt dates", () => {
+  const r = (id: string, receivedOn: string, dollars: number) => ({
+    id,
+    receivedOn,
+    amountCents: $(dollars),
+  });
+
+  it("appliedOnDate is the later of receipt and acceptance", () => {
+    expect(appliedOnDate("2026-11-03", "2026-11-05")).toBe("2026-11-05");
+    expect(appliedOnDate("2026-11-09", "2026-11-05")).toBe("2026-11-09");
+    expect(appliedOnDate("2026-11-05", "2026-11-05")).toBe("2026-11-05");
+  });
+
+  it("only cash received on or before the acceptance date is held for it", () => {
+    const receipts = [
+      r("a", "2026-11-25", 20_000),
+      r("b", "2026-12-03", 80_000),
+    ];
+    expect(heldOnOrBefore(receipts, "2026-11-30")).toBe($(20_000));
+    expect(heldOnOrBefore(receipts, "2026-12-03")).toBe($(100_000));
+  });
+
+  it("acceptance dated before the only wire fails the 40% check (review scenario)", () => {
+    // Signed 11-25, only wire 12-03, acceptedOn 11-30, today 12-06.
+    const held = heldOnOrBefore([r("a", "2026-12-03", 100_000)], "2026-11-30");
+    expect(
+      codes(
+        input({
+          ...A1,
+          heldCents: held,
+          signedOn: "2026-11-25",
+          acceptedOn: "2026-11-30",
+          today: "2026-12-06",
+        }),
+      ),
+    ).toEqual(["INITIAL_INSTALLMENT_SHORT"]);
+  });
+
+  it("applies earlier receipts on acceptedOn and later ones as Balance on their own date", () => {
+    const plan = planAcceptance({
+      receipts: [r("b", "2026-11-09", 30_000), r("a", "2026-11-03", 40_000)],
+      acceptedOn: "2026-11-05",
+      acceptedCents: $(100_000),
+      keepCents: $(40_000),
+    });
+    expect(plan.rows).toEqual([
+      {
+        id: "a",
+        kind: "INITIAL",
+        appliedCents: $(40_000),
+        appliedOn: "2026-11-05",
+      },
+      {
+        id: "b",
+        kind: "BALANCE",
+        appliedCents: $(30_000),
+        appliedOn: "2026-11-09",
+      },
+    ]);
+    expect(plan.refundCents).toBe(0n);
+  });
+
+  it("refunds the unkept Initial Installment and any later excess", () => {
+    // A9 (keep 40,000 of 80,000) plus 70,000 received after acceptance.
+    const plan = planAcceptance({
+      receipts: [r("a", "2026-11-03", 80_000), r("b", "2026-11-09", 70_000)],
+      acceptedOn: "2026-11-05",
+      acceptedCents: $(100_000),
+      keepCents: $(40_000),
+    });
+    expect(plan.rows.map((x) => [x.id, x.appliedCents])).toEqual([
+      ["a", $(40_000)],
+      ["b", $(60_000)],
+    ]);
+    expect(plan.refundCents).toBe($(50_000));
+  });
+
+  it("never applies more than accepted, never before receipt or acceptance, and balances", () => {
+    const receipts = [
+      r("a", "2026-11-01", 25_000),
+      r("b", "2026-11-04", 35_000),
+      r("c", "2026-11-06", 50_000),
+      r("d", "2026-11-08", 50_000),
+    ];
+    for (const acceptedOn of ["2026-10-31", "2026-11-04", "2026-11-07"]) {
+      for (const accepted of [50_000, 100_000, 200_000]) {
+        const keep = defaultKeepCents({
+          heldCents: heldOnOrBefore(receipts, acceptedOn),
+          acceptedCents: $(accepted),
+          committedCents: $(200_000),
+        });
+        const plan = planAcceptance({
+          receipts,
+          acceptedOn,
+          acceptedCents: $(accepted),
+          keepCents: keep,
+        });
+        const applied = plan.rows.reduce((s, x) => s + x.appliedCents, 0n);
+        expect(applied + plan.refundCents).toBe($(160_000));
+        expect(applied <= $(accepted)).toBe(true);
+        for (const row of plan.rows) {
+          const receipt = receipts.find((x) => x.id === row.id);
+          if (!receipt || row.appliedOn === null) continue;
+          expect(row.appliedOn >= receipt.receivedOn).toBe(true);
+          expect(row.appliedOn >= acceptedOn).toBe(true);
+        }
+      }
+    }
   });
 });

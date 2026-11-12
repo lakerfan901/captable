@@ -221,6 +221,87 @@ export function refundDueCents(heldCents: bigint, keepCents: bigint): bigint {
   return heldCents - keepCents;
 }
 
+/**
+ * Date from which a receipt's capital and units exist: never before the money
+ * arrived and never before the acceptance (H2). Every path that applies a
+ * receipt (acceptance, cash receipt, special receipt) uses this.
+ */
+export function appliedOnDate(receivedOn: string, acceptedOn: string): string {
+  return maxDate(receivedOn, acceptedOn);
+}
+
+/**
+ * Cash held at the acceptance (H2): only receipts received on or before
+ * `acceptedOn` count for the Initial Installment and the keep/refund split.
+ */
+export function heldOnOrBefore(
+  receipts: HeldReceipt[],
+  acceptedOn: string,
+): bigint {
+  return receipts.reduce(
+    (sum, r) => (r.receivedOn <= acceptedOn ? sum + r.amountCents : sum),
+    0n,
+  );
+}
+
+export type AcceptancePlanRow = {
+  id: string;
+  kind: "INITIAL" | "BALANCE";
+  appliedCents: bigint;
+  /** `appliedOnDate(receivedOn, acceptedOn)` when applied > 0, else null. */
+  appliedOn: string | null;
+};
+
+/**
+ * How the held receipts of a commitment are applied when it is accepted.
+ * Receipts received on or before `acceptedOn` are the Initial Installment:
+ * `keepCents` of them is applied in (receivedOn, id) order (B18) and the rest
+ * is refunded. Receipts received after `acceptedOn` are ordinary Balance
+ * payments (B16): applied in full on their own date, up to
+ * `acceptedCents − keepCents` in (receivedOn, id) order; any excess is
+ * refunded (F5 rule 10: excess held cash is refunded at the decision).
+ * Σ applied + refund = Σ amount, and Σ applied ≤ acceptedCents.
+ */
+export function planAcceptance(input: {
+  receipts: HeldReceipt[];
+  acceptedOn: string;
+  acceptedCents: bigint;
+  keepCents: bigint;
+}): { rows: AcceptancePlanRow[]; refundCents: bigint } {
+  const { acceptedOn } = input;
+  const initial = input.receipts.filter((r) => r.receivedOn <= acceptedOn);
+  const later = input.receipts
+    .filter((r) => r.receivedOn > acceptedOn)
+    .sort(byReceivedOnThenId);
+  const byId = new Map(input.receipts.map((r) => [r.id, r]));
+  const rows: AcceptancePlanRow[] = allocateHeldReceipts(
+    initial,
+    input.keepCents,
+  ).map((a) => ({
+    id: a.id,
+    kind: "INITIAL",
+    appliedCents: a.appliedCents,
+    appliedOn: a.appliedCents > 0n ? acceptedOn : null,
+  }));
+  let room = input.acceptedCents - input.keepCents;
+  for (const r of later) {
+    const applied = room > 0n ? minBig(r.amountCents, room) : 0n;
+    room -= applied;
+    rows.push({
+      id: r.id,
+      kind: "BALANCE",
+      appliedCents: applied,
+      appliedOn: applied > 0n ? appliedOnDate(r.receivedOn, acceptedOn) : null,
+    });
+  }
+  const received = rows.reduce(
+    (sum, row) => sum + (byId.get(row.id)?.amountCents ?? 0n),
+    0n,
+  );
+  const applied = rows.reduce((sum, row) => sum + row.appliedCents, 0n);
+  return { rows, refundCents: received - applied };
+}
+
 export function decisionStatus(
   acceptedCents: bigint,
   committedCents: bigint,
