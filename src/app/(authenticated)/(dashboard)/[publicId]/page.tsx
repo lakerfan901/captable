@@ -3,6 +3,8 @@ import ActivitiesCard from "@/components/dashboard/overview/activities-card";
 import DonutCard from "@/components/dashboard/overview/donut-card";
 import SummaryTable from "@/components/dashboard/overview/summary-table";
 import OverviewCard from "@/components/dashboard/overview/top-card";
+import { LlcOverview } from "@/components/llc/overview/llc-overview";
+import { getSessionEntity } from "@/server/entity";
 
 export const metadata: Metadata = {
   title: "Overview",
@@ -14,6 +16,10 @@ const OverviewPage = async (props: {
   const params = await props.params;
 
   const { publicId } = params;
+
+  if ((await getSessionEntity()).isLlc) {
+    return <LlcOverview publicId={publicId} />;
+  }
 
   return (
     <>
