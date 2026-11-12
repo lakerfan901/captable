@@ -9,6 +9,8 @@
  * and must never be exported from a "use server" module).
  */
 
+import { RBAC } from "@/lib/rbac";
+import { getPermissions } from "@/lib/rbac/access-control";
 import {
   authorizeUpload,
   isKeyInCompanyNamespace,
@@ -55,7 +57,7 @@ async function getCaller() {
       })
     : null;
 
-  return { userId: user.id, company: member?.company ?? null };
+  return { session, userId: user.id, company: member?.company ?? null };
 }
 
 /**
@@ -106,13 +108,32 @@ export const getPresignedPutUrl = async (
 /**
  * Presigned GET for a private-bucket object. The caller must be an ACTIVE
  * member of a company that (a) owns the key's namespace and (b) has the key
- * recorded in a Bucket row linked to one of its Documents or Templates.
+ * recorded in a Bucket row linked to one of its Documents or Templates, and
+ * their role must grant `documents: read` (as the tRPC document procedures
+ * require).
  */
 export const getPresignedGetUrl = async (key: string) => {
   const parsedKey = KeySchema.parse(key);
-  const { company } = await getCaller();
+  const { session, company } = await getCaller();
 
-  if (!company || !isKeyInCompanyNamespace(parsedKey, company)) {
+  if (!session || !company || !isKeyInCompanyNamespace(parsedKey, company)) {
+    throw new UploadAuthorizationError();
+  }
+
+  const { err: permissionError, val: permission } = await getPermissions({
+    db,
+    session,
+  });
+
+  if (permissionError || permission.membership.companyId !== company.id) {
+    throw new UploadAuthorizationError();
+  }
+
+  const { err: rbacError, val: rbac } = new RBAC()
+    .addPolicies({ documents: { allow: ["read"] } })
+    .enforce(permission.permissions);
+
+  if (rbacError || !rbac.valid) {
     throw new UploadAuthorizationError();
   }
 
