@@ -15,6 +15,7 @@ export const allEsignAuditsProcedure = withAccessControl
       const { id: templateId } = await tx.template.findFirstOrThrow({
         where: {
           publicId: templatePublicId,
+          companyId,
         },
         select: {
           id: true,

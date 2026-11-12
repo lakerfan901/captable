@@ -2,7 +2,8 @@ import FileIcon from "@/components/common/file-icon";
 import FilePreview from "@/components/file/preview";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { withServerComponentSession } from "@/server/auth";
+import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
+import { checkMembership, withServerComponentSession } from "@/server/auth";
 import { db } from "@/server/db";
 import { getPresignedGetUrl } from "@/server/file-uploads";
 import { RiArrowLeftSLine } from "@remixicon/react";
@@ -18,17 +19,33 @@ const DocumentPreview = async (props: {
   const { publicId, bucketId } = params;
 
   const session = await withServerComponentSession();
-  const companyId = session?.user?.companyId;
+  const { companyId } = await checkMembership({ session, tx: db }).catch(
+    () => ({ companyId: null }),
+  );
+
+  if (!companyId) {
+    return notFound();
+  }
+
   const document = await db.document.findFirst({
     where: {
       bucketId,
       companyId,
+      company: { publicId },
     },
 
-    include: { bucket: true },
+    include: {
+      bucket: true,
+      company: { select: { id: true, publicId: true } },
+    },
   });
 
-  if (!document || !document.bucket) {
+  // The row must be this company's and so must the object it points at.
+  if (
+    !document ||
+    !document.bucket ||
+    !isKeyInCompanyNamespace(document.bucket.key, document.company)
+  ) {
     return notFound();
   }
 

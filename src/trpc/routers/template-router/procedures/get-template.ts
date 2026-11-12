@@ -1,5 +1,6 @@
 import { checkMembership } from "@/server/auth";
 import { getPresignedGetUrl } from "@/server/file-uploads";
+import { assertKeyReadableByCompany } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
 import { ZodGetTemplateQuerySchema } from "../schema";
 
@@ -18,6 +19,7 @@ export const getTemplateProcedure = withAuth
         select: {
           name: true,
           status: true,
+          company: { select: { id: true, publicId: true } },
           bucket: {
             select: {
               key: true,
@@ -58,6 +60,8 @@ export const getTemplateProcedure = withAuth
 
       return { template };
     });
+
+    assertKeyReadableByCompany(template.bucket.key, template.company);
 
     const { key, url } = await getPresignedGetUrl(template.bucket.key);
 

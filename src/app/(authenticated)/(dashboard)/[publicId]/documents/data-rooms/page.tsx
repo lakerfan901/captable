@@ -1,8 +1,6 @@
-"use server";
-
 import EmptyState from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
-import { getServerComponentAuthSession } from "@/server/auth";
+import { checkMembership, getServerComponentAuthSession } from "@/server/auth";
 import { db } from "@/server/db";
 import { RiAddFill, RiFolderCheckFill } from "@remixicon/react";
 import { Fragment } from "react";
@@ -34,7 +32,8 @@ const DataRoomPage = async () => {
     return null;
   }
 
-  const { companyId, companyPublicId } = session.user;
+  const { companyPublicId } = session.user;
+  const { companyId } = await checkMembership({ session, tx: db });
   const dataRooms = await getDataRooms(companyId);
 
   return (

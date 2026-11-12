@@ -1,5 +1,3 @@
-"use server";
-
 import { api } from "@/trpc/server";
 import type { Bucket, DataRoom } from "@prisma/client";
 import { notFound } from "next/navigation";

@@ -1,4 +1,5 @@
 import { getPresignedGetUrl } from "@/server/file-uploads";
+import { assertKeyReadableByCompany } from "@/server/tenant-ownership";
 import { withoutAuth } from "@/trpc/api/trpc";
 import { DecodeEmailToken } from "../../template-field-router/procedures/add-fields";
 import { ZodGetSigningFieldsSchema } from "../schema";
@@ -10,7 +11,7 @@ export const getSigningFieldsProcedure = withoutAuth
       input.token,
     );
 
-    const { bucket, fields, status } = await ctx.db.$transaction(async (tx) => {
+    const result = await ctx.db.$transaction(async (tx) => {
       const recipient = await tx.esignRecipient.findFirstOrThrow({
         where: {
           id: recipientId,
@@ -22,7 +23,7 @@ export const getSigningFieldsProcedure = withoutAuth
         },
       });
 
-      const { bucket, status } = await tx.template.findFirstOrThrow({
+      const { bucket, company, status } = await tx.template.findFirstOrThrow({
         where: {
           id: recipient.templateId,
           status: {
@@ -35,6 +36,7 @@ export const getSigningFieldsProcedure = withoutAuth
               key: true,
             },
           },
+          company: { select: { id: true, publicId: true } },
           status: true,
         },
       });
@@ -66,8 +68,11 @@ export const getSigningFieldsProcedure = withoutAuth
         },
       });
 
-      return { bucket, fields, status };
+      return { bucket, company, fields, status };
     });
+    const { bucket, company, fields, status } = result;
+
+    assertKeyReadableByCompany(bucket.key, company);
 
     const { key, url } = await getPresignedGetUrl(bucket.key);
 

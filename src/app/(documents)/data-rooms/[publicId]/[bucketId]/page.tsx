@@ -1,8 +1,7 @@
-"use server";
-
 import FilePreview from "@/components/file/preview";
 import { SharePageLayout } from "@/components/share/page-layout";
 import { type JWTVerifyResult, decode } from "@/lib/jwt";
+import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
 import { db } from "@/server/db";
 import { getPresignedGetUrl } from "@/server/file-uploads";
 import { RiFolder3Fill as FolderIcon } from "@remixicon/react";
@@ -34,7 +33,7 @@ const DataRoomPage = async (props: {
     return notFound();
   }
 
-  const recipient = await db.dataRoomRecipient.findFirstOrThrow({
+  const recipient = await db.dataRoomRecipient.findFirst({
     where: {
       id: recipientId,
       dataRoomId,
@@ -49,14 +48,17 @@ const DataRoomPage = async (props: {
     return notFound();
   }
 
-  const dataRoom = await db.dataRoom.findFirstOrThrow({
+  const dataRoom = await db.dataRoom.findFirst({
     where: {
       publicId,
+      id: dataRoomId,
+      companyId,
     },
 
     include: {
       company: true,
       documents: {
+        where: { document: { companyId } },
         include: {
           document: {
             include: {
@@ -67,6 +69,10 @@ const DataRoomPage = async (props: {
       },
     },
   });
+
+  if (!dataRoom) {
+    return notFound();
+  }
 
   const dataRoomFile = dataRoom.documents.find(
     (doc) => doc.document.bucket.id === bucketId,
@@ -82,7 +88,13 @@ const DataRoomPage = async (props: {
 
   const file = dataRoomFile?.document.bucket;
 
-  if (!file) {
+  if (
+    !file ||
+    !isKeyInCompanyNamespace(file.key, {
+      id: dataRoom.company.id,
+      publicId: dataRoom.company.publicId,
+    })
+  ) {
     return notFound();
   }
 

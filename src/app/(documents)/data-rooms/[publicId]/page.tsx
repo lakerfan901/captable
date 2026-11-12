@@ -1,5 +1,3 @@
-"use server";
-
 import DataRoomFileExplorer from "@/components/documents/data-room/explorer";
 import { SharePageLayout } from "@/components/share/page-layout";
 import { type JWTVerifyResult, decode } from "@/lib/jwt";
@@ -32,7 +30,7 @@ const DataRoomPage = async (props: {
     return notFound();
   }
 
-  const recipient = await db.dataRoomRecipient.findFirstOrThrow({
+  const recipient = await db.dataRoomRecipient.findFirst({
     where: {
       id: recipientId,
       dataRoomId,
@@ -47,14 +45,17 @@ const DataRoomPage = async (props: {
     return notFound();
   }
 
-  const dataRoom = await db.dataRoom.findFirstOrThrow({
+  const dataRoom = await db.dataRoom.findFirst({
     where: {
       publicId,
+      id: dataRoomId,
+      companyId,
     },
 
     include: {
       company: true,
       documents: {
+        where: { document: { companyId } },
         include: {
           document: {
             include: {
@@ -66,7 +67,11 @@ const DataRoomPage = async (props: {
     },
   });
 
-  if (dataRoomId !== dataRoom.id || dataRoom?.companyId !== companyId) {
+  if (
+    !dataRoom ||
+    dataRoomId !== dataRoom.id ||
+    dataRoom.companyId !== companyId
+  ) {
     return notFound();
   }
 
