@@ -1,4 +1,4 @@
-import { RiAddFill, RiPieChart2Line } from "@remixicon/react";
+import { RiPieChart2Line } from "@remixicon/react";
 import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import Tldr from "@/components/common/tldr";

@@ -1,9 +1,7 @@
-import { RiAddFill, RiPieChartFill } from "@remixicon/react";
+import { RiPieChartFill } from "@remixicon/react";
 import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
-import { ShareModal } from "@/components/securities/shares/share-modal";
 import ShareTable from "@/components/securities/shares/share-table";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { api } from "@/trpc/server";
 import { IssueShareButton } from "./issue-share-button";

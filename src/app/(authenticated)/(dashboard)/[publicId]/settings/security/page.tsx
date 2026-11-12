@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { SecurityList } from "@/components/security/SecurityList";
 import { SettingsHeader } from "@/components/security/SettingHeader";
 

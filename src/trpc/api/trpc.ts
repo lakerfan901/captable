@@ -17,7 +17,6 @@ import * as Sentry from "@sentry/nextjs";
 import { getIp, getUserAgent } from "@/lib/headers";
 import { type addPolicyOption, RBAC } from "@/lib/rbac";
 import {
-  checkAccessControlMembership,
   getPermissions,
 } from "@/lib/rbac/access-control";
 import { getServerAuthSession } from "@/server/auth";

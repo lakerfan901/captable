@@ -10,7 +10,6 @@ import {
 import Link from "next/link";
 import { useDebounceCallback } from "usehooks-ts";
 import EmptyState from "@/components/common/empty-state";
-import type { ExtendedDataRoomRecipientType } from "@/components/common/share-modal";
 import DataRoomFileExplorer from "@/components/documents/data-room/explorer";
 import { pushModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";

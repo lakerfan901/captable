@@ -1,7 +1,6 @@
 import { PageLayout } from "@/components/dashboard/page-layout";
 import { RoleCreateUpdateModalAction } from "@/components/modals/role-create-update-modal";
 import { RoleTable } from "@/components/rbac/role-table";
-import { Card } from "@/components/ui/card";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { api } from "@/trpc/server";
 

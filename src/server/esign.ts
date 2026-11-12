@@ -12,7 +12,6 @@ import {
 } from "@/server/file-uploads";
 import { createBucketHandler } from "@/trpc/routers/bucket-router/procedures/create-bucket";
 import { createDocumentHandler } from "@/trpc/routers/document-router/procedures/create-document";
-import { EsignAudit } from "./audit";
 import type { PrismaTransactionalClient } from "./db";
 
 interface getEsignAuditsOptions {

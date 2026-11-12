@@ -1,5 +1,4 @@
 import { Audit } from "@/server/audit";
-import { checkMembership } from "@/server/auth";
 import { createTRPCRouter, withAccessControl, withAuth } from "@/trpc/api/trpc";
 import { ZodOnboardingMutationSchema } from "../onboarding-router/schema";
 import { ZodSwitchCompanyMutationSchema } from "./schema";

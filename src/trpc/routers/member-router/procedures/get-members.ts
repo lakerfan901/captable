@@ -1,4 +1,4 @@
-import { checkMembership } from "@/server/auth";
+
 import { withAccessControl } from "@/trpc/api/trpc";
 
 export const getMembersProcedure = withAccessControl

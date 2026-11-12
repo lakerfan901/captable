@@ -1,7 +1,6 @@
 "use client";
 
 import { RiAddFill } from "@remixicon/react";
-import React from "react";
 import { pushModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";
 

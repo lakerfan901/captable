@@ -9,7 +9,6 @@ import {
   Text,
   View,
 } from "@react-pdf/renderer";
-import { dayjsExt } from "@/common/dayjs";
 import type { TEsignAuditSchema } from "@/server/audit/schema";
 import type { TGetEsignAudits } from "@/server/esign";
 

@@ -4,7 +4,6 @@ import * as Toolbar from "@radix-ui/react-toolbar";
 import { useCallback, useRef, useState } from "react";
 import { useFormContext } from "react-hook-form";
 import { OptionalMessageModal } from "@/components/esign/optional-message-modal";
-import { pushModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

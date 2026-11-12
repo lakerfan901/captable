@@ -16,20 +16,12 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   StepperModalFooter,
   StepperPrev,
   useStepper,
 } from "@/components/ui/stepper";
 import { useAddShareFormValues } from "@/providers/add-share-form-provider";
 import type { RouterOutputs } from "@/trpc/shared";
-import { EmptySelect } from "../../shared/EmptySelect";
 
 interface ContributionDetailsProps {
   stakeholders: RouterOutputs["stakeholder"]["getStakeholders"] | [];
