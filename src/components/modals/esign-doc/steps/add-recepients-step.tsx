@@ -1,3 +1,8 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { RiDeleteBinLine } from "@remixicon/react";
+import { useRouter } from "next/navigation";
+import { useFieldArray, useForm } from "react-hook-form";
+import { z } from "zod";
 import { uploadFile } from "@/common/uploads";
 import { popModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";
@@ -20,11 +25,6 @@ import {
 import { TAG } from "@/lib/tags";
 import { useEsignValues } from "@/providers/esign-form-provider";
 import { api } from "@/trpc/react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { RiDeleteBinLine } from "@remixicon/react";
-import { useRouter } from "next/navigation";
-import { useFieldArray, useForm } from "react-hook-form";
-import { z } from "zod";
 
 const FormSchema = z.object({
   recipients: z.array(

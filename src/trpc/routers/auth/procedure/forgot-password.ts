@@ -1,9 +1,9 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { passwordResetEmailJob } from "@/jobs/password-reset-email";
 import { generatePasswordResetToken } from "@/lib/token";
 import { getUserByEmail } from "@/server/user";
 import { withoutAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 
 export const forgotPasswordProcedure = withoutAuth
   .input(z.string().email())

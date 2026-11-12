@@ -1,13 +1,12 @@
 "use client";
 
+import { CaptableLogo } from "@/components/common/logo";
 import {
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-import { CaptableLogo } from "@/components/common/logo";
 import { cn } from "@/lib/utils";
 
 export type ModalProps = {

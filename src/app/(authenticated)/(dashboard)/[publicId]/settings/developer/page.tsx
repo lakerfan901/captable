@@ -1,9 +1,9 @@
-import EmptyState from "@/components/common/empty-state";
-import { api } from "@/trpc/server";
 import { RiTerminalBoxFill } from "@remixicon/react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Fragment } from "react";
+import EmptyState from "@/components/common/empty-state";
+import { api } from "@/trpc/server";
 import CreateAccessToken from "./components/create-access-token";
 import AccessTokenTable from "./components/table";
 

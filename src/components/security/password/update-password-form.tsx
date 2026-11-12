@@ -1,5 +1,9 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -12,10 +16,6 @@ import {
 import { PasswordInput } from "@/components/ui/password-input";
 import { api } from "@/trpc/react";
 import { ZPasswordSchema } from "@/trpc/routers/auth/schema";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { toast } from "sonner";
-import { z } from "zod";
 
 export const ZChangePasswordFormSchema = z
   .object({

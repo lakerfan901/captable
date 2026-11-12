@@ -1,5 +1,5 @@
-import { withAuth } from "@/trpc/api/trpc";
 import { TRPCError } from "@trpc/server";
+import { withAuth } from "@/trpc/api/trpc";
 
 export const getProfileProcedure = withAuth.query(async ({ ctx }) => {
   const {

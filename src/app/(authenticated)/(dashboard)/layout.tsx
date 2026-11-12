@@ -1,5 +1,5 @@
-import { withServerComponentSession } from "@/server/auth";
 import { redirect } from "next/navigation";
+import { withServerComponentSession } from "@/server/auth";
 
 export default async function OnboardedLayout({
   children,

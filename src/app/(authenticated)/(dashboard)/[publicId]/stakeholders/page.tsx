@@ -1,3 +1,5 @@
+import { RiGroup2Fill } from "@remixicon/react";
+import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import StakeholderDropdown from "@/components/stakeholder/stakeholder-dropdown";
 import StakeholderTable from "@/components/stakeholder/stakeholder-table";
@@ -5,8 +7,6 @@ import { Card } from "@/components/ui/card";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { api } from "@/trpc/server";
-import { RiGroup2Fill } from "@remixicon/react";
-import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Stakeholders",

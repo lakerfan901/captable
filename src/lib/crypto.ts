@@ -13,7 +13,9 @@ export const createHash = async (key: string) => {
 
 export const initializeAccessToken = ({
   prefix = "api",
-}: { prefix?: string }) => {
+}: {
+  prefix?: string;
+}) => {
   const clientId = `${prefix}_${customId(8)}`;
   const clientSecret = randomBytes(24)
     .toString("base64url")

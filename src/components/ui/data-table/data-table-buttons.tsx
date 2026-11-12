@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import { RiCloseLine, RiExpandUpDownLine } from "@remixicon/react";
+import { cn } from "@/lib/utils";
 import { Button, type ButtonProps } from "../button";
 
 interface SortButtonProps

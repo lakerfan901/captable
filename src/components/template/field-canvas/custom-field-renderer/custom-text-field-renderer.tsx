@@ -1,4 +1,4 @@
-import { Input } from "@/components/ui/input";
+import { useFormContext } from "react-hook-form";
 
 import {
   Accordion,
@@ -13,8 +13,8 @@ import {
   FormItem,
   FormLabel,
 } from "@/components/ui/form";
-import { type TemplateFieldForm } from "@/providers/template-field-provider";
-import { useFormContext } from "react-hook-form";
+import { Input } from "@/components/ui/input";
+import type { TemplateFieldForm } from "@/providers/template-field-provider";
 
 interface CustomTextFieldRendererProps {
   index: number;

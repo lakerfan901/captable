@@ -1,11 +1,11 @@
 // CREDITS https://github.com/reach/reach-ui/blob/dev/packages/descendants/src/reach-descendants.tsx
 
+import * as React from "react";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/unbound-method */
 import { useForceUpdate } from "@/hooks/use-force-update";
 import { useIsomorphicLayoutEffect as useLayoutEffect } from "@/hooks/use-isomorphic-layout-effect";
-import * as React from "react";
 
 // biome-ignore lint/suspicious/noEmptyBlockStatements: <explanation>
 export function noop(): void {}
@@ -209,6 +209,7 @@ interface DescendantContextValue<DescendantType extends Descendant> {
 ////////////////////////////////////////////////////////////////////////////////
 // Exports
 
+export type { Descendant, DescendantContextValue };
 export {
   createDescendantContext,
   DescendantProvider,
@@ -216,4 +217,3 @@ export {
   useDescendants,
   useDescendantsInit,
 };
-export type { Descendant, DescendantContextValue };

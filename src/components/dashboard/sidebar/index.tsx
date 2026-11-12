@@ -26,7 +26,9 @@ import {
   RiSafeFill,
   RiSafeLine,
 } from "@remixicon/react";
+import { usePathname } from "next/navigation";
 
+import { CaptableLogo } from "@/components/common/logo";
 import {
   Accordion,
   AccordionContent,
@@ -34,15 +36,11 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 
-import { CaptableLogo } from "@/components/common/logo";
-import { usePathname } from "next/navigation";
-
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { NavLink } from "./nav-link";
-
 import type { TGetCompanyList } from "@/server/company";
 import { CompanySwitcher } from "./company-switcher";
+import { NavLink } from "./nav-link";
 
 const navigation = [
   {

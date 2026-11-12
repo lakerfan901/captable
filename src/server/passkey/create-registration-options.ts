@@ -1,9 +1,9 @@
+import { generateRegistrationOptions } from "@simplewebauthn/server";
+import { isoUint8Array } from "@simplewebauthn/server/helpers";
 import { PASSKEY_TIMEOUT } from "@/constants/passkey";
 import { getAuthenticatorOptions } from "@/lib/authenticator";
 import { db } from "@/server/db";
 import type { PasskeyAudit } from "@/trpc/routers/passkey-router/schema";
-import { generateRegistrationOptions } from "@simplewebauthn/server";
-import { isoUint8Array } from "@simplewebauthn/server/helpers";
 import { Audit } from "../audit";
 
 type CreatePasskeyRegistrationOptions = {

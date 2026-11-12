@@ -1,6 +1,15 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import { startRegistration } from "@simplewebauthn/browser";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { UAParser } from "ua-parser-js";
+import { z } from "zod";
 import Modal from "@/components/common/modal";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -10,19 +19,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-
 import { Input } from "@/components/ui/input";
 import { api } from "@/trpc/react";
-import { toast } from "sonner";
-
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { startRegistration } from "@simplewebauthn/browser";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { UAParser } from "ua-parser-js";
-import { z } from "zod";
 
 type PasskeyModalType = {
   title: string;

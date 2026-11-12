@@ -1,12 +1,5 @@
 "use client";
 
-import { dayjsExt } from "@/common/dayjs";
-import Loading from "@/components/common/loading";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { DropdownButton } from "@/components/ui/dropdown-button";
-import { api } from "@/trpc/react";
 import type { Block, PartialBlock } from "@blocknote/core";
 import type { Update } from "@prisma/client";
 import { RiArrowDownSLine } from "@remixicon/react";
@@ -14,6 +7,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
 import { toast } from "sonner";
+import { dayjsExt } from "@/common/dayjs";
+import Loading from "@/components/common/loading";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { DropdownButton } from "@/components/ui/dropdown-button";
+import { api } from "@/trpc/react";
 
 import "@/styles/editor.css";
 import { BlockNoteView } from "@blocknote/mantine";

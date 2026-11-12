@@ -1,10 +1,9 @@
+import { TRPCError } from "@trpc/server";
+import z from "zod";
 import { createSecureHash, initializeAccessToken } from "@/lib/crypto";
 import { AccessTokenType } from "@/prisma/enums";
 import { Audit } from "@/server/audit";
-
 import { createTRPCRouter, withAccessControl } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import z from "zod";
 
 export const accessTokenRouter = createTRPCRouter({
   listAll: withAccessControl

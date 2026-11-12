@@ -1,3 +1,4 @@
+import type Stripe from "stripe";
 import { env } from "@/env";
 import {
   deletePriceRecord,
@@ -7,7 +8,6 @@ import {
   upsertPriceRecord,
   upsertProductRecord,
 } from "@/server/stripe";
-import type Stripe from "stripe";
 
 const relevantEvents = new Set([
   "product.created",

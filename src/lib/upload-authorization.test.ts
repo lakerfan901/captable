@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
-  type UploadAuthorizationRequest,
-  type UploadAuthorizationSubject,
   authorizeUpload,
   isKeyInCompanyNamespace,
+  type UploadAuthorizationRequest,
+  type UploadAuthorizationSubject,
 } from "./upload-authorization";
 
 const companyA = { id: "cmp_a_internal", publicId: "acme" };

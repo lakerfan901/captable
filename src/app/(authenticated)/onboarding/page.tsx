@@ -1,7 +1,7 @@
-import { CompanyForm } from "@/components/onboarding/company-form";
-import { withServerComponentSession } from "@/server/auth";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { CompanyForm } from "@/components/onboarding/company-form";
+import { withServerComponentSession } from "@/server/auth";
 
 export const metadata: Metadata = {
   title: "Onboarding",

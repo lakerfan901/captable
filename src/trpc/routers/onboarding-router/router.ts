@@ -1,8 +1,7 @@
 import { generatePublicId } from "@/common/id";
+import { Audit } from "@/server/audit";
 import { createTRPCRouter, withAuth } from "@/trpc/api/trpc";
 import { ZodOnboardingMutationSchema } from "./schema";
-
-import { Audit } from "@/server/audit";
 
 // HERE: Reusing this same router for new company, onboarding and edit company.
 export const onboardingRouter = createTRPCRouter({

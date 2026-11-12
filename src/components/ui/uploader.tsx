@@ -1,7 +1,5 @@
 "use client";
 
-import { uploadFile } from "@/common/uploads";
-import { api } from "@/trpc/react";
 import type React from "react";
 import { useCallback, useState } from "react";
 import {
@@ -10,11 +8,12 @@ import {
   useDropzone,
 } from "react-dropzone";
 import { toast } from "sonner";
-import { Button } from "./button";
-
+import { uploadFile } from "@/common/uploads";
 import type { TagType } from "@/lib/tags";
 import type { TypeKeyPrefixes } from "@/server/file-uploads";
+import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
+import { Button } from "./button";
 
 export type UploadReturn = RouterOutputs["bucket"]["create"];
 

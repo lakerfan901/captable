@@ -1,12 +1,12 @@
 "use client";
 
+import { RiAddFill, RiSafe2Fill, RiSafeFill } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { RiAddFill, RiSafe2Fill, RiSafeFill } from "@remixicon/react";
 import { pushModal } from "../modals";
 
 export function SafeActions() {

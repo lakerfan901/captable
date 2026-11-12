@@ -1,5 +1,5 @@
-import { SecuritiesStatusEnum, ShareLegendsEnum } from "@/prisma/enums";
 import { z } from "@hono/zod-openapi";
+import { SecuritiesStatusEnum, ShareLegendsEnum } from "@/prisma/enums";
 
 const ShareLegendsArr = Object.values(ShareLegendsEnum) as [
   ShareLegendsEnum,

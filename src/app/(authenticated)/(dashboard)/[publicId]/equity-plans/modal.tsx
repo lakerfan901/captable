@@ -1,9 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Modal from "@/components/common/modal";
 import type { EquityPlanMutationType } from "@/trpc/routers/equity-plan/schema";
 import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
-import { useState } from "react";
 import EquityPlanForm from "./form";
 
 type EquityPlanType = {

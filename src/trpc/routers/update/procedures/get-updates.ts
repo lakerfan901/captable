@@ -1,7 +1,7 @@
+import { z } from "zod";
 import { encode } from "@/lib/jwt";
 import { checkMembership } from "@/server/auth";
 import { withAuth } from "@/trpc/api/trpc";
-import { z } from "zod";
 
 export const getUpdatesProcedure = withAuth.query(async ({ ctx }) => {
   const { db, session } = ctx;

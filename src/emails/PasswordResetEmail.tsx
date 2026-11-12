@@ -1,3 +1,4 @@
+import * as React from "react";
 import {
   Body,
   Button,
@@ -12,7 +13,6 @@ import {
   Tailwind,
   Text,
 } from "react-email";
-import * as React from "react";
 import { constants } from "../lib/constants";
 
 interface PasswordResetEmailProps {

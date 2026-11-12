@@ -1,9 +1,9 @@
+import { TRPCError } from "@trpc/server";
 import { generatePublicId } from "@/common/id";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { ZodAddShareMutationSchema } from "../schema";
 
 export const addShareProcedure = withAuth

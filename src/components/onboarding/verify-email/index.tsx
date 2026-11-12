@@ -1,7 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { api } from "@/trpc/react";
 import {
   RiArrowRightLine,
   RiMailCheckLine,
@@ -9,6 +7,8 @@ import {
 } from "@remixicon/react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { api } from "@/trpc/react";
 
 const VerifyEmail = ({ token }: { token: string }) => {
   const [loading, setLoading] = useState(true);

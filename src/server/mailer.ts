@@ -3,8 +3,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 
+import { createTransport, type SendMailOptions } from "nodemailer";
 import { env } from "@/env";
-import { type SendMailOptions, createTransport } from "nodemailer";
 
 const getTransport = () => {
   return createTransport({

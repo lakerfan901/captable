@@ -1,8 +1,8 @@
-import { CustomTextFieldRenderer } from "./custom-text-field-renderer";
-
-import { type TemplateFieldForm } from "@/providers/template-field-provider";
 import { useFormContext, useWatch } from "react-hook-form";
+
+import type { TemplateFieldForm } from "@/providers/template-field-provider";
 import { CustomSelectFieldRenderer } from "./custom-select-field-renderer";
+import { CustomTextFieldRenderer } from "./custom-text-field-renderer";
 
 interface CustomFieldRendererProps {
   index: number;

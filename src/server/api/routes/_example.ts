@@ -1,6 +1,6 @@
+import { createRoute, z } from "@hono/zod-openapi";
 import { ErrorResponses } from "@/server/api/error";
 import type { PublicAPI } from "@/server/api/hono";
-import { createRoute, z } from "@hono/zod-openapi";
 
 export const RequestSchema = z.object({
   id: z

@@ -1,6 +1,5 @@
+import { type NextRequest, NextResponse, userAgent } from "next/server";
 import { logger } from "@/lib/logger";
-import { NextResponse } from "next/server";
-import { type NextRequest, userAgent } from "next/server";
 import { env } from "./env";
 
 const log = logger.child({ module: "proxy" });

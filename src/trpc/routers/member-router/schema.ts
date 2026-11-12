@@ -1,5 +1,5 @@
-import { AvatarUploadInput, ProfileUpdateInput } from "@/lib/zodSchemas";
 import { string, z } from "zod";
+import { AvatarUploadInput, ProfileUpdateInput } from "@/lib/zodSchemas";
 
 export const ZodInviteMemberMutationSchema = z.object({
   email: z.string().email().min(1),

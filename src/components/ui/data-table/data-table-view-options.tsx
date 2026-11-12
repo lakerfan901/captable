@@ -1,3 +1,4 @@
+import { RiArrowDownSLine } from "@remixicon/react";
 import { Button } from "../button";
 import {
   DropdownMenu,
@@ -7,8 +8,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../dropdown-menu";
-
-import { RiArrowDownSLine } from "@remixicon/react";
 import { useDataTable } from "./data-table";
 
 export function DataTableViewOptions() {

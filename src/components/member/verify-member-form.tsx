@@ -1,17 +1,15 @@
 "use client";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { RiArrowRightLine } from "@remixicon/react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useForm } from "react-hook-form";
+import { api } from "@/trpc/react";
 import {
   type TypeZodAcceptMemberMutationSchema,
   ZodAcceptMemberMutationSchema,
 } from "@/trpc/routers/member-router/schema";
-import { RiArrowRightLine } from "@remixicon/react";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-
-import { api } from "@/trpc/react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
 import {
   Form,
   FormControl,
@@ -20,6 +18,7 @@ import {
   FormLabel,
   FormMessage,
 } from "../ui/form";
+import { Input } from "../ui/input";
 
 interface VerifyMemberFormProps {
   memberId: string;

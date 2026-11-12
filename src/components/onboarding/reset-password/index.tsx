@@ -1,14 +1,11 @@
 "use client";
 
-import { CaptableLogo } from "@/components/common/logo";
-import { PasswordInput } from "@/components/ui/password-input";
-import { api } from "@/trpc/react";
-import { ZPasswordSchema } from "@/trpc/routers/auth/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
-
+import { CaptableLogo } from "@/components/common/logo";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -19,7 +16,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
+import { PasswordInput } from "@/components/ui/password-input";
+import { api } from "@/trpc/react";
+import { ZPasswordSchema } from "@/trpc/routers/auth/schema";
 
 export const ZResetPasswordFormSchema = z
   .object({

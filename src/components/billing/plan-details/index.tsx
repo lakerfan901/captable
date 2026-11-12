@@ -1,8 +1,8 @@
+import Link from "next/link";
 import { dayjsExt } from "@/common/dayjs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { badgeVariants } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import Link from "next/link";
 import { PricingModal, type PricingModalProps } from "../pricing-modal";
 
 interface PlanDetailsProps extends PricingModalProps {}

@@ -1,7 +1,7 @@
+import { TRPCError } from "@trpc/server";
 import { getPresignedGetUrl } from "@/server/file-uploads";
 import { assertKeyReadableByCompany } from "@/server/tenant-ownership";
 import { withAccessControl } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { ZodGetDocumentQuerySchema } from "../schema";
 
 export const getDocumentProcedure = withAccessControl

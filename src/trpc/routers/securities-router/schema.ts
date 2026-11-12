@@ -1,10 +1,10 @@
+import { SecuritiesStatusEnum } from "@prisma/client";
+import { z } from "zod";
 import {
   OptionStatusEnum,
   OptionTypeEnum,
   ShareLegendsEnum,
 } from "@/prisma/enums";
-import { SecuritiesStatusEnum } from "@prisma/client";
-import { z } from "zod";
 
 // OPTIONS
 export const ZodAddOptionMutationSchema = z.object({

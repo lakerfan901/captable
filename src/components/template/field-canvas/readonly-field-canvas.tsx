@@ -1,9 +1,9 @@
 "use client";
 
-import type { TemplateSigningFieldForm } from "@/providers/template-signing-field-provider";
 import { useResizeObserver } from "@wojtekmaj/react-hooks";
 import { useCallback, useState } from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
+import type { TemplateSigningFieldForm } from "@/providers/template-signing-field-provider";
 import { ReadOnlyTemplateField } from "./readonly-template-field";
 
 const resizeObserverOptions = {};

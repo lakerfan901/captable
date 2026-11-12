@@ -1,4 +1,4 @@
-import { type ShareContactType } from "@/schema/contacts";
+import type { ShareContactType } from "@/schema/contacts";
 import { createTRPCRouter, withAuth } from "@/trpc/api/trpc";
 
 export const commonRouter = createTRPCRouter({

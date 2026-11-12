@@ -1,9 +1,9 @@
+import { TRPCError } from "@trpc/server";
 import { generatePublicId } from "@/common/id";
 import { sanitizeUpdateHtml } from "@/lib/sanitize-update-html";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { withAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { UpdateMutationSchema } from "../schema";
 
 export const saveUpdateProcedure = withAuth

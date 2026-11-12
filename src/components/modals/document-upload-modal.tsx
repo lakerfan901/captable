@@ -1,10 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import Modal from "@/components/common/push-modal";
 import Uploader, { type UploadReturn } from "@/components/ui/uploader";
 import { TAG } from "@/lib/tags";
 import { api } from "@/trpc/react";
-import { useRouter } from "next/navigation";
 
 type DocumentUploadModalProps = {
   companyPublicId: string;

@@ -1,14 +1,14 @@
+import { RiLock2Line } from "@remixicon/react";
+import { notFound } from "next/navigation";
+import { Fragment } from "react";
+import { render } from "react-email";
 import { dayjsExt } from "@/common/dayjs";
 import { SharePageLayout } from "@/components/share/page-layout";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import UpdateRenderer from "@/components/update/renderer";
-import { type JWTVerifyResult, decode } from "@/lib/jwt";
+import { decode, type JWTVerifyResult } from "@/lib/jwt";
 import { UpdateStatusEnum } from "@/prisma/enums";
 import { db } from "@/server/db";
-import { render } from "react-email";
-import { RiLock2Line } from "@remixicon/react";
-import { notFound } from "next/navigation";
-import { Fragment } from "react";
 
 const PublicUpdatePage = async (props: {
   params: Promise<{ publicId: string }>;

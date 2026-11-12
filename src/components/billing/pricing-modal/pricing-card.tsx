@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import {
   Card,
@@ -8,7 +9,6 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { PricingPlanInterval } from "@/prisma/enums";
-import { useState } from "react";
 
 interface PricingCardProps {
   title: string;

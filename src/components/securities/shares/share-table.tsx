@@ -1,31 +1,34 @@
 "use client";
 
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+} from "@radix-ui/react-dropdown-menu";
+import { RiFileDownloadLine, RiMore2Fill } from "@remixicon/react";
+import {
   type ColumnDef,
   type ColumnFiltersState,
-  type SortingState,
   type ColumnVisibilityState,
+  type SortingState,
   useTable,
 } from "@tanstack/react-table";
+import { useRouter } from "next/navigation";
+import * as React from "react";
+import { toast } from "sonner";
+import { dayjsExt } from "@/common/dayjs";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DataTable } from "@/components/ui/data-table/data-table";
+import { DataTableBody } from "@/components/ui/data-table/data-table-body";
+import { SortButton } from "@/components/ui/data-table/data-table-buttons";
+import { DataTableContent } from "@/components/ui/data-table/data-table-content";
+import { DataTableHeader } from "@/components/ui/data-table/data-table-header";
+import { DataTablePagination } from "@/components/ui/data-table/data-table-pagination";
 import {
   type DataTableFeatures,
   dataTableFeatures,
 } from "@/components/ui/data-table/features";
-import * as React from "react";
-
-import { dayjsExt } from "@/common/dayjs";
-import { Checkbox } from "@/components/ui/checkbox";
-
-import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { DataTable } from "@/components/ui/data-table/data-table";
-import { DataTableBody } from "@/components/ui/data-table/data-table-body";
-import { DataTableContent } from "@/components/ui/data-table/data-table-content";
-import { DataTableHeader } from "@/components/ui/data-table/data-table-header";
-import { DataTablePagination } from "@/components/ui/data-table/data-table-pagination";
-import type { RouterOutputs } from "@/trpc/shared";
-
-import { Button } from "@/components/ui/button";
-import { SortButton } from "@/components/ui/data-table/data-table-buttons";
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -35,13 +38,7 @@ import {
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getPresignedGetUrl } from "@/server/file-upload-actions";
 import { api } from "@/trpc/react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-} from "@radix-ui/react-dropdown-menu";
-import { RiFileDownloadLine, RiMore2Fill } from "@remixicon/react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import type { RouterOutputs } from "@/trpc/shared";
 import { ShareTableToolbar } from "./share-table-toolbar";
 
 type Share = RouterOutputs["securities"]["getShares"]["data"];

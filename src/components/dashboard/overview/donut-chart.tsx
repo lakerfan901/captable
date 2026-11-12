@@ -1,8 +1,8 @@
 "use client";
 
-import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { cn } from "@/lib/utils";
 
 /**
  * Donut chart on Recharts. Replaces `@tremor/react`'s DonutChart (React 18 /

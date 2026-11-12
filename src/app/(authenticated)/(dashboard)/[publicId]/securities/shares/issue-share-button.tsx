@@ -1,13 +1,13 @@
 "use client";
 
+import { RiAddFill } from "@remixicon/react";
+import type React from "react";
 import { pushModal } from "@/components/modals";
 import type {
   TShareClasses,
   TStakeholders,
 } from "@/components/modals/issue-share-modal";
 import { Button } from "@/components/ui/button";
-import { RiAddFill } from "@remixicon/react";
-import type React from "react";
 
 type IssueShareButtonProps = {
   title: string;

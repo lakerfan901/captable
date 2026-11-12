@@ -1,9 +1,9 @@
+import { RiFileUnknowFill as UnknownFileIcon } from "@remixicon/react";
 import EmptyState from "@/components/common/empty-state";
 import { OfficeViewer } from "@/components/file/office-viewer";
 import { Button } from "@/components/ui/button";
 import { PdfViewer } from "@/components/ui/pdf-viewer";
 import { fileType } from "@/lib/mime";
-import { RiFileUnknowFill as UnknownFileIcon } from "@remixicon/react";
 
 type FilePreviewProps = {
   name: string;

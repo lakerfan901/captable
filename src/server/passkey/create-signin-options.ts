@@ -1,6 +1,6 @@
+import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { getAuthenticatorOptions } from "@/lib/authenticator";
 import { db } from "@/server/db";
-import { generateAuthenticationOptions } from "@simplewebauthn/server";
 
 type CreatePasskeySigninOptions = {
   sessionId: string;

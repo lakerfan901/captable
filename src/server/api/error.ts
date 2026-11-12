@@ -1,10 +1,9 @@
-import { logger } from "@/lib/logger";
+import { z } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { ZodError } from "zod";
-
-import { z } from "@hono/zod-openapi";
+import { logger } from "@/lib/logger";
 
 const log = logger.child({ module: "api-error" });
 

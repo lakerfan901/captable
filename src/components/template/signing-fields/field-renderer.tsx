@@ -3,6 +3,7 @@
 
 "use client";
 
+import { useFormContext } from "react-hook-form";
 import {
   FormControl,
   FormField,
@@ -19,10 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SignaturePad } from "@/components/ui/signature-pad";
-
-import { type TemplateSigningFieldForm } from "@/providers/template-signing-field-provider";
-import { type RouterOutputs } from "@/trpc/shared";
-import { useFormContext } from "react-hook-form";
+import type { TemplateSigningFieldForm } from "@/providers/template-signing-field-provider";
+import type { RouterOutputs } from "@/trpc/shared";
 
 type Field = RouterOutputs["template"]["getSigningFields"]["fields"][number];
 

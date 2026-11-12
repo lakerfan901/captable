@@ -1,14 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import bcrypt from "bcryptjs";
 import {
   type DefaultSession,
+  getServerSession,
   type NextAuthOptions,
   type Session,
-  getServerSession,
 } from "next-auth";
-
+import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
+import { cache } from "react";
 import { env } from "@/env";
 import { getAuthenticatorOptions } from "@/lib/authenticator";
 import {
@@ -16,11 +19,7 @@ import {
   ZAuthenticationResponseJSONSchema,
 } from "@/lib/types";
 import type { MemberStatusEnum } from "@/prisma/enums";
-import { type TPrismaOrTransaction, db } from "@/server/db";
-import { verifyAuthenticationResponse } from "@simplewebauthn/server";
-import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
-import { cache } from "react";
+import { db, type TPrismaOrTransaction } from "@/server/db";
 import { getUserByEmail, getUserById } from "./user";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;

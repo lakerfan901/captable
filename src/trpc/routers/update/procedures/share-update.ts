@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { env } from "@/env";
 import { shareUpdateEmailJob } from "@/jobs/share-update-email";
 import { encode } from "@/lib/jwt";
@@ -7,7 +8,6 @@ import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
-import { z } from "zod";
 
 export const shareUpdateProcedure = withAuth
   .input(

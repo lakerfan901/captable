@@ -1,7 +1,7 @@
-import { cn } from "@/lib/utils";
 import { RiAddCircleLine, RiCheckLine } from "@remixicon/react";
 import type { CellData, Column, RowData } from "@tanstack/react-table";
-import * as React from "react";
+import type * as React from "react";
+import { cn } from "@/lib/utils";
 import { Badge } from "../badge";
 import { Button } from "../button";
 import {
@@ -33,11 +33,7 @@ interface DataTableFacetedFilterProps<
 export function DataTableFacetedFilter<
   TData extends RowData,
   TValue extends CellData,
->({
-  column,
-  title,
-  options,
-}: DataTableFacetedFilterProps<TData, TValue>) {
+>({ column, title, options }: DataTableFacetedFilterProps<TData, TValue>) {
   const facets = column?.getFacetedUniqueValues();
   const selectedValues = new Set(column?.getFilterValue() as string[]);
 

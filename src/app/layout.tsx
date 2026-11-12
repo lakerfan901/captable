@@ -8,10 +8,10 @@ import { ProgressBarProvider } from "@/providers/progress-bar";
 import { getServerComponentAuthSession } from "@/server/auth";
 import { robotoMono, satoshi } from "@/styles/fonts";
 import "@/styles/globals.css";
-import { TRPCReactProvider } from "@/trpc/react";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Toaster } from "sonner";
+import { TRPCReactProvider } from "@/trpc/react";
 
 export const metadata: Metadata = {
   title: {

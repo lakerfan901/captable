@@ -1,7 +1,7 @@
 "use client";
 
-import { useAllowed, type useAllowedOptions } from "@/hooks/use-allowed";
 import type { ReactNode } from "react";
+import { useAllowed, type useAllowedOptions } from "@/hooks/use-allowed";
 
 interface AllowProps extends useAllowedOptions {
   children: ReactNode | ((authorized: boolean) => ReactNode);

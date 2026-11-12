@@ -1,5 +1,5 @@
+import type { Metadata } from "next";
 import { CompanyForm } from "@/components/onboarding/company-form";
-import { type Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "New",

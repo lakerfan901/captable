@@ -1,6 +1,14 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import type React from "react";
+import { useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import type { z } from "zod";
 import { uploadFile } from "@/common/uploads";
 import Loading from "@/components/common/loading";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
@@ -17,14 +25,6 @@ import {
 import { profileSettingsSchema } from "@/lib/zodSchemas";
 import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import type React from "react";
-import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
-import { toast } from "sonner";
-import type { z } from "zod";
 
 type MemberProfile = RouterOutputs["member"]["getProfile"];
 

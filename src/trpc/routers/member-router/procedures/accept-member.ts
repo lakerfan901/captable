@@ -1,7 +1,7 @@
+import { TRPCError } from "@trpc/server";
 import { Audit } from "@/server/audit";
 import { checkVerificationToken } from "@/server/member";
 import { withAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { ZodAcceptMemberMutationSchema } from "../schema";
 
 export const acceptMemberProcedure = withAuth

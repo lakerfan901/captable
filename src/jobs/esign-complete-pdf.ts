@@ -1,7 +1,7 @@
+import { z } from "zod";
 import { db } from "@/server/db";
 import { completeEsignDocuments } from "@/server/esign";
 import { getPresignedGetUrl } from "@/server/file-uploads";
-import { z } from "zod";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
 import { eSignConfirmationEmailJob } from "./esign-confirmation-email";
 

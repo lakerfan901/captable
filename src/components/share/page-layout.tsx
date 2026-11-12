@@ -1,6 +1,6 @@
+import Link from "next/link";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
-import Link from "next/link";
 
 type SharePageLayoutProps = {
   medium: string;

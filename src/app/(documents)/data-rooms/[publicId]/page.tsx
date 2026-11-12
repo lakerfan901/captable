@@ -1,9 +1,9 @@
-import DataRoomFileExplorer from "@/components/documents/data-room/explorer";
-import { SharePageLayout } from "@/components/share/page-layout";
-import { type JWTVerifyResult, decode } from "@/lib/jwt";
-import { db } from "@/server/db";
 import { RiFolder3Fill as FolderIcon } from "@remixicon/react";
 import { notFound } from "next/navigation";
+import DataRoomFileExplorer from "@/components/documents/data-room/explorer";
+import { SharePageLayout } from "@/components/share/page-layout";
+import { decode, type JWTVerifyResult } from "@/lib/jwt";
+import { db } from "@/server/db";
 
 const DataRoomPage = async (props: {
   params: Promise<{ publicId: string }>;

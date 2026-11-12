@@ -1,5 +1,5 @@
-import { PricingType } from "@/prisma/enums";
 import { z } from "zod";
+import { PricingType } from "@/prisma/enums";
 
 export const ZodCheckoutMutationSchema = z.object({
   priceId: z.string(),

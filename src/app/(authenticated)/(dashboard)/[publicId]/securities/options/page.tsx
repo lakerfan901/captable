@@ -1,10 +1,10 @@
+import { RiGroup2Fill } from "@remixicon/react";
+import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import Tldr from "@/components/common/tldr";
 import OptionTable from "@/components/securities/options/option-table";
 import { Card } from "@/components/ui/card";
 import { api } from "@/trpc/server";
-import { RiGroup2Fill } from "@remixicon/react";
-import type { Metadata } from "next";
 import { IssueStockOptionButton } from "./issue-stock-option-button";
 
 export const metadata: Metadata = {

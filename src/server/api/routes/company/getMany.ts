@@ -1,5 +1,5 @@
-import { CompanySchema } from "@/server/api/schema/company";
 import { z } from "@hono/zod-openapi";
+import { CompanySchema } from "@/server/api/schema/company";
 import { authMiddleware, withAuthApiV1 } from "../../utils/endpoint-creator";
 
 export const getMany = withAuthApiV1

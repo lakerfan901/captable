@@ -1,9 +1,8 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
-
+import { pagination } from "prisma-extension-pagination";
 import { env } from "@/env";
 import type { TTemplateFieldMetaType } from "@/trpc/routers/template-field-router/schema";
-import { pagination } from "prisma-extension-pagination";
 
 declare global {
   namespace PrismaJson {

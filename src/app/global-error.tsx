@@ -1,9 +1,9 @@
 "use client";
 
-import { PublicEnvScript } from "@/components/public-env-script";
-import { env } from "@/env";
 import NextError from "next/error";
 import { useEffect } from "react";
+import { PublicEnvScript } from "@/components/public-env-script";
+import { env } from "@/env";
 
 export default function GlobalError({
   error,

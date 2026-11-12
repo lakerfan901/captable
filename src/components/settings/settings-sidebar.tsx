@@ -1,6 +1,5 @@
 "use client";
 
-import { NavLink } from "@/components/dashboard/sidebar/nav-link";
 import {
   RiAccountCircleFill,
   RiAccountCircleLine,
@@ -21,8 +20,9 @@ import {
   RiTerminalBoxFill,
   RiTerminalBoxLine,
 } from "@remixicon/react";
-import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { NavLink } from "@/components/dashboard/sidebar/nav-link";
 
 const companyNav = [
   {

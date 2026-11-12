@@ -1,6 +1,6 @@
-import { createTRPCRouter, withAccessControl } from "@/trpc/api/trpc";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
+import { createTRPCRouter, withAccessControl } from "@/trpc/api/trpc";
 
 export const bankAccountsRouter = createTRPCRouter({
   getAll: withAccessControl

@@ -1,12 +1,5 @@
 "use client";
 
-import Loading from "@/components/common/loading";
-import Modal from "@/components/common/push-modal";
-import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import MultipleSelector, { type Option } from "@/components/ui/multi-selector";
-
-import type { ShareContactType } from "@/schema/contacts";
 import type { DataRoomRecipient, UpdateRecipient } from "@prisma/client";
 import {
   RiCheckLine as CheckIcon,
@@ -15,6 +8,12 @@ import {
 } from "@remixicon/react";
 import { Fragment, useState } from "react";
 import { useCopyToClipboard } from "usehooks-ts";
+import Loading from "@/components/common/loading";
+import Modal from "@/components/common/push-modal";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import MultipleSelector, { type Option } from "@/components/ui/multi-selector";
+import type { ShareContactType } from "@/schema/contacts";
 import { popModal } from "../modals";
 
 export interface ExtendedDataRoomRecipientType extends DataRoomRecipient {

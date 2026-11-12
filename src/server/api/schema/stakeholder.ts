@@ -1,8 +1,8 @@
+import { z } from "@hono/zod-openapi";
 import {
   StakeholderRelationshipEnum,
   StakeholderTypeEnum,
 } from "@/prisma/enums";
-import { z } from "@hono/zod-openapi";
 
 const StakeholderTypeArray = Object.values(StakeholderTypeEnum) as [
   StakeholderTypeEnum,

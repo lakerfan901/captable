@@ -1,4 +1,5 @@
 import { cn } from "../../lib/utils";
+
 type IconProps = React.HTMLAttributes<SVGElement>;
 
 export const SpinnerIcon = (props: IconProps) => {

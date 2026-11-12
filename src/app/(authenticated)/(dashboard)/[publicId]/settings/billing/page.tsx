@@ -1,7 +1,7 @@
+import type { Metadata } from "next";
 import { PlanDetails } from "@/components/billing/plan-details";
 import { PageLayout } from "@/components/dashboard/page-layout";
 import { api } from "@/trpc/server";
-import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Billing",

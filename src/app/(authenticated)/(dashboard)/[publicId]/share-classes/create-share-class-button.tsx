@@ -1,10 +1,10 @@
 "use client";
 
+import { RiAddFill } from "@remixicon/react";
 import Tldr from "@/components/common/tldr";
 import { pushModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";
 import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
-import { RiAddFill } from "@remixicon/react";
 
 type CreateShareClassButtonProps = {
   shareClasses: ShareClassMutationType[];

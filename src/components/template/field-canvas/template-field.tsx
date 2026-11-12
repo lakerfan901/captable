@@ -1,4 +1,13 @@
+import { RiCloseCircleLine } from "@remixicon/react";
+import { useFormContext, useWatch } from "react-hook-form";
 import { Button } from "@/components/ui/button";
+import {
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -8,21 +17,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { COLORS } from "@/constants/esign";
-import { RiCloseCircleLine } from "@remixicon/react";
-
-import { FieldTypeData } from "../field-type-data";
-
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
 import { cn } from "@/lib/utils";
-import { type TemplateFieldForm } from "@/providers/template-field-provider";
-import { type RouterOutputs } from "@/trpc/shared";
-import { useFormContext, useWatch } from "react-hook-form";
+import type { TemplateFieldForm } from "@/providers/template-field-provider";
+import type { RouterOutputs } from "@/trpc/shared";
+import { FieldTypeData } from "../field-type-data";
 import { CustomFieldRenderer } from "./custom-field-renderer";
 import { TemplateFieldContainer } from "./template-field-container";
 

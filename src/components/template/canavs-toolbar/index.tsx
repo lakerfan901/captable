@@ -1,13 +1,11 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { COLORS } from "@/constants/esign";
-import type { FieldTypes } from "@/prisma/enums";
 import * as Toolbar from "@radix-ui/react-toolbar";
-import { FieldTypeData } from "../field-type-data";
-
+import { useCallback, useRef, useState } from "react";
+import { useFormContext } from "react-hook-form";
 import { OptionalMessageModal } from "@/components/esign/optional-message-modal";
 import { pushModal } from "@/components/modals";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,11 +26,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { COLORS } from "@/constants/esign";
 import { cn } from "@/lib/utils";
+import type { FieldTypes } from "@/prisma/enums";
 import type { TemplateFieldForm } from "@/providers/template-field-provider";
 import type { RouterOutputs } from "@/trpc/shared";
-import { useCallback, useRef, useState } from "react";
-import { useFormContext } from "react-hook-form";
+import { FieldTypeData } from "../field-type-data";
 
 type Recipients = RouterOutputs["template"]["get"]["recipients"];
 

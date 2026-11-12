@@ -1,6 +1,6 @@
+import bcrypt from "bcryptjs";
 import { Audit } from "@/server/audit";
 import { withAuth } from "@/trpc/api/trpc";
-import bcrypt from "bcryptjs";
 import { ZUpdatePasswordMutationSchema } from "../schema";
 export const updatePasswordProcedure = withAuth
   .input(ZUpdatePasswordMutationSchema)

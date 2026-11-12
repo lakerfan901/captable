@@ -1,3 +1,5 @@
+import { RiUploadCloudLine } from "@remixicon/react";
+import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import { PageLayout } from "@/components/dashboard/page-layout";
 import { Card } from "@/components/ui/card";
@@ -5,8 +7,6 @@ import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { withServerComponentSession } from "@/server/auth";
 import { api } from "@/trpc/server";
-import { RiUploadCloudLine } from "@remixicon/react";
-import type { Metadata } from "next";
 import DocumentsTable from "./components/table";
 import { DocumentUploadButton } from "./document-upload-button";
 

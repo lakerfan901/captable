@@ -1,8 +1,8 @@
 "use client";
 
+import { createContext, type ReactNode, useContext } from "react";
 import { invariant } from "@/lib/error";
 import type { RouterOutputs } from "@/trpc/shared";
-import { type ReactNode, createContext, useContext } from "react";
 
 type initialData = RouterOutputs["rbac"]["getPermissions"];
 

@@ -1,6 +1,6 @@
+import { z } from "@hono/zod-openapi";
 import { ApiError } from "@/server/api/error";
 import { CompanySchema } from "@/server/api/schema/company";
-import { z } from "@hono/zod-openapi";
 
 import { authMiddleware, withAuthApiV1 } from "../../utils/endpoint-creator";
 

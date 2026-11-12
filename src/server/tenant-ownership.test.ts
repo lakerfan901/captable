@@ -1,14 +1,14 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, test } from "vitest";
 import {
+  assertCompanyOwns,
+  assertKeyReadableByCompany,
   type BucketOwnershipRow,
   type CompanyRef,
   type CompanyScopedEntity,
-  type TenantOwnershipLoaders,
-  assertCompanyOwns,
-  assertKeyReadableByCompany,
   findForeignReference,
   isBucketOwnedByCompany,
+  type TenantOwnershipLoaders,
 } from "./tenant-ownership";
 
 const companyA: CompanyRef = { id: "cmp_a_internal", publicId: "acme" };

@@ -1,6 +1,3 @@
-import type { JOB_TYPES } from "@/constants/job";
-import { logger } from "@/lib/logger";
-import { singleton } from "@/lib/singleton";
 import {
   type Job,
   type JobInsert,
@@ -10,6 +7,9 @@ import {
   type WorkHandler,
 } from "pg-boss";
 import type { z } from "zod";
+import type { JOB_TYPES } from "@/constants/job";
+import { logger } from "@/lib/logger";
+import { singleton } from "@/lib/singleton";
 
 const CONNECTION_URL =
   process.env.QUEUE_DATABASE_URL ?? (process.env.DATABASE_URL as string);
@@ -138,4 +138,4 @@ function defineWorkerConfig<T extends z.ZodObject<any>>(
   return opts;
 }
 
-export { queue, queueManager, defineWorkerConfig, defineJob, defineWorker };
+export { defineJob, defineWorker, defineWorkerConfig, queue, queueManager };

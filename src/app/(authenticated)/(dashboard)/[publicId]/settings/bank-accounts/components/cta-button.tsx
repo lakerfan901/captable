@@ -1,8 +1,8 @@
 "use client";
 
+import { RiAddLine } from "@remixicon/react";
 import { pushModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";
-import { RiAddLine } from "@remixicon/react";
 
 const CtaButton = () => {
   return (

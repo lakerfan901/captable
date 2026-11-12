@@ -1,7 +1,24 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import { RiDeleteBinLine } from "@remixicon/react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useState } from "react";
+import type { FileWithPath } from "react-dropzone";
+import {
+  useFieldArray,
+  useForm,
+  useFormContext,
+  useWatch,
+} from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
+import { uploadFile } from "@/common/uploads";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { LinearCombobox } from "@/components/ui/combobox";
 import {
   Form,
   FormControl,
@@ -10,6 +27,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
@@ -20,32 +38,13 @@ import {
 } from "@/components/ui/select";
 import { StepperModalFooter, StepperPrev } from "@/components/ui/stepper";
 import Uploader from "@/components/ui/uploader";
+import { invariant } from "@/lib/error";
 import { toTitleCase } from "@/lib/string";
+import { TAG } from "@/lib/tags";
 import { SafeTemplateEnum } from "@/prisma/enums";
 import { useFormValueState } from "@/providers/form-value-provider";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
-import type { FileWithPath } from "react-dropzone";
-import {
-  useFieldArray,
-  useForm,
-  useFormContext,
-  useWatch,
-} from "react-hook-form";
-import { z } from "zod";
-
-import { uploadFile } from "@/common/uploads";
-import { Checkbox } from "@/components/ui/checkbox";
-import { LinearCombobox } from "@/components/ui/combobox";
-import { Input } from "@/components/ui/input";
-import { invariant } from "@/lib/error";
-import { TAG } from "@/lib/tags";
 import { api } from "@/trpc/react";
 import { ZodTemplateFieldRecipientSchema } from "@/trpc/routers/template-router/schema";
-import { RiDeleteBinLine } from "@remixicon/react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import type { TFormSchema as TGeneralDetailsFormSchema } from "./general-details";
 import type { TFormSchema as TInvestorDetailsFormSchema } from "./investor-details";
 

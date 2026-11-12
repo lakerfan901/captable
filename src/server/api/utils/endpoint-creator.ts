@@ -4,10 +4,9 @@ import {
   type RouteHandler,
   z,
 } from "@hono/zod-openapi";
+import type { Env } from "hono";
 import { some } from "hono/combine";
 import { ErrorResponses } from "../error";
-
-import type { Env } from "hono";
 
 import {
   accessTokenAuthMiddleware,

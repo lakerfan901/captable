@@ -1,8 +1,8 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { RiMailLine } from "@remixicon/react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 const EmailSent = () => {
   return (

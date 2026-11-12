@@ -1,24 +1,22 @@
 "use client";
 
+import type { Bucket, DataRoom } from "@prisma/client";
+import {
+  RiFolder3Fill as FolderIcon,
+  RiAddFill,
+  RiShareLine,
+  RiUploadCloudLine,
+} from "@remixicon/react";
+import Link from "next/link";
+import { useDebounceCallback } from "usehooks-ts";
 import EmptyState from "@/components/common/empty-state";
 import type { ExtendedDataRoomRecipientType } from "@/components/common/share-modal";
 import DataRoomFileExplorer from "@/components/documents/data-room/explorer";
+import { pushModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { ShareContactType } from "@/schema/contacts";
 import { api } from "@/trpc/react";
-
-import type { Bucket, DataRoom } from "@prisma/client";
-import { RiShareLine } from "@remixicon/react";
-import { useDebounceCallback } from "usehooks-ts";
-
-import { pushModal } from "@/components/modals";
-import {
-  RiFolder3Fill as FolderIcon,
-  RiAddFill,
-  RiUploadCloudLine,
-} from "@remixicon/react";
-import Link from "next/link";
 import DataRoomUploader from "./data-room-uploader";
 
 type DataRoomFilesProps = {

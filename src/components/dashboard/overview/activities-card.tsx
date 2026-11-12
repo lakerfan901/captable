@@ -1,3 +1,5 @@
+import { RiAccountCircleFill } from "@remixicon/react";
+import Link from "next/link";
 import { dayjsExt } from "@/common/dayjs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -7,8 +9,6 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { api } from "@/trpc/server";
-import { RiAccountCircleFill } from "@remixicon/react";
-import Link from "next/link";
 
 type Props = {
   publicId: string;

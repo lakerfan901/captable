@@ -1,7 +1,7 @@
+import Link from "next/link";
 import { dayjsExt } from "@/common/dayjs";
 import FileIcon from "@/components/common/file-icon";
 import { buttonVariants } from "@/components/ui/button";
-
 import {
   Table,
   TableBody,
@@ -11,7 +11,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { RouterOutputs } from "@/trpc/shared";
-import Link from "next/link";
 import { TemplateCancelButton } from "./temp-cancel-btx";
 
 type DocumentsType = RouterOutputs["template"]["all"]["documents"];

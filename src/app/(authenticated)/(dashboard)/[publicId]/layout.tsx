@@ -1,9 +1,9 @@
+import { redirect } from "next/navigation";
 import { NavBar } from "@/components/dashboard/navbar";
 import { SideBar } from "@/components/dashboard/sidebar";
 import { ModalProvider } from "@/components/modals";
 import { withServerComponentSession } from "@/server/auth";
 import { getCompanyList } from "@/server/company";
-import { redirect } from "next/navigation";
 import "@/styles/hint.css";
 import { RBAC } from "@/lib/rbac";
 import { getServerPermissions } from "@/lib/rbac/access-control";

@@ -1,4 +1,7 @@
 "use client";
+import { RiCheckFill as CheckIcon } from "@remixicon/react";
+import type React from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -15,9 +18,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { RiCheckFill as CheckIcon } from "@remixicon/react";
-import type React from "react";
-import { useEffect, useRef, useState } from "react";
 
 export type ComboBoxOption = {
   value: string;

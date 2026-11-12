@@ -1,9 +1,9 @@
+import type { Metadata } from "next";
 import { AuditTable } from "@/components/audit/audit-table";
 import { Card } from "@/components/ui/card";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { api } from "@/trpc/server";
-import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Audits",

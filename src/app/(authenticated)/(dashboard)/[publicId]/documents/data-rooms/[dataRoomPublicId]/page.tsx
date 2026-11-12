@@ -1,6 +1,6 @@
-import { api } from "@/trpc/server";
 import type { Bucket, DataRoom } from "@prisma/client";
 import { notFound } from "next/navigation";
+import { api } from "@/trpc/server";
 import DataRoomFiles from "../components/data-room-files";
 
 const DataRoomSettinsPage = async (props: {

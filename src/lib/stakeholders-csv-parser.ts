@@ -1,12 +1,12 @@
-import { ZodAddStakeholderMutationSchema } from "@/trpc/routers/stakeholder-router/schema";
 import Papa, { type ParseResult } from "papaparse";
 import { ZodError } from "zod";
+import { ZodAddStakeholderMutationSchema } from "@/trpc/routers/stakeholder-router/schema";
 
 export const parseStrakeholdersCSV = async (csvFile: File) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
-    reader.onload = function (event) {
+    reader.onload = (event) => {
       const csvData = event.target?.result as string;
       const parsed: ParseResult<string[]> = Papa.parse(csvData, {
         skipEmptyLines: true,
@@ -72,7 +72,7 @@ export const parseStrakeholdersCSV = async (csvFile: File) => {
       resolve(mappedCSV);
     };
 
-    reader.onerror = function () {
+    reader.onerror = () => {
       reject(new Error("Error reading the file"));
     };
 

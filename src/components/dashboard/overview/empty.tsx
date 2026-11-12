@@ -1,7 +1,7 @@
-import EmptyState from "@/components/common/empty-state";
-import { Button } from "@/components/ui/button";
 import { RiArrowRightLine, RiPieChartFill } from "@remixicon/react";
 import Link from "next/link";
+import EmptyState from "@/components/common/empty-state";
+import { Button } from "@/components/ui/button";
 
 type EmptyOverviewProps = {
   firstName: string | undefined;

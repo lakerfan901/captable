@@ -1,11 +1,11 @@
 "use client";
 
-import type { TemplateFieldForm } from "@/providers/template-field-provider";
-import type { RouterOutputs } from "@/trpc/shared";
 import { useResizeObserver } from "@wojtekmaj/react-hooks";
 import { nanoid } from "nanoid";
 import { useCallback, useState } from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
+import type { TemplateFieldForm } from "@/providers/template-field-provider";
+import type { RouterOutputs } from "@/trpc/shared";
 import { DrawingField } from "./drawing-field";
 import { TemplateField } from "./template-field";
 

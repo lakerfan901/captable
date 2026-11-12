@@ -4,10 +4,15 @@ import {
   type RemixiconComponentType,
   RiAccountCircleFill,
   RiPieChart2Fill,
+  RiSearchLine,
   RiSparklingFill,
   RiUploadCloud2Fill,
 } from "@remixicon/react";
-
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import Tldr from "@/components/common/tldr";
+import { pushModal } from "@/components/modals";
+import { Button } from "@/components/ui/button";
 import {
   CommandDialog,
   CommandEmpty,
@@ -16,16 +21,8 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-
-import { Button } from "@/components/ui/button";
 import Kbd from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
-import { RiSearchLine } from "@remixicon/react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-
-import Tldr from "@/components/common/tldr";
-import { pushModal } from "@/components/modals";
 
 type CommandOption = {
   id: string;

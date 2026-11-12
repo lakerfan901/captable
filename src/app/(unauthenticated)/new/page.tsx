@@ -1,9 +1,7 @@
+import { RiCheckboxCircleFill as CheckIcon } from "@remixicon/react";
+import { notFound, redirect } from "next/navigation";
 import { env } from "@/env";
 import { getServerComponentAuthSession } from "@/server/auth";
-import { RiCheckboxCircleFill as CheckIcon } from "@remixicon/react";
-
-import { redirect } from "next/navigation";
-import { notFound } from "next/navigation";
 import LoginWithGoogle from "./components/LoginWithGoogle";
 
 export default async function CapPage() {

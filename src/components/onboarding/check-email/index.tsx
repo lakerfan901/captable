@@ -1,10 +1,10 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { api } from "@/trpc/react";
 import { RiMailLine } from "@remixicon/react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { api } from "@/trpc/react";
 
 const CheckEmailComponent = () => {
   const searchParams = useSearchParams();

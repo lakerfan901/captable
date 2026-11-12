@@ -1,14 +1,13 @@
-import { createPasskeyAuthenticationOptions } from "@/server/passkey/create-authentication-option";
-import { createPasskey } from "@/server/passkey/create-passkey";
-import { createPasskeyRegistrationOptions } from "@/server/passkey/create-registration-options";
-import { deletePasskey } from "@/server/passkey/delete-passkey";
-import { findPasskeys } from "@/server/passkey/find-passkeys";
-import { updatePasskey } from "@/server/passkey/update-passkey";
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { TRPCError } from "@trpc/server";
 import { parseCookie } from "cookie";
-
+import { createPasskeyAuthenticationOptions } from "@/server/passkey/create-authentication-option";
+import { createPasskey } from "@/server/passkey/create-passkey";
+import { createPasskeyRegistrationOptions } from "@/server/passkey/create-registration-options";
 import { createPasskeySigninOptions } from "@/server/passkey/create-signin-options";
+import { deletePasskey } from "@/server/passkey/delete-passkey";
+import { findPasskeys } from "@/server/passkey/find-passkeys";
+import { updatePasskey } from "@/server/passkey/update-passkey";
 import { createTRPCRouter, withAuth, withoutAuth } from "@/trpc/api/trpc";
 import {
   ZCreatePasskeyAuthenticationOptionsMutationSchema,

@@ -1,12 +1,12 @@
-import FilePreview from "@/components/file/preview";
-import { SharePageLayout } from "@/components/share/page-layout";
-import { type JWTVerifyResult, decode } from "@/lib/jwt";
-import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
-import { db } from "@/server/db";
-import { getPresignedGetUrl } from "@/server/file-uploads";
 import { RiFolder3Fill as FolderIcon } from "@remixicon/react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import FilePreview from "@/components/file/preview";
+import { SharePageLayout } from "@/components/share/page-layout";
+import { decode, type JWTVerifyResult } from "@/lib/jwt";
+import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
+import { db } from "@/server/db";
+import { getPresignedGetUrl } from "@/server/file-uploads";
 
 const DataRoomPage = async (props: {
   params: Promise<{ publicId: string; bucketId: string }>;

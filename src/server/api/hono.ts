@@ -1,9 +1,9 @@
 import { env } from "@/env";
 import "@/lib/zod-error-map";
-import { handleError, handleZodError } from "@/server/api/error";
-import type { TPrisma } from "@/server/db";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { handleError, handleZodError } from "@/server/api/error";
+import type { TPrisma } from "@/server/db";
 import type { Audit } from "../audit";
 import type { checkMembership } from "../auth";
 import { SECURITY_SCHEME_NAME } from "./const";

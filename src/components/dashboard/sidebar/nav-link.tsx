@@ -1,6 +1,6 @@
-import { cn } from "@/lib/utils";
-import { type RiHome4Line } from "@remixicon/react";
+import type { RiHome4Line } from "@remixicon/react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 type Icon = typeof RiHome4Line;
 

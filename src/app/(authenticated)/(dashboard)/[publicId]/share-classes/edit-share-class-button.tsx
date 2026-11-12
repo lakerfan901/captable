@@ -1,9 +1,9 @@
 "use client";
 
+import { RiEqualizer2Line } from "@remixicon/react";
 import Tldr from "@/components/common/tldr";
 import { pushModal } from "@/components/modals";
 import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
-import { RiEqualizer2Line } from "@remixicon/react";
 
 type EditShareClassButtonProps = {
   shareClasses?: ShareClassMutationType[];

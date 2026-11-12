@@ -1,8 +1,8 @@
+import { TRPCError } from "@trpc/server";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { revokeExistingInviteTokens } from "@/server/member";
 import { withAccessControl } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { ZodRevokeInviteMutationSchema } from "../schema";
 import { removeMemberHandler } from "./remove-member";
 

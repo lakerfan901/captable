@@ -1,10 +1,10 @@
-import { type FieldTypes } from "@/prisma/enums";
 import {
   RiCalendar2Line,
   RiListCheck3,
   RiSketching,
   RiText,
 } from "@remixicon/react";
+import type { FieldTypes } from "@/prisma/enums";
 
 interface OptionsItems {
   label: string;

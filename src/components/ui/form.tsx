@@ -85,10 +85,7 @@ const FormItem = React.forwardRef<
           with the same variant, e.g. `[&>:not([hidden])~:not([hidden])]:mt-0`. */}
       <div
         ref={ref}
-        className={cn(
-          "[&>:not([hidden])~:not([hidden])]:mt-2",
-          className,
-        )}
+        className={cn("[&>:not([hidden])~:not([hidden])]:mt-2", className)}
         {...props}
       />
     </FormItemContext.Provider>
@@ -178,12 +175,12 @@ const FormMessage = React.forwardRef<
 FormMessage.displayName = "FormMessage";
 
 export {
-  useFormField,
   Form,
-  FormItem,
-  FormLabel,
   FormControl,
   FormDescription,
-  FormMessage,
   FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  useFormField,
 };

@@ -1,5 +1,8 @@
 "use client";
 
+import type { DialogProps } from "@radix-ui/react-dialog";
+
+import { CaptableLogo } from "@/components/common/logo";
 import {
   Dialog,
   DialogContent,
@@ -8,10 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-
-import { CaptableLogo } from "@/components/common/logo";
 import { cn } from "@/lib/utils";
-import type { DialogProps } from "@radix-ui/react-dialog";
 
 const sizes = {
   sm: "max-w-sm",

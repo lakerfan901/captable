@@ -1,9 +1,9 @@
-import { invariant } from "@/lib/error";
-import { getPermissions } from "@/lib/rbac/access-control";
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import type { Session } from "next-auth";
+import { invariant } from "@/lib/error";
+import { getPermissions } from "@/lib/rbac/access-control";
 import { ApiError } from "../error";
 
 export const sessionCookieAuthMiddleware = () =>

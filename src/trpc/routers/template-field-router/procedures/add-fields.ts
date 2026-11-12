@@ -1,13 +1,13 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import {
-  type TESignNotificationEmailJobInput,
   eSignNotificationEmailJob,
+  type TESignNotificationEmailJobInput,
 } from "@/jobs/esign-email";
 import { decode, encode } from "@/lib/jwt";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { withAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { ZodAddFieldMutationSchema } from "../schema";
 
 const emailTokenPayloadSchema = z.object({

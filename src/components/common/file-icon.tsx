@@ -1,5 +1,4 @@
 "use client";
-import { fileType } from "@/lib/mime";
 
 import {
   RiFileCloudFill,
@@ -11,6 +10,7 @@ import {
   RiFileVideoFill,
   RiFileWordFill,
 } from "@remixicon/react";
+import { fileType } from "@/lib/mime";
 
 type FileIconProps = {
   type: string;

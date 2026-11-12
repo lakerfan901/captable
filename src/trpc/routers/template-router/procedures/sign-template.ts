@@ -1,8 +1,8 @@
+import { TRPCError } from "@trpc/server";
+import { UAParser } from "ua-parser-js";
 import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
 import { EsignService } from "@/services/esign-service";
 import { withoutAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import { UAParser } from "ua-parser-js";
 import { DecodeEmailToken } from "../../template-field-router/procedures/add-fields";
 import { SignTemplateMutationSchema } from "../schema";
 

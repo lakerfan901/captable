@@ -7,21 +7,21 @@
  * need to use are documented accordingly near the end.
  */
 
-import { TRPCError, initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { isSentryEnabled } from "@/constants/sentry";
 import "@/lib/zod-error-map";
+import * as Sentry from "@sentry/nextjs";
 import { getIp, getUserAgent } from "@/lib/headers";
-import { RBAC, type addPolicyOption } from "@/lib/rbac";
+import { type addPolicyOption, RBAC } from "@/lib/rbac";
 import {
   checkAccessControlMembership,
   getPermissions,
 } from "@/lib/rbac/access-control";
 import { getServerAuthSession } from "@/server/auth";
 import { db } from "@/server/db";
-import * as Sentry from "@sentry/nextjs";
 
 interface Meta {
   policies: addPolicyOption;

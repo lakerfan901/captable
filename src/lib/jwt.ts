@@ -1,10 +1,10 @@
-import { JWT_SECRET } from "@/server/auth";
 import {
   type JWTPayload,
   type JWTVerifyResult,
-  SignJWT,
   jwtVerify,
+  SignJWT,
 } from "jose";
+import { JWT_SECRET } from "@/server/auth";
 
 export const encode = async (data: JWTPayload) => {
   return await new SignJWT(data)

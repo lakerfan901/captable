@@ -1,5 +1,5 @@
-import api from "@/server/api";
 import { handle } from "hono/vercel";
+import api from "@/server/api";
 
 const handler = handle(api);
 

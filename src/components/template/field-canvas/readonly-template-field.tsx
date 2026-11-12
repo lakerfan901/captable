@@ -1,11 +1,10 @@
 /* eslint-disable @next/next/no-img-element */
 import { useFormContext, useWatch } from "react-hook-form";
+import type { TemplateSigningFieldForm } from "@/providers/template-signing-field-provider";
 import {
   ReadOnlyTemplateFieldContainer,
   type ReadOnlyTemplateFieldContainerProps,
 } from "./template-field-container";
-
-import { type TemplateSigningFieldForm } from "@/providers/template-signing-field-provider";
 
 type ReadOnlyTemplateFieldProps = Omit<
   ReadOnlyTemplateFieldContainerProps,

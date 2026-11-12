@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type PayloadType } from "./constants";
+import type { PayloadType } from "./constants";
 
 type ProfilePayload = {
   type: PayloadType.PROFILE_DATA;

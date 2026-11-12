@@ -1,8 +1,8 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { RiGoogleFill as GoogleIcon } from "@remixicon/react";
 import { signIn } from "next-auth/react";
+import { Button } from "@/components/ui/button";
 
 async function signInWithGoogle() {
   await signIn("google", { callbackUrl: "/onboarding" });

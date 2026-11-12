@@ -1,16 +1,17 @@
 /* eslint-disable @typescript-eslint/prefer-for-of */
+
+import { renderToBuffer } from "@react-pdf/renderer";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import { dayjsExt } from "@/common/dayjs";
 import { TAG } from "@/lib/tags";
 import { AuditLogTemplate } from "@/pdf-templates/audit-log-template";
 import {
-  type TUploadFile,
   getFileFromS3,
+  type TUploadFile,
   uploadFile,
 } from "@/server/file-uploads";
 import { createBucketHandler } from "@/trpc/routers/bucket-router/procedures/create-bucket";
 import { createDocumentHandler } from "@/trpc/routers/document-router/procedures/create-document";
-import { renderToBuffer } from "@react-pdf/renderer";
-import { PDFDocument, StandardFonts } from "pdf-lib";
 import { EsignAudit } from "./audit";
 import type { PrismaTransactionalClient } from "./db";
 

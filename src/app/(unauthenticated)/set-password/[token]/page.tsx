@@ -1,6 +1,6 @@
-import { SetPasswordForm } from "@/components/onboarding/set-password";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { SetPasswordForm } from "@/components/onboarding/set-password";
 
 export const metadata: Metadata = {
   title: "Set Password",

@@ -1,11 +1,11 @@
+import { RiSafeFill } from "@remixicon/react";
+import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import { PageLayout } from "@/components/dashboard/page-layout";
 import { SafeActions } from "@/components/safe/safe-actions";
 import { SafeTable } from "@/components/safe/safe-table";
 import { Card } from "@/components/ui/card";
 import { api } from "@/trpc/server";
-import { RiSafeFill } from "@remixicon/react";
-import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "SAFEs",

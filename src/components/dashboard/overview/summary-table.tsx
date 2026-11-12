@@ -1,3 +1,4 @@
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -8,7 +9,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { Card } from "@/components/ui/card";
 const formatter = new Intl.NumberFormat("en-US");
 
 const SummaryTable = () => {

@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { type RouterOutputs } from "@/trpc/shared";
+import type { RouterOutputs } from "@/trpc/shared";
 import { SigningFieldForm } from "../signing-field-form";
 import { FieldRenderer } from "./field-renderer";
 

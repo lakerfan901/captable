@@ -1,7 +1,7 @@
-import { Audit } from "@/server/audit";
-import { db } from "@/server/db";
 import { createMiddleware } from "hono/factory";
 import { getConnInfo } from "hono/vercel";
+import { Audit } from "@/server/audit";
+import { db } from "@/server/db";
 
 export const middlewareServices = () =>
   createMiddleware(async (c, next) => {

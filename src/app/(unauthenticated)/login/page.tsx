@@ -1,8 +1,8 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import SignInForm from "@/components/onboarding/signin";
 import { IS_GOOGLE_AUTH_ENABLED } from "@/constants/auth";
 import { getServerComponentAuthSession } from "@/server/auth";
-import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Login",

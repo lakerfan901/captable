@@ -1,3 +1,7 @@
+import { RiArrowLeftSLine } from "@remixicon/react";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Fragment } from "react";
 import FileIcon from "@/components/common/file-icon";
 import FilePreview from "@/components/file/preview";
 import { Button } from "@/components/ui/button";
@@ -6,10 +10,6 @@ import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
 import { checkMembership, withServerComponentSession } from "@/server/auth";
 import { db } from "@/server/db";
 import { getPresignedGetUrl } from "@/server/file-uploads";
-import { RiArrowLeftSLine } from "@remixicon/react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { Fragment } from "react";
 
 const DocumentPreview = async (props: {
   params: Promise<{ publicId: string; bucketId: string }>;

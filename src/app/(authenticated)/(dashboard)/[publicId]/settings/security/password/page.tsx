@@ -1,7 +1,7 @@
-import { SettingsHeader } from "@/components/security/SettingHeader";
-import { UpdatePasswordForm } from "@/components/security/password/update-password-form";
-import { Card } from "@/components/ui/card";
 import type { Metadata } from "next";
+import { UpdatePasswordForm } from "@/components/security/password/update-password-form";
+import { SettingsHeader } from "@/components/security/SettingHeader";
+import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = {
   title: "Security",

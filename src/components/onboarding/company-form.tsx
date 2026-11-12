@@ -1,5 +1,17 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import { RiArrowRightLine } from "@remixicon/react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import type { z } from "zod";
+
+import { dayjsExt } from "@/common/dayjs";
+import { uploadFile } from "@/common/uploads";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -17,26 +29,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import countries from "@/lib/countries";
+import { cn, isFileExists, validateFile } from "@/lib/utils";
+import { api } from "@/trpc/react";
 import {
   type TypeZodOnboardingMutationSchema,
   ZodOnboardingMutationSchema,
 } from "@/trpc/routers/onboarding-router/schema";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { RiArrowRightLine } from "@remixicon/react";
-import { useForm } from "react-hook-form";
-
-import { dayjsExt } from "@/common/dayjs";
-import { uploadFile } from "@/common/uploads";
-import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import countries from "@/lib/countries";
-import { cn, isFileExists, validateFile } from "@/lib/utils";
-import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { toast } from "sonner";
-import type { z } from "zod";
 import Loading from "../common/loading";
 import { LinearCombobox } from "../ui/combobox";
 

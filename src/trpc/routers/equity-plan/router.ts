@@ -1,8 +1,8 @@
+import { TRPCError } from "@trpc/server";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { createTRPCRouter, withAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { EquityPlanMutationSchema } from "./schema";
 
 export const equityPlanRouter = createTRPCRouter({

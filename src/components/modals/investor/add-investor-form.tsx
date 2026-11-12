@@ -1,3 +1,8 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import type { z } from "zod";
 import { popModal } from "@/components/modals";
 import { Button } from "@/components/ui/button";
 import { LinearCombobox } from "@/components/ui/combobox";
@@ -14,11 +19,6 @@ import { camelCase } from "@/lib/utils";
 import { StakeholderTypeEnum } from "@/prisma/enums";
 import { api } from "@/trpc/react";
 import { ZodAddStakeholderMutationSchema } from "@/trpc/routers/stakeholder-router/schema";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { toast } from "sonner";
-import type { z } from "zod";
 
 interface InvestorFormProps {
   investor?: ZodInvestorType;

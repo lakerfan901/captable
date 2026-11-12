@@ -1,5 +1,5 @@
-import { SafeTemplateEnum } from "@/prisma/enums";
 import { z } from "zod";
+import { SafeTemplateEnum } from "@/prisma/enums";
 import { ZodTemplateFieldRecipientSchema } from "../template-router/schema";
 
 const commonSafeSchema = z.object({

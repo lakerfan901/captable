@@ -1,7 +1,7 @@
-import ShareDataRoomEmail from "@/emails/ShareDataRoomEmail";
-import { sendMail } from "@/server/mailer";
 import { render } from "react-email";
 import { z } from "zod";
+import ShareDataRoomEmail from "@/emails/ShareDataRoomEmail";
+import { sendMail } from "@/server/mailer";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
 
 const config = defineWorkerConfig({

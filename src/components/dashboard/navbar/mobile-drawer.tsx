@@ -1,9 +1,8 @@
+import { RiMenuLine } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { RiMenuLine } from "@remixicon/react";
+import type { TGetCompanyList } from "@/server/company";
 import { SideBar } from "../sidebar";
-
-import { type TGetCompanyList } from "@/server/company";
 
 interface SideBarProps {
   publicId: string;

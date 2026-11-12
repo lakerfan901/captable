@@ -1,24 +1,14 @@
 "use client";
 
-import Tldr from "@/components/common/tldr";
-import { popModal, pushModal } from "@/components/modals";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { api } from "@/trpc/react";
-import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { RiAddFill } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { NumericFormat } from "react-number-format";
 import { toast } from "sonner";
-
-import {
-  EquityPlanMutationSchema,
-  type EquityPlanMutationType,
-} from "@/trpc/routers/equity-plan/schema";
-
+import Tldr from "@/components/common/tldr";
+import { popModal, pushModal } from "@/components/modals";
+import { Button } from "@/components/ui/button";
 import { LinearCombobox } from "@/components/ui/combobox";
 import {
   Form,
@@ -28,6 +18,14 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { api } from "@/trpc/react";
+import {
+  EquityPlanMutationSchema,
+  type EquityPlanMutationType,
+} from "@/trpc/routers/equity-plan/schema";
+import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
 
 const formSchema = EquityPlanMutationSchema;
 

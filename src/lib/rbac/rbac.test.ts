@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { RBAC, type addPolicyOption } from ".";
+import { type addPolicyOption, RBAC } from ".";
 import type { TPermission } from "./schema";
 
 describe("evaluating a query", () => {

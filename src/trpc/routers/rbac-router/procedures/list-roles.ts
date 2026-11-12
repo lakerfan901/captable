@@ -1,7 +1,7 @@
+import { z } from "zod";
 import { DEFAULT_ADMIN_ROLE, type RoleList } from "@/lib/rbac/constants";
 import { permissionSchema } from "@/lib/rbac/schema";
 import { withAccessControl } from "@/trpc/api/trpc";
-import { z } from "zod";
 
 export const listRolesProcedure = withAccessControl
   .meta({

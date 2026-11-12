@@ -1,9 +1,10 @@
 "use client";
 
-import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { RiCloseLine as CloseIcon } from "@remixicon/react";
+import { Command as CommandPrimitive, useCommandState } from "cmdk";
 import * as React from "react";
-
+import { forwardRef, useEffect } from "react";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,
@@ -12,8 +13,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { Command as CommandPrimitive, useCommandState } from "cmdk";
-import { forwardRef, useEffect } from "react";
 
 export type Option = {
   value: string;

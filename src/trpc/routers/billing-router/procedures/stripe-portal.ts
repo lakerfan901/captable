@@ -1,9 +1,9 @@
+import { TRPCError } from "@trpc/server";
 import { env } from "@/env";
 import { invariant } from "@/lib/error";
 import { checkMembership } from "@/server/auth";
 import { createOrRetrieveCustomer, stripe } from "@/server/stripe";
 import { withAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { ZodStripePortalMutationSchema } from "../schema";
 
 export const stripePortalProcedure = withAuth

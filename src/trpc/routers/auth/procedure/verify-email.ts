@@ -1,9 +1,9 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { Audit } from "@/server/audit";
 import { getUserByEmail } from "@/server/user";
 import { getVerificationTokenByToken } from "@/server/verification-token";
 import { withoutAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 
 export const verifyEmailProcedure = withoutAuth
   .input(z.string())

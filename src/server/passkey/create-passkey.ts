@@ -1,12 +1,12 @@
+import {
+  type RegistrationResponseJSON,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
 import { MAXIMUM_PASSKEYS } from "@/constants/passkey";
 import { getAuthenticatorOptions } from "@/lib/authenticator";
 import { CredentialDeviceTypeEnum } from "@/prisma/enums";
 import { db } from "@/server/db";
 import type { PasskeyAudit } from "@/trpc/routers/passkey-router/schema";
-import {
-  type RegistrationResponseJSON,
-  verifyRegistrationResponse,
-} from "@simplewebauthn/server";
 import { Audit } from "../audit";
 
 type CreatePasskeyOptions = {

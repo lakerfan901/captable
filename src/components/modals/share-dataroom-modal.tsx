@@ -1,13 +1,13 @@
 "use client";
 
+import type { DataRoom } from "@prisma/client";
+import { toast } from "sonner";
 import ShareModal, {
   type ExtendedDataRoomRecipientType,
 } from "@/components/common/share-modal";
 import { env } from "@/env";
 import type { ShareContactType, ShareRecipientType } from "@/schema/contacts";
 import { api } from "@/trpc/react";
-import type { DataRoom } from "@prisma/client";
-import { toast } from "sonner";
 
 type ShareDataRoomModalProps = {
   dataRoom: DataRoom;

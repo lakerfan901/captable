@@ -1,10 +1,9 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { authVerificationEmailJob } from "@/jobs/auth-verification-email";
-
 import { generateVerificationToken } from "@/lib/token";
 import { getVerificationTokenByEmail } from "@/server/verification-token";
 import { withoutAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 
 export const resendEmailProcedure = withoutAuth
   .input(z.string().email())

@@ -1,7 +1,7 @@
+import { TRPCError } from "@trpc/server";
 import { getRoleById } from "@/lib/rbac/access-control";
 import { Audit } from "@/server/audit";
 import { withAccessControl } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { ZodUpdateRoleMutationSchema } from "../schema";
 import { extractPermission } from "./create-role";
 

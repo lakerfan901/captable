@@ -1,10 +1,10 @@
-import { SettingsHeader } from "@/components/security/SettingHeader";
+import type { Metadata } from "next";
 import PasskeyModal from "@/components/security/passkey/create-passkey-modal";
 import PasskeyTable from "@/components/security/passkey/user-passkeys-data-table";
+import { SettingsHeader } from "@/components/security/SettingHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { api } from "@/trpc/server";
-import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Security",

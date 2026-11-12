@@ -1,10 +1,10 @@
+import { TRPCError } from "@trpc/server";
 import { sendMemberInviteEmailJob } from "@/jobs/member-inivite-email";
 import { getRoleById } from "@/lib/rbac/access-control";
 import { generatePasswordResetToken } from "@/lib/token";
 import { Audit } from "@/server/audit";
 import { generateInviteToken, generateMemberIdentifier } from "@/server/member";
 import { withAccessControl } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import { ZodInviteMemberMutationSchema } from "../schema";
 
 export const inviteMemberProcedure = withAccessControl

@@ -1,8 +1,8 @@
+import { TRPCError } from "@trpc/server";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth, type withAuthTrpcContextType } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
 import {
   DocumentShareMutationSchema,
   type TypeDocumentShareMutation,

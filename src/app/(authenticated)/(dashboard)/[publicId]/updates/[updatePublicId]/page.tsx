@@ -1,7 +1,7 @@
+import { notFound } from "next/navigation";
 import Editor from "@/components/update/editor-lazy";
 import { checkMembership, withServerComponentSession } from "@/server/auth";
 import { db } from "@/server/db";
-import { notFound } from "next/navigation";
 
 const getUpdate = async (publicId: string) => {
   const session = await withServerComponentSession();

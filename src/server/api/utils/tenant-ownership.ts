@@ -1,7 +1,7 @@
 import type { TPrismaOrTransaction } from "@/server/db";
 import {
-  type CompanyOwnedRefs,
   assertCompanyOwns,
+  type CompanyOwnedRefs,
 } from "@/server/tenant-ownership";
 import { ApiError } from "../error";
 

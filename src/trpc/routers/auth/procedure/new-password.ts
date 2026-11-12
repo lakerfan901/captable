@@ -1,9 +1,9 @@
+import { TRPCError } from "@trpc/server";
+import bcrypt from "bcryptjs";
 import { Audit } from "@/server/audit";
 import { getPasswordResetTokenByToken } from "@/server/password-reset-token";
 import { getUserByEmail } from "@/server/user";
 import { withoutAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import bcrypt from "bcryptjs";
 import { ZNewPasswordProcedureSchema } from "../schema";
 export const newPasswordProcedure = withoutAuth
   .input(ZNewPasswordProcedureSchema)

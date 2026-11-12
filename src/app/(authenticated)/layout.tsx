@@ -1,5 +1,5 @@
-import { getServerComponentAuthSession } from "@/server/auth";
 import { redirect } from "next/navigation";
+import { getServerComponentAuthSession } from "@/server/auth";
 
 export default async function AuthenticatedLayout({
   children,

@@ -1,4 +1,3 @@
-import type { TESignNotificationEmailJobInput } from "@/jobs/esign-email";
 import {
   Body,
   Button,
@@ -15,6 +14,7 @@ import {
   Tailwind,
   Text,
 } from "react-email";
+import type { TESignNotificationEmailJobInput } from "@/jobs/esign-email";
 import {
   ArrowRight,
   SignatureIcon,

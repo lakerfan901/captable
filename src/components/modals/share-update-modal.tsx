@@ -1,13 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import ShareModal, {
   type ExtendedUpdateRecipientType,
 } from "@/components/common/share-modal";
 import { env } from "@/env";
 import type { ShareRecipientType } from "@/schema/contacts";
 import { api } from "@/trpc/react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 
 type ShareUpdateModalProps = {
   update: {

@@ -1,21 +1,20 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useState } from "react";
+import type { FileWithPath } from "react-dropzone";
+import { toast } from "sonner";
+import { uploadFile } from "@/common/uploads";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { DialogClose } from "@/components/ui/dialog";
 import { StepperModalFooter, StepperPrev } from "@/components/ui/stepper";
 import Uploader from "@/components/ui/uploader";
-import { useFormValueState } from "@/providers/form-value-provider";
-import { useState } from "react";
-import type { FileWithPath } from "react-dropzone";
-
-import { uploadFile } from "@/common/uploads";
 import { invariant } from "@/lib/error";
 import { TAG } from "@/lib/tags";
+import { useFormValueState } from "@/providers/form-value-provider";
 import { api } from "@/trpc/react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import type { TFormSchema as TGeneralDetailsFormSchema } from "./general-details";
 import type { TFormSchema as TInvestorDetailsFormSchema } from "./investor-details";
 

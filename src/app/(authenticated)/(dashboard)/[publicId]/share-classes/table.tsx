@@ -1,3 +1,4 @@
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -6,10 +7,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-import { Card } from "@/components/ui/card";
 import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
 import { EditShareClassButton } from "./edit-share-class-button";
+
 const formatter = new Intl.NumberFormat("en-US");
 
 type ShareClassTableProps = {

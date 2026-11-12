@@ -1,5 +1,10 @@
 "use client";
 
+import * as SelectPrimitive from "@radix-ui/react-select";
+import { RiAddCircleLine } from "@remixicon/react";
+import { usePathname, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useState } from "react";
 import {
   Select,
   SelectContent,
@@ -9,14 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
 import type { TGetCompanyList } from "@/server/company";
 import { api } from "@/trpc/react";
-import * as SelectPrimitive from "@radix-ui/react-select";
-import { RiAddCircleLine } from "@remixicon/react";
-import { useSession } from "next-auth/react";
-import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
 
 interface CompanySwitcherProps {
   companies: TGetCompanyList;

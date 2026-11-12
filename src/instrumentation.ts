@@ -1,5 +1,5 @@
-import { isSentryEnabled } from "@/constants/sentry";
 import * as Sentry from "@sentry/nextjs";
+import { isSentryEnabled } from "@/constants/sentry";
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {

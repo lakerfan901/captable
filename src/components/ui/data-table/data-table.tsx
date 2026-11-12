@@ -1,6 +1,5 @@
-import { type ReactNode, createContext, useContext } from "react";
-
 import type { ReactTable, RowData } from "@tanstack/react-table";
+import { createContext, type ReactNode, useContext } from "react";
 import type { DataTableFeatures } from "./features";
 
 interface DataTableRootProps<TData extends RowData> {

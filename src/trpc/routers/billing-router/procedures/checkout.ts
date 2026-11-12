@@ -1,9 +1,9 @@
+import type Stripe from "stripe";
 import { env } from "@/env";
 import { invariant } from "@/lib/error";
 import { checkMembership } from "@/server/auth";
 import { createOrRetrieveCustomer, stripe } from "@/server/stripe";
 import { withAuth } from "@/trpc/api/trpc";
-import type Stripe from "stripe";
 import { ZodCheckoutMutationSchema } from "../schema";
 
 export const checkoutProcedure = withAuth

@@ -1,12 +1,12 @@
-import { ZodInviteMemberMutationSchema } from "@/trpc/routers/member-router/schema";
 import Papa, { type ParseResult } from "papaparse";
 import { ZodError } from "zod";
+import { ZodInviteMemberMutationSchema } from "@/trpc/routers/member-router/schema";
 
 export const parseInviteMembersCSV = async (csvFile: File) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
-    reader.onload = function (event) {
+    reader.onload = (event) => {
       const csvData = event.target?.result as string;
       const parsed: ParseResult<string[]> = Papa.parse(csvData, {
         skipEmptyLines: true,
@@ -55,7 +55,7 @@ export const parseInviteMembersCSV = async (csvFile: File) => {
       resolve(mappedCSV);
     };
 
-    reader.onerror = function () {
+    reader.onerror = () => {
       reject(new Error("Error reading the file"));
     };
 

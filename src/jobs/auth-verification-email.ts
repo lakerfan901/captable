@@ -1,8 +1,8 @@
+import { render } from "react-email";
+import { z } from "zod";
 import AccountVerificationEmail from "@/emails/AccountVerificationEmail";
 import { env } from "@/env";
 import { sendMail } from "@/server/mailer";
-import { render } from "react-email";
-import { z } from "zod";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
 
 const config = defineWorkerConfig({

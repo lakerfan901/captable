@@ -1,11 +1,11 @@
 "use client";
 
+import { RiAddFill } from "@remixicon/react";
+import type React from "react";
 import { pushModal } from "@/components/modals";
 import type { TStakeholders } from "@/components/modals/issue-share-modal";
 import type { TEquityPlans } from "@/components/modals/issue-stock-option-modal";
 import { Button } from "@/components/ui/button";
-import { RiAddFill } from "@remixicon/react";
-import type React from "react";
 
 type CreateShareClassButtonProps = {
   title: string;

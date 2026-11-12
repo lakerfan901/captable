@@ -1,6 +1,6 @@
-import { verifySecureHash } from "@/lib/crypto";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
+import { verifySecureHash } from "@/lib/crypto";
 import { ApiError } from "../error";
 
 export type accessTokenAuthMiddlewareOptions =

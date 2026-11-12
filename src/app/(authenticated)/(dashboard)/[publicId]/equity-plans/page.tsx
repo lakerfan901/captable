@@ -1,3 +1,5 @@
+import { RiAddFill, RiPieChart2Line } from "@remixicon/react";
+import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import Tldr from "@/components/common/tldr";
 import { Card } from "@/components/ui/card";
@@ -5,8 +7,6 @@ import { withServerComponentSession } from "@/server/auth";
 import { db } from "@/server/db";
 import type { EquityPlanMutationType } from "@/trpc/routers/equity-plan/schema";
 import type { ShareClassMutationType } from "@/trpc/routers/share-class/schema";
-import { RiAddFill, RiPieChart2Line } from "@remixicon/react";
-import type { Metadata } from "next";
 import { CreateEquityPlanButton } from "./create-equity-plan-button";
 import EquityPlanTable from "./table";
 

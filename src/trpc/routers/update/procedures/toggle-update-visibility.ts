@@ -1,9 +1,9 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { UpdateStatusEnum } from "@/prisma/enums";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { withAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 
 export const toggleUpdateVisibilityProcedure = withAuth
   .input(z.object({ updateId: z.string() }))

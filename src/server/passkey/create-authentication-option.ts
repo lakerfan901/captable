@@ -1,8 +1,8 @@
+import type { Passkey } from "@prisma/client";
+import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { getAuthenticatorOptions } from "@/lib/authenticator";
 import { db } from "@/server/db";
 import type { PasskeyAudit } from "@/trpc/routers/passkey-router/schema";
-import type { Passkey } from "@prisma/client";
-import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { Audit } from "../audit";
 
 type CreatePasskeyAuthenticationOptions = {

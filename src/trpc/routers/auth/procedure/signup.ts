@@ -1,10 +1,9 @@
+import { TRPCError } from "@trpc/server";
+import bcrypt from "bcryptjs";
 import { authVerificationEmailJob } from "@/jobs/auth-verification-email";
-
 import { generateVerificationToken } from "@/lib/token";
 import { Audit } from "@/server/audit";
 import { withoutAuth } from "@/trpc/api/trpc";
-import { TRPCError } from "@trpc/server";
-import bcrypt from "bcryptjs";
 import { ZSignUpMutationSchema } from "../schema";
 
 export const signupProcedure = withoutAuth

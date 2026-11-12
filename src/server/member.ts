@@ -1,6 +1,6 @@
-import { createHash } from "@/lib/crypto";
 import { nanoid } from "nanoid";
-import { type TPrismaOrTransaction, db } from "./db";
+import { createHash } from "@/lib/crypto";
+import { db, type TPrismaOrTransaction } from "./db";
 
 export const checkVerificationToken = async (
   token: string,
