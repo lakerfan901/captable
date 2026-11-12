@@ -38,6 +38,9 @@ const UPDATE_HTML_OPTIONS: sanitizeHtml.IOptions = {
     "code",
     "pre",
     "blockquote",
+    // toggle list items / toggleable headings
+    "details",
+    "summary",
     "a",
     "ul",
     "ol",
@@ -74,6 +77,7 @@ const UPDATE_HTML_OPTIONS: sanitizeHtml.IOptions = {
     th: ["colspan", "rowspan", "colwidth"],
     col: ["span", "width"],
     ol: ["start"],
+    details: ["open"],
   },
   allowedClasses: {
     "*": ["bn-*", "language-*"],
@@ -83,6 +87,10 @@ const UPDATE_HTML_OPTIONS: sanitizeHtml.IOptions = {
       color: COLOR,
       "background-color": COLOR,
       "text-align": [/^(left|right|center|justify|start|end)$/i],
+    },
+    // table column widths
+    col: {
+      width: [/^\d{1,4}(\.\d+)?px$/],
     },
   },
   allowedSchemes: ["http", "https", "mailto", "tel"],
@@ -97,6 +105,15 @@ const UPDATE_HTML_OPTIONS: sanitizeHtml.IOptions = {
   // content is always dropped by sanitize-html.
   disallowedTagsMode: "discard",
   transformTags: {
+    // Only check list checkboxes are allowed; any other input (including a
+    // bare `<input>`, which is a text box) is renamed to a tag that is not
+    // allowlisted and therefore dropped.
+    input: (tagName, attribs) => {
+      if (attribs.type?.toLowerCase() !== "checkbox") {
+        return { tagName: "disallowed-input", attribs: {} };
+      }
+      return { tagName, attribs: { ...attribs, type: "checkbox" } };
+    },
     a: (tagName, attribs) => {
       // Links that open a new tab must not get a handle on the opener.
       if (attribs.target) {

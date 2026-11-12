@@ -19,6 +19,10 @@ const BLOCKNOTE_HTML = [
   '<audio src="https://example.com/a.mp3" data-url="https://example.com/a.mp3"></audio>',
   '<a href="https://example.com/a.pdf" data-url="https://example.com/a.pdf" data-name="a.pdf">a.pdf</a>',
   "<blockquote>Quoted</blockquote>",
+  '<ul><li><details open=""><summary><p class="bn-inline-content">Toggle</p></summary><p data-nesting-level="1">inside</p></details></li></ul>',
+  "<hr>",
+  '<details open="" data-level="4" data-is-toggleable="true"><summary><h4 class="bn-inline-content">H4</h4></summary></details>',
+  '<table><colgroup><col style="width: 120px;"><col></colgroup><tr><th data-text-color="blue" data-background-color="red" data-text-alignment="center" colspan="1" rowspan="1" colwidth="120"><p>H1</p></th><th colspan="1" rowspan="1"><p>H2</p></th></tr><tr><td colspan="1" rowspan="1" colwidth="120"><p>c1</p></td><td colspan="1" rowspan="1"><p>c2</p></td></tr></table>',
 ].join("");
 
 describe("sanitizeUpdateHtml", () => {
@@ -107,14 +111,8 @@ describe("sanitizeUpdateHtml", () => {
     },
     {
       name: "form controls other than checkbox",
-      html: '<form action="https://evil.test"><input type="text" name="password"><input type="submit"><button>Go</button></form>',
-      forbidden: [
-        /<form/i,
-        /type="text"/,
-        /type="submit"/,
-        /<button/i,
-        /evil\.test/,
-      ],
+      html: '<form action="https://evil.test"><input type="text" name="password"><input type="submit"><input><input type="CHECKBOX " name="x"><button>Go</button></form>',
+      forbidden: [/<form/i, /<input/i, /<button/i, /evil\.test/],
     },
     {
       name: "meta refresh and base",
