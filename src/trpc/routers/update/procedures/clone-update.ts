@@ -1,6 +1,7 @@
 import { generatePublicId } from "@/common/id";
 import { sanitizeUpdateHtml } from "@/lib/sanitize-update-html";
 import { Audit } from "@/server/audit";
+import { checkMembership } from "@/server/auth";
 import { withAuth } from "@/trpc/api/trpc";
 import { UpdateMutationSchema } from "../schema";
 
@@ -8,8 +9,6 @@ export const cloneUpdateProcedure = withAuth
   .input(UpdateMutationSchema)
   .mutation(async ({ ctx, input }) => {
     try {
-      const authorId = ctx.session.user.memberId;
-      const companyId = ctx.session.user.companyId;
       const userId = ctx.session.user.id;
       const userName = ctx.session.user.name;
       const { userAgent, requestIp } = ctx;
@@ -24,6 +23,11 @@ export const cloneUpdateProcedure = withAuth
         };
       }
       await ctx.db.$transaction(async (tx) => {
+        const { companyId, memberId: authorId } = await checkMembership({
+          session: ctx.session,
+          tx,
+        });
+
         const update = await tx.update.create({
           data: {
             html,

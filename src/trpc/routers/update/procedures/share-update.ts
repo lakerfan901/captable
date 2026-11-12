@@ -5,6 +5,7 @@ import { UpdateStatusEnum } from "@/prisma/enums";
 import { ShareRecipientSchema } from "@/schema/contacts";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
 import { z } from "zod";
 
@@ -39,6 +40,17 @@ export const shareUpdateProcedure = withAuth
     }
 
     const company = update.company;
+
+    // Recipient member/stakeholder ids come from the client.
+    const allRecipients = [...others, ...selectedContacts];
+    await assertCompanyOwns(db, companyId, {
+      memberIds: allRecipients
+        .filter((recipient) => recipient.type === "member")
+        .map((recipient) => recipient.id),
+      stakeholderIds: allRecipients
+        .filter((recipient) => recipient.type === "stakeholder")
+        .map((recipient) => recipient.id),
+    });
 
     const upsertManyRecipients = async () => {
       const baseUrl = env.NEXT_PUBLIC_BASE_URL;
@@ -143,7 +155,7 @@ export const unshareUpdateProcedure = withAuth
   .mutation(async ({ ctx, input }) => {
     const { session, db, userAgent, requestIp } = ctx;
     const { updateId, recipientId } = input;
-    const companyId = session.user.companyId;
+    const { companyId } = await checkMembership({ session, tx: db });
     const { user } = session;
 
     const update = await db.update.findUniqueOrThrow({

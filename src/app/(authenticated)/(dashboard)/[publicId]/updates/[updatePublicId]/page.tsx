@@ -1,10 +1,14 @@
-"use server";
 import Editor from "@/components/update/editor-lazy";
+import { checkMembership, withServerComponentSession } from "@/server/auth";
 import { db } from "@/server/db";
+import { notFound } from "next/navigation";
 
 const getUpdate = async (publicId: string) => {
-  return await db.update.findFirstOrThrow({
-    where: { publicId },
+  const session = await withServerComponentSession();
+  const { companyId } = await checkMembership({ session, tx: db });
+
+  return await db.update.findFirst({
+    where: { publicId, companyId },
   });
 };
 
@@ -19,6 +23,10 @@ const UpdatePage = async (props: {
     return <Editor companyPublicId={publicId} mode="new" />;
   }
   const update = await getUpdate(updatePublicId);
+
+  if (!update) {
+    return notFound();
+  }
 
   return <Editor companyPublicId={publicId} update={update} mode="edit" />;
 };

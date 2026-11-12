@@ -1,15 +1,15 @@
 import { generatePublicId } from "@/common/id";
 import { sanitizeUpdateHtml } from "@/lib/sanitize-update-html";
 import { Audit } from "@/server/audit";
+import { checkMembership } from "@/server/auth";
 import { withAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { UpdateMutationSchema } from "../schema";
 
 export const saveUpdateProcedure = withAuth
   .input(UpdateMutationSchema)
   .mutation(async ({ ctx, input }) => {
     try {
-      const authorId = ctx.session.user.memberId;
-      const companyId = ctx.session.user.companyId;
       const userId = ctx.session.user.id;
       const userName = ctx.session.user.name;
       const { userAgent, requestIp } = ctx;
@@ -24,9 +24,24 @@ export const saveUpdateProcedure = withAuth
         };
       }
       await ctx.db.$transaction(async (tx) => {
+        const { companyId, memberId: authorId } = await checkMembership({
+          session: ctx.session,
+          tx,
+        });
+
         if (input.publicId) {
+          // Only an update of the caller's own company may be overwritten.
+          const existing = await tx.update.findFirst({
+            where: { publicId, companyId },
+            select: { id: true },
+          });
+
+          if (!existing) {
+            throw new TRPCError({ code: "NOT_FOUND" });
+          }
+
           const update = await tx.update.update({
-            where: { publicId },
+            where: { id: existing.id, companyId },
             data: {
               html,
               title,
@@ -83,6 +98,9 @@ export const saveUpdateProcedure = withAuth
         message: "Successfully saved an update.",
       };
     } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
       console.error("Error saving an update:", error);
       return {
         success: false,
