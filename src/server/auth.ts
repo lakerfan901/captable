@@ -249,6 +249,10 @@ export const authOptions: NextAuthOptions = {
 
         //@TODO (Add audits for verification.verified event)
 
+        if (!verification?.verified) {
+          return null;
+        }
+
         await db.passkey.update({
           where: {
             id: passkey.id,

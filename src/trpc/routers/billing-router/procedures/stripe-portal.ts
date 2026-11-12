@@ -3,6 +3,7 @@ import { invariant } from "@/lib/error";
 import { checkMembership } from "@/server/auth";
 import { createOrRetrieveCustomer, stripe } from "@/server/stripe";
 import { withAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { ZodStripePortalMutationSchema } from "../schema";
 
 export const stripePortalProcedure = withAuth
@@ -25,6 +26,19 @@ export const stripePortalProcedure = withAuth
       }
 
       invariant(customer, "Could not get customer.");
+
+      // The subscription id comes from the client: it must be this company's.
+      const subscription = await tx.billingSubscription.findFirst({
+        where: {
+          id: input.subscription,
+          customer: { companyId },
+        },
+        select: { id: true },
+      });
+
+      if (!subscription) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
       console.log({ input });
 
       try {
