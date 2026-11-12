@@ -50,7 +50,7 @@ const formSchema = z.object({
     )
     .nonempty(),
   recipient: z.string(),
-  recipientColors: z.record(z.string()),
+  recipientColors: z.record(z.string(), z.string()),
   message: z.string().optional(),
 });
 

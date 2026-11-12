@@ -8,27 +8,21 @@ export const ShareClassMutationSchema = z.object({
   }),
   classType: z.enum(["COMMON", "PREFERRED"]),
   prefix: z.enum(["CS", "PS"]).optional(),
-  initialSharesAuthorized: z.coerce.number().min(1, {
+  initialSharesAuthorized: z.coerce.number<number>().min(1, {
     message: "Authorized shares is required",
   }),
-  boardApprovalDate: z.coerce.date({
-    required_error: "Board approval date is required",
-    invalid_type_error: "This is not a valid date",
-  }),
-  stockholderApprovalDate: z.coerce.date({
-    required_error: "Stockholder approval date is required",
-    invalid_type_error: "This is not a valid date",
-  }),
-  votesPerShare: z.coerce.number().min(0, {
+  boardApprovalDate: z.coerce.date<Date>(),
+  stockholderApprovalDate: z.coerce.date<Date>(),
+  votesPerShare: z.coerce.number<number>().min(0, {
     message: "Votes per share is required",
   }),
-  parValue: z.coerce.number().min(0, {
+  parValue: z.coerce.number<number>().min(0, {
     message: "Par value is required",
   }),
-  pricePerShare: z.coerce.number().min(0, {
+  pricePerShare: z.coerce.number<number>().min(0, {
     message: "Price per share is required",
   }),
-  seniority: z.coerce.number().min(0, {
+  seniority: z.coerce.number<number>().min(0, {
     message: "Seniority is required",
   }),
 
@@ -39,10 +33,10 @@ export const ShareClassMutationSchema = z.object({
   ]),
   convertsToShareClassId: z.string().nullable(),
 
-  liquidationPreferenceMultiple: z.coerce.number().min(0, {
+  liquidationPreferenceMultiple: z.coerce.number<number>().min(0, {
     message: "Liquidation preference multiple is required",
   }),
-  participationCapMultiple: z.coerce.number().min(0, {
+  participationCapMultiple: z.coerce.number<number>().min(0, {
     message: "Participation cap multiple is required",
   }),
 });

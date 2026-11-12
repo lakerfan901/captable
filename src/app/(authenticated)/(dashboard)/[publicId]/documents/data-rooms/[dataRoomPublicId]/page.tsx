@@ -12,7 +12,7 @@ const DataRoomSettinsPage = async (props: {
 
   const { publicId, dataRoomPublicId } = params;
 
-  const { dataRoom, documents } = await api.dataRoom.getDataRoom.query({
+  const { dataRoom, documents } = await api.dataRoom.getDataRoom({
     dataRoomPublicId,
     include: {
       company: false,
@@ -20,7 +20,7 @@ const DataRoomSettinsPage = async (props: {
       documents: true,
     },
   });
-  const contacts = await api.common.getContacts.query();
+  const contacts = await api.common.getContacts();
 
   if (!dataRoom) {
     return notFound();

@@ -28,7 +28,7 @@ export const ZodGetTemplateQuerySchema = z.object({
 
 export const SignTemplateMutationSchema = z.object({
   templateId: z.string(),
-  data: z.record(z.string()),
+  data: z.record(z.string(), z.string()),
   recipientId: z.string(),
 });
 

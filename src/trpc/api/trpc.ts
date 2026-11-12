@@ -12,6 +12,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { isSentryEnabled } from "@/constants/sentry";
+import "@/lib/zod-error-map";
 import { getIp, getUserAgent } from "@/lib/headers";
 import { RBAC, type addPolicyOption } from "@/lib/rbac";
 import {
@@ -156,6 +157,13 @@ const t = initTRPC
  * @see https://trpc.io/docs/router
  */
 export const createTRPCRouter = t.router;
+
+/**
+ * Create a server-side caller.
+ *
+ * @see https://trpc.io/docs/server/server-side-calls
+ */
+export const createCallerFactory = t.createCallerFactory;
 
 const sentryMiddleware = t.middleware(
   Sentry.trpcMiddleware({

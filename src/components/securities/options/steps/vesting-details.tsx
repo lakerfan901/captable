@@ -32,9 +32,9 @@ import { EmptySelect } from "../../shared/EmptySelect";
 
 const formSchema = z.object({
   equityPlanId: z.string(),
-  cliffYears: z.coerce.number().min(0),
-  vestingYears: z.coerce.number().min(0),
-  exercisePrice: z.coerce.number(),
+  cliffYears: z.coerce.number<number>().min(0),
+  vestingYears: z.coerce.number<number>().min(0),
+  exercisePrice: z.coerce.number<number>(),
   stakeholderId: z.string(),
 });
 

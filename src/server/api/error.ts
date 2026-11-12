@@ -21,12 +21,12 @@ const ErrorCode = z.enum([
 
 export type ErrorCodeType = z.infer<typeof ErrorCode>;
 
-function errorSchemaFactory(code: z.ZodEnum<[z.infer<typeof ErrorCode>]>) {
+function errorSchemaFactory(code: z.ZodEnum<{ [K in ErrorCodeType]?: K }>) {
   return z.object({
     error: z.object({
       code: code.openapi({
         description: "A machine readable error code.",
-        example: code._def.values.at(0),
+        example: code.options.at(0),
       }),
 
       message: z.string().openapi({

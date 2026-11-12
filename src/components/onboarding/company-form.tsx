@@ -36,6 +36,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+import type { z } from "zod";
 import Loading from "../common/loading";
 import { LinearCombobox } from "../ui/combobox";
 
@@ -62,7 +63,11 @@ export const CompanyForm = ({ type, data }: CompanyFormProps) => {
   const [imageUrl, setImageUrl] = useState<string>(data?.company.logo ?? "");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const form = useForm<TypeZodOnboardingMutationSchema>({
+  const form = useForm<
+    z.input<typeof formSchema>,
+    unknown,
+    TypeZodOnboardingMutationSchema
+  >({
     resolver: zodResolver(formSchema),
     defaultValues: {
       user: {

@@ -32,13 +32,13 @@ export default async function TemplateDetailViewPage(props: {
   const { allow } = await serverAccessControl();
 
   const [{ name, status, url, fields }, auditsData] = await Promise.all([
-    api.template.get.query({
+    api.template.get({
       publicId: templatePublicId,
       isDraftOnly: false,
     }),
 
     allow(
-      api.audit.allEsignAudits.query({
+      api.audit.allEsignAudits({
         templatePublicId: templatePublicId,
       }),
       ["audits", "read"],

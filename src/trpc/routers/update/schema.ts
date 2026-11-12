@@ -4,7 +4,7 @@ export const UpdateMutationSchema = z.object({
   id: z.string().optional(),
   publicId: z.string().optional(),
   title: z.string(),
-  content: z.any(),
+  content: z.any().optional(),
   html: z.string(),
   isPublic: z.boolean().optional(),
   recipients: z.array(z.string()).optional(),
