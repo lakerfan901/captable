@@ -2,7 +2,6 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getStripeClient } from "@/client-only/stripe";
 import {
   Dialog,
   DialogContent,
@@ -45,9 +44,12 @@ function Plans({ products, subscription }: PricingProps) {
 
   const { mutateAsync: checkoutWithStripe, isPending: checkoutLoading } =
     api.billing.checkout.useMutation({
-      onSuccess: async ({ stripeSessionId }) => {
-        const stripe = await getStripeClient();
-        await stripe?.redirectToCheckout({ sessionId: stripeSessionId });
+      onSuccess: ({ url }) => {
+        // Stripe.js no longer offers redirectToCheckout (removed in v8);
+        // redirect to the hosted Checkout page URL returned by the server.
+        if (url) {
+          window.location.assign(url);
+        }
       },
     });
 
