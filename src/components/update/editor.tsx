@@ -16,8 +16,10 @@ import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
 import "@/styles/editor.css";
-import { BlockNoteView, useCreateBlockNote } from "@blocknote/react";
-import "@blocknote/react/style.css";
+import { BlockNoteView } from "@blocknote/mantine";
+import { useCreateBlockNote } from "@blocknote/react";
+import "@blocknote/core/fonts/inter.css";
+import "@blocknote/mantine/style.css";
 import { UpdateStatusEnum } from "@/prisma/enums";
 import { pushModal } from "../modals";
 import { ChangeUpdateVisibilityAlertDialog } from "./change-update-visibility-alert-dialog";
