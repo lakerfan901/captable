@@ -74,51 +74,67 @@ export const update = withAuthApiV1
 
     const body: TUpdateStakeholderSchema = c.req.valid("json");
 
-    const updatedStakeHolder = await db.$transaction(async (tx) => {
-      const stakeholder = await tx.stakeholder.findUnique({
-        where: {
-          id,
-          companyId: membership.companyId,
-        },
-        select: {
-          id: true,
-          companyId: true,
-          name: true,
-        },
-      });
-
-      if (!stakeholder) {
-        throw new ApiError({
-          code: "NOT_FOUND",
-          message: "No stakeholder with the provided Id",
-        });
-      }
-
-      const updatedStakeHolder = await tx.stakeholder.update({
-        where: {
-          id: stakeholder.id,
-          companyId: membership.companyId,
-        },
-        data: body,
-      });
-
-      await audit.create(
-        {
-          action: "stakeholder.updated",
-          companyId: membership.companyId,
-          actor: { type: "user", id: membership.userId },
-          context: {
-            requestIp,
-            userAgent,
+    const updatedStakeHolder = await db
+      .$transaction(async (tx) => {
+        const stakeholder = await tx.stakeholder.findUnique({
+          where: {
+            id,
+            companyId: membership.companyId,
           },
-          target: [{ type: "stakeholder", id: stakeholder.id }],
-          summary: `${membership.user.name} updated the stakeholder details in the company : ${updatedStakeHolder.name}`,
-        },
-        tx,
-      );
+          select: {
+            id: true,
+            companyId: true,
+            name: true,
+          },
+        });
 
-      return updatedStakeHolder;
-    });
+        if (!stakeholder) {
+          throw new ApiError({
+            code: "NOT_FOUND",
+            message: "No stakeholder with the provided Id",
+          });
+        }
+
+        const updatedStakeHolder = await tx.stakeholder.update({
+          where: {
+            id: stakeholder.id,
+            companyId: membership.companyId,
+          },
+          data: {
+            ...body,
+            ...(body.email !== undefined
+              ? { email: body.email.trim().toLowerCase() }
+              : {}),
+          },
+        });
+
+        await audit.create(
+          {
+            action: "stakeholder.updated",
+            companyId: membership.companyId,
+            actor: { type: "user", id: membership.userId },
+            context: {
+              requestIp,
+              userAgent,
+            },
+            target: [{ type: "stakeholder", id: stakeholder.id }],
+            summary: `${membership.user.name} updated the stakeholder details in the company : ${updatedStakeHolder.name}`,
+          },
+          tx,
+        );
+
+        return updatedStakeHolder;
+      })
+      .catch((error: unknown) => {
+        if ((error as { code?: unknown } | null)?.code === "P2002") {
+          throw new ApiError({
+            code: "NOT_UNIQUE",
+            message:
+              "Another stakeholder of this company already uses this email.",
+          });
+        }
+        throw error;
+      });
 
     const data: TStakeholderSchema = {
       ...updatedStakeHolder,
