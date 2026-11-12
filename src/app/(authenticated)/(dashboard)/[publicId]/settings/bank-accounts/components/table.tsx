@@ -1,5 +1,3 @@
-
-
 const BankAccountsTable = () => {
   return <>Table</>;
 };

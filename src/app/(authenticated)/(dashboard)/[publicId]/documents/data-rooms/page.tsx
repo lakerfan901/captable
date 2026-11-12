@@ -28,7 +28,7 @@ const getDataRooms = (companyId: string) => {
 const DataRoomPage = async () => {
   const session = await getServerComponentAuthSession();
 
-  if (!session || !session.user) {
+  if (!session?.user) {
     return null;
   }
 

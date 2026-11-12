@@ -1,4 +1,3 @@
-
 import { useDataTable } from "@/components/ui/data-table/data-table";
 import { ResetButton } from "@/components/ui/data-table/data-table-buttons";
 import { DataTableViewOptions } from "@/components/ui/data-table/data-table-view-options";

@@ -87,6 +87,7 @@ export function authorizeUpload(
   }
 
   const company = subject.company;
+  // biome-ignore lint/complexity/useOptionalChain: security-reviewed file; explicit check kept verbatim
   if (!company || !company.publicId) {
     return { ok: false, reason: "no active company membership" };
   }

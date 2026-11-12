@@ -25,13 +25,13 @@ export const createPasskeySigninOptions = async ({
     },
     update: {
       token: challenge,
-      expiresAt: new Date(new Date().getTime() + 2 * 60000), // 2 min expiry
+      expiresAt: new Date(Date.now() + 2 * 60000), // 2 min expiry
       createdAt: new Date(),
     },
     create: {
       id: sessionId,
       token: challenge,
-      expiresAt: new Date(new Date().getTime() + 2 * 60000), // 2 min expiry
+      expiresAt: new Date(Date.now() + 2 * 60000), // 2 min expiry
       createdAt: new Date(),
     },
   });

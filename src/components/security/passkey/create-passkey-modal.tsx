@@ -57,7 +57,7 @@ const PasskeyModal = ({ title, subtitle, trigger }: PasskeyModalType) => {
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const extractDefaultPasskeyName = () => {
-      if (!window || !window.navigator) {
+      if (!window?.navigator) {
         return;
       }
       parser.setUA(window.navigator.userAgent);

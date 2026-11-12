@@ -82,7 +82,7 @@ export const createPasskeyAuthenticationOptions = async ({
     data: {
       userId,
       token: options.challenge,
-      expires: new Date(new Date().getTime() + 2 * 60000), // 2 min expiry
+      expires: new Date(Date.now() + 2 * 60000), // 2 min expiry
       identifier: "PASSKEY_CHALLENGE",
     },
   });

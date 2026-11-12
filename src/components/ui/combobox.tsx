@@ -86,8 +86,8 @@ export const LinearCombobox = ({
           <CommandInput
             value={searchValue}
             onValueChange={(value) => {
-              if (Number.parseInt(value) < options.length) {
-                const possibleOption = options[Number.parseInt(value)];
+              if (Number.parseInt(value, 10) < options.length) {
+                const possibleOption = options[Number.parseInt(value, 10)];
                 if (possibleOption) {
                   setSelectedOption(possibleOption);
                   setOpenPopover(false);

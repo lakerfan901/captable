@@ -160,6 +160,7 @@ export const authOptions: NextAuthOptions = {
         if (credentials) {
           const { email, password } = credentials;
           const user = await getUserByEmail(email);
+          // biome-ignore lint/complexity/useOptionalChain: security-reviewed file; explicit check kept verbatim
           if (!user || !user.password) return null;
           const passwordsMatch = await bcrypt.compare(password, user.password);
           if (passwordsMatch) return user;

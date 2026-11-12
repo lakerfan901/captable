@@ -42,8 +42,7 @@ const DocumentPreview = async (props: {
 
   // The row must be this company's and so must the object it points at.
   if (
-    !document ||
-    !document.bucket ||
+    !document?.bucket ||
     !isKeyInCompanyNamespace(document.bucket.key, document.company)
   ) {
     return notFound();

@@ -28,7 +28,7 @@ export default async function VerifyMember(props: {
     verificationToken: token,
   });
 
-  if (!session?.user || !session?.user.email) {
+  if (!session?.user?.email) {
     redirect(`/set-password/${passwordResetToken}?${params.toString()}`);
   }
 

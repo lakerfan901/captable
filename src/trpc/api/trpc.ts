@@ -16,9 +16,7 @@ import "@/lib/zod-error-map";
 import * as Sentry from "@sentry/nextjs";
 import { getIp, getUserAgent } from "@/lib/headers";
 import { type addPolicyOption, RBAC } from "@/lib/rbac";
-import {
-  getPermissions,
-} from "@/lib/rbac/access-control";
+import { getPermissions } from "@/lib/rbac/access-control";
 import { getServerAuthSession } from "@/server/auth";
 import { db } from "@/server/db";
 
@@ -55,6 +53,7 @@ export type CreateTRPCContextType = Awaited<
 >;
 
 const withAuthTrpcContext = ({ session, ...rest }: CreateTRPCContextType) => {
+  // biome-ignore lint/complexity/useOptionalChain: security-reviewed file; explicit check kept verbatim
   if (!session || !session.user) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }

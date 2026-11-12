@@ -1,6 +1,6 @@
 "use client";
 
-import type { Block, } from "@blocknote/core";
+import type { Block } from "@blocknote/core";
 import type { Update } from "@prisma/client";
 import { RiArrowDownSLine } from "@remixicon/react";
 import Link from "next/link";
