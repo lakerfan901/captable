@@ -19,6 +19,7 @@
 
 services:
   app:
+    image: captable-app:latest
     build:
       context: ../..
       dockerfile: docker/Dockerfile
@@ -50,6 +51,7 @@ services:
 
   # Applies pending Prisma migrations, then exits. The app waits for it.
   migrate:
+    image: captable-app:latest
     build:
       context: ../..
       dockerfile: docker/Dockerfile

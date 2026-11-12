@@ -14,6 +14,9 @@ await import("./src/env.js");
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   output: process.env.DOCKER_OUTPUT ? "standalone" : undefined,
+  // Image builds run on shared hosts and in small VMs: by default Next uses one
+  // worker per CPU for page-data collection, which can exhaust memory there.
+  ...(process.env.DOCKER_OUTPUT ? { experimental: { cpus: 4 } } : {}),
   // Pin the tracing root to this repo so a stray lockfile in a parent
   // directory cannot change what the standalone build includes.
   outputFileTracingRoot: import.meta.dirname,
