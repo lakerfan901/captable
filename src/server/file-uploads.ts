@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 import path from "node:path";
 import { customId } from "@/common/id";
@@ -50,6 +50,12 @@ export interface getPresignedUrlOptions {
   // should be companyPublicId or memberId or userId
   identifier: string;
   bucketMode: "privateBucket" | "publicBucket";
+  /**
+   * Include Content-Type in the signature so the uploader must send exactly
+   * `contentType`. Used for public-bucket uploads so a client cannot store
+   * e.g. text/html where an image was authorized.
+   */
+  signContentType?: boolean;
 }
 
 const TEN_MINUTES_IN_SECONDS = 10 * 60;
@@ -61,6 +67,7 @@ export const getPresignedPutUrl = async ({
   keyPrefix,
   identifier,
   bucketMode,
+  signContentType,
 }: getPresignedUrlOptions) => {
   const { name, ext } = path.parse(fileName);
 
@@ -77,6 +84,7 @@ export const getPresignedPutUrl = async ({
 
   const url: string = await getSignedUrl(S3, putObjectCommand, {
     expiresIn: expiresIn ?? TEN_MINUTES_IN_SECONDS,
+    ...(signContentType && { signableHeaders: new Set(["content-type"]) }),
   });
 
   const bucketUrl = new URL(url);
@@ -98,4 +106,78 @@ export const getPresignedGetUrl = async (key: string) => {
   });
 
   return { key, url };
+};
+
+/**
+ * Server-side upload for trusted callers (jobs, tRPC procedures). Browser
+ * code must use `uploadFile` from `@/common/uploads`, which goes through the
+ * authorized server action.
+ */
+export const uploadFile = async (
+  file: File,
+  options: Pick<
+    getPresignedUrlOptions,
+    "expiresIn" | "keyPrefix" | "identifier"
+  >,
+  bucketMode: "publicBucket" | "privateBucket" = "privateBucket",
+) => {
+  const { url, key, bucketUrl } = await getPresignedPutUrl({
+    contentType: file.type,
+    fileName: file.name,
+    bucketMode,
+    ...options,
+  });
+  const body = await file.arrayBuffer();
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/octet-stream",
+    },
+    body,
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Failed to upload file "${file.name}", failed with status code ${res.status}`,
+    );
+  }
+
+  const { name, type, size } = file;
+  let fileUrl = bucketUrl;
+
+  const uploadDomain =
+    process.env.NEXT_PUBLIC_UPLOAD_DOMAIN || env.NEXT_PUBLIC_UPLOAD_DOMAIN;
+
+  if (bucketMode === "publicBucket" && uploadDomain) {
+    fileUrl = `${uploadDomain}/${key}`;
+  }
+
+  return {
+    key,
+    name,
+    mimeType: type,
+    size,
+    fileUrl,
+  };
+};
+
+export type TUploadFile = Awaited<ReturnType<typeof uploadFile>>;
+
+export const getFileFromS3 = async (key: string) => {
+  const { url } = await getPresignedGetUrl(key);
+
+  const response = await fetch(url, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to get file "${key}", failed with status code ${response.status}`,
+    );
+  }
+
+  const buffer = await response.arrayBuffer();
+
+  const binaryData = new Uint8Array(buffer);
+
+  return binaryData;
 };

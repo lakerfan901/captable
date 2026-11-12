@@ -35,7 +35,7 @@ import { SortButton } from "@/components/ui/data-table/data-table-buttons";
 import { DataTableContent } from "@/components/ui/data-table/data-table-content";
 import { DataTableHeader } from "@/components/ui/data-table/data-table-header";
 import { DataTablePagination } from "@/components/ui/data-table/data-table-pagination";
-import { getPresignedGetUrl } from "@/server/file-uploads";
+import { getPresignedGetUrl } from "@/server/file-upload-actions";
 import type { RouterOutputs } from "@/trpc/shared";
 import { RiFileDownloadLine, RiMore2Fill } from "@remixicon/react";
 import { useRouter } from "next/navigation";
