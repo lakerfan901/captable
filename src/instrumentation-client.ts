@@ -4,8 +4,9 @@
 // Sentry is optional: the SDK is only downloaded when NEXT_PUBLIC_SENTRY_DSN is
 // set. Public env vars are injected at runtime by <PublicEnvScript /> (see
 // src/env.js), which may run after this file, so `@/env` is not imported here
-// and the DSN is read once the page has loaded.
+// (evaluating it too early would cache missing public values app-wide).
 import { PUBLIC_ENV_KEY } from "@/constants/env";
+import { sentryDataCollection } from "@/constants/sentry-data-collection";
 
 type CaptureRouterTransitionStart =
   typeof import("@sentry/nextjs").captureRouterTransitionStart;
@@ -28,6 +29,7 @@ const initSentry = async () => {
     dsn,
     tracesSampleRate: 1,
     debug: false,
+    dataCollection: sentryDataCollection,
     replaysOnErrorSampleRate: 1.0,
     replaysSessionSampleRate: 0.1,
     integrations: [
@@ -41,7 +43,9 @@ const initSentry = async () => {
   captureRouterTransitionStart = Sentry.captureRouterTransitionStart;
 };
 
-if (document.readyState === "complete") {
+// Initialise right away when the DSN is already known (build-time value, or
+// PublicEnvScript already ran); otherwise wait until the page has loaded.
+if (readDsn() || document.readyState === "complete") {
   void initSentry();
 } else {
   window.addEventListener("load", () => void initSentry(), { once: true });
