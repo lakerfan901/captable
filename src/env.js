@@ -44,6 +44,12 @@ export const env = createEnv({
     // upload
     UPLOAD_ENDPOINT: z.string(),
     UPLOAD_REGION: z.string(),
+    // Set to "true" for MinIO or other S3-compatible stores served from a
+    // hostname (bucket in the path instead of a subdomain).
+    UPLOAD_FORCE_PATH_STYLE: z
+      .string()
+      .default("false")
+      .transform((s) => s === "true" || s === "1"),
     UPLOAD_BUCKET_PUBLIC: z.string(),
     UPLOAD_BUCKET_PRIVATE: z.string(),
     UPLOAD_ACCESS_KEY_ID: z.string().optional(),
@@ -97,6 +103,7 @@ export const env = createEnv({
 
     UPLOAD_ENDPOINT: process.env.UPLOAD_ENDPOINT,
     UPLOAD_REGION: process.env.UPLOAD_REGION,
+    UPLOAD_FORCE_PATH_STYLE: process.env.UPLOAD_FORCE_PATH_STYLE,
     UPLOAD_BUCKET_PUBLIC: process.env.UPLOAD_BUCKET_PUBLIC,
     UPLOAD_BUCKET_PRIVATE: process.env.UPLOAD_BUCKET_PRIVATE,
     UPLOAD_ACCESS_KEY_ID: process.env.UPLOAD_ACCESS_KEY_ID,

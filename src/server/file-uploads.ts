@@ -22,6 +22,7 @@ const PublicBucket = env.UPLOAD_BUCKET_PUBLIC;
 const S3 = new S3Client({
   region,
   endpoint,
+  forcePathStyle: env.UPLOAD_FORCE_PATH_STYLE,
   credentials: hasCredentials
     ? {
         secretAccessKey,

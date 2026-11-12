@@ -1,0 +1,120 @@
+# Production stack for Dokploy (or any Docker Compose host behind a reverse proxy).
+#
+# Required environment variables (set them in Dokploy, never in the repo):
+#   APP_URL              e.g. https://tab.example.com
+#   UPLOAD_PUBLIC_URL    Public base URL of the object store; browsers upload and download
+#                        through presigned URLs on it. It can be the same as APP_URL when
+#                        the proxy sends the two bucket paths to MinIO (see below).
+#   NEXTAUTH_SECRET      openssl rand -base64 32
+#   POSTGRES_PASSWORD
+#   MINIO_ROOT_PASSWORD
+#   EMAIL_SERVER         smtp://user:pass@host:port  (defaults to the bundled Mailpit catcher,
+#                        which stores mail but delivers nothing)
+#   EMAIL_FROM
+#
+# Routing: APP_URL -> service `app` port 3000. For storage either give MinIO its own
+# hostname (-> service `minio` port 9000), or reuse the app hostname and route the path
+# prefixes /captable-private-bucket and /captable-public-bucket to `minio` port 9000.
+# No ports are published on the host.
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment: &app-env
+      NODE_ENV: production
+      NEXT_PUBLIC_NODE_ENV: production
+      NEXT_PUBLIC_BASE_URL: ${APP_URL:?set APP_URL}
+      NEXTAUTH_URL: ${APP_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET}
+      DATABASE_URL: postgres://captable:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@pg:5432/captable
+      EMAIL_SERVER: ${EMAIL_SERVER:-smtp://captable:password@smtp:1025}
+      EMAIL_FROM: ${EMAIL_FROM:-captable@localhost}
+      UPLOAD_ENDPOINT: ${UPLOAD_PUBLIC_URL:?set UPLOAD_PUBLIC_URL}
+      NEXT_PUBLIC_UPLOAD_DOMAIN: ${UPLOAD_PUBLIC_URL}
+      UPLOAD_REGION: us-east-1
+      UPLOAD_FORCE_PATH_STYLE: "true"
+      UPLOAD_ACCESS_KEY_ID: captable
+      UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      UPLOAD_BUCKET_PUBLIC: captable-public-bucket
+      UPLOAD_BUCKET_PRIVATE: captable-private-bucket
+    expose:
+      - "3000"
+
+  # Applies pending Prisma migrations, then exits. The app waits for it.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    restart: "no"
+    depends_on:
+      pg:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+      HOME: /tmp
+      npm_config_cache: /tmp/.npm
+    command: ["sh", "./scripts/migrate.sh"]
+
+  pg:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: captable
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: captable
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U captable -d captable"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --address ":9000"
+    environment:
+      MINIO_ROOT_USER: captable
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio:/data
+    expose:
+      - "9000"
+
+  # Creates the two buckets once and exits.
+  minio-init:
+    image: minio/mc
+    restart: "no"
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: sh
+    command:
+      - -c
+      - |
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+          mc alias set s3 http://minio:9000 captable "$$MINIO_ROOT_PASSWORD" && break
+          sleep 3
+        done
+        mc mb --ignore-existing s3/captable-private-bucket
+        mc mb --ignore-existing s3/captable-public-bucket
+        mc anonymous set download s3/captable-public-bucket
+
+  # Mail catcher used when EMAIL_SERVER is not set. Not exposed publicly.
+  smtp:
+    image: axllent/mailpit
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  minio:
