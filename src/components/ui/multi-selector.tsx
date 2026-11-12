@@ -388,7 +388,7 @@ const MultipleSelector = React.forwardRef<
                   {option.label}
                   <button
                     className={cn(
-                      "ml-1 rounded-full outline-none",
+                      "ml-1 rounded-full outline-hidden",
                       (disabled || option.fixed) && "hidden",
                     )}
                     onKeyDown={(e) => {
@@ -443,7 +443,7 @@ const MultipleSelector = React.forwardRef<
                   : placeholder
               }
               className={cn(
-                "ml-2 flex-1 bg-transparent outline-none placeholder:text-muted-foreground",
+                "ml-2 flex-1 bg-transparent outline-hidden placeholder:text-muted-foreground",
                 inputProps?.className,
               )}
             />
@@ -451,7 +451,7 @@ const MultipleSelector = React.forwardRef<
         </div>
         <div className="relative mt-2">
           {open && (
-            <CommandList className="no-scrollbar absolute top-0 z-10 w-full rounded-md border bg-popover text-popover-foreground shadow-md outline-none animate-in">
+            <CommandList className="no-scrollbar absolute top-0 z-10 w-full rounded-md border bg-popover text-popover-foreground shadow-md outline-hidden animate-in">
               {isLoading ? (
                 <>{loadingIndicator}</>
               ) : (

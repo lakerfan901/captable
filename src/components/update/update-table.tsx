@@ -91,7 +91,7 @@ const UpdateActions = (row: { original: Update[number] }) => {
               updatePublicId={updatePublicId}
               isPublic={isPublic}
               trigger={
-                <p className="relative hover:bg-gray-100 flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
+                <p className="relative hover:bg-gray-100 flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-hidden transition-colors focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50">
                   {status === "PUBLIC" ? "Make it private" : "Make it public"}
                 </p>
               }
@@ -110,7 +110,7 @@ const UpdateActions = (row: { original: Update[number] }) => {
             });
           }}
         >
-          <div className="relative hover:bg-gray-100 flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
+          <div className="relative hover:bg-gray-100 flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-hidden transition-colors focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50">
             Share this update
           </div>
         </DropdownMenuItem>

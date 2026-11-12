@@ -29,7 +29,7 @@ const TeamMembersPage = async () => {
         </div>
       </div>
 
-      <Card className="mx-auto mt-3 w-[28rem] sm:w-[38rem] md:w-full">
+      <Card className="mx-auto mt-3 w-md sm:w-152 md:w-full">
         <MemberTable members={members.data} roles={roles.rolesList} />
       </Card>
     </div>

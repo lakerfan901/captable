@@ -59,7 +59,7 @@ export const ShareDataRoomEmail = ({
               </Button>
             </Section>
 
-            <Text className="!text-[14px] leading-[24px] text-black">
+            <Text className="text-[14px]! leading-[24px] text-black">
               or copy and paste this URL into your browser:{" "}
               <Link
                 href={link}
@@ -71,7 +71,7 @@ export const ShareDataRoomEmail = ({
 
             <Hr className="mx-0 my-[26px] w-full border border-solid border-neutral-200" />
             <Link href={constants.url} className="text-sm no-underline">
-              <span className="text-xs !text-gray-400">Powered by</span>
+              <span className="text-xs text-gray-400!">Powered by</span>
               <span>{` ${constants.title}`}</span>
             </Link>
           </Container>

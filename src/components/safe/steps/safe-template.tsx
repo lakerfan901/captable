@@ -161,7 +161,7 @@ export function SafeTemplate() {
             control={form.control}
             name="templateType"
             render={({ field }) => (
-              <FormItem className="space-y-3">
+              <FormItem className="[&>:not([hidden])~:not([hidden])]:mt-3">
                 <FormLabel>Template type</FormLabel>
                 <FormControl>
                   <RadioGroup
@@ -175,7 +175,7 @@ export function SafeTemplate() {
                     defaultValue={field.value}
                     className="flex flex-col space-y-1"
                   >
-                    <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormItem className="flex items-center space-x-3 [&>:not([hidden])~:not([hidden])]:mt-0">
                       <FormControl>
                         <RadioGroupItem value="predefined-template" />
                       </FormControl>
@@ -183,7 +183,7 @@ export function SafeTemplate() {
                         Pre-defined safe template
                       </FormLabel>
                     </FormItem>
-                    <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormItem className="flex items-center space-x-3 [&>:not([hidden])~:not([hidden])]:mt-0">
                       <FormControl>
                         <RadioGroupItem value="custom-template" />
                       </FormControl>
@@ -364,7 +364,7 @@ function Recipients() {
           control={form.control}
           name="orderedDelivery"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+            <FormItem className="flex flex-row items-start space-x-3 [&>:not([hidden])~:not([hidden])]:mt-0 rounded-md border p-4">
               <FormControl>
                 <Checkbox
                   checked={field.value}

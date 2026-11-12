@@ -172,7 +172,7 @@ export function AddRecipientStep({ companyPublicId }: AddRecipientStepProps) {
                   control={form.control}
                   name="orderedDelivery"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormItem className="flex flex-row items-start space-x-3 [&>:not([hidden])~:not([hidden])]:mt-0 rounded-md border p-4">
                       <FormControl>
                         <Checkbox
                           checked={field.value}

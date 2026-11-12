@@ -257,7 +257,7 @@ export const columns: ColumnDef<Share[number]>[] = [
       return (
         <DropdownMenu>
           <div className="items-end justify-end text-center">
-            <DropdownMenuTrigger className="outline-none" asChild>
+            <DropdownMenuTrigger className="outline-hidden" asChild>
               <Button variant={"outline"} className="h-7 w-12 px-2">
                 View
               </Button>
@@ -318,7 +318,7 @@ export const columns: ColumnDef<Share[number]>[] = [
         <DropdownMenu>
           <div className="items-end justify-end text-right">
             <DropdownMenuTrigger
-              className="border-0 border-white outline-none focus:outline-none"
+              className="border-0 border-white outline-hidden focus:outline-hidden"
               asChild
             >
               <Button variant="ghost" className="h-8 w-8 p-0">

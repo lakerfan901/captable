@@ -68,8 +68,8 @@ const SignUpForm = ({ isGoogleAuthEnabled }: SignUpFormProps) => {
   const isSubmitting = form.formState.isSubmitting;
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-cyan-100">
-      <div className="grid w-full max-w-md grid-cols-1 gap-5 rounded-xl border bg-white p-10 shadow">
+    <div className="flex h-screen items-center justify-center bg-linear-to-br from-indigo-50 via-white to-cyan-100">
+      <div className="grid w-full max-w-md grid-cols-1 gap-5 rounded-xl border bg-white p-10 shadow-sm">
         <AuthFormHeader page="signup" />
         <>
           {isGoogleAuthEnabled && (

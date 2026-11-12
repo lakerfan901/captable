@@ -177,7 +177,7 @@ export const columns: ColumnDef<Passkey[number]>[] = [
           <DropdownMenu>
             <div className="items-end justify-end text-right">
               <DropdownMenuTrigger
-                className="border-0 border-white outline-none focus:outline-none"
+                className="border-0 border-white outline-hidden focus:outline-hidden"
                 asChild
               >
                 <Button variant="ghost" className="h-8 w-8 p-0">

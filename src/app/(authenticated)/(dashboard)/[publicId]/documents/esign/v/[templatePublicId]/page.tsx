@@ -49,7 +49,7 @@ export default async function TemplateDetailViewPage(props: {
   return (
     <TemplateSigningFieldProvider fields={fields}>
       <div className="flex min-h-screen bg-gray-50">
-        <div className="flex h-full flex-grow flex-col">
+        <div className="flex h-full grow flex-col">
           <div className="col-span-12 flex align-middle">
             <Badge variant={variantMap[status]} className="h-7 align-middle">
               {status}
@@ -58,7 +58,7 @@ export default async function TemplateDetailViewPage(props: {
               {name}
             </span>
           </div>
-          <div className="mx-auto min-h-full w-full  py-10  2xl:max-w-screen-xl">
+          <div className="mx-auto min-h-full w-full  py-10  2xl:max-w-(--breakpoint-xl)">
             <div className="grid grid-cols-12">
               <PdfCanvas mode="readonly" url={url} />
             </div>
@@ -83,7 +83,7 @@ export default async function TemplateDetailViewPage(props: {
                             <RiCheckFill className="h-5 w-5 text-white" />
                           </div>
                         </div>
-                        <p className="break-words text-sm font-medium text-primary/80">
+                        <p className="wrap-break-word text-sm font-medium text-primary/80">
                           {item.summary}
                         </p>
                       </div>

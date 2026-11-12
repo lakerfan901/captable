@@ -34,7 +34,7 @@ const DataRoomFileExplorer = ({
             >
               <div
                 className={cn(
-                  "flex w-14 flex-shrink-0 items-center justify-center rounded-l-md border text-sm font-medium ",
+                  "flex w-14 shrink-0 items-center justify-center rounded-l-md border text-sm font-medium ",
                 )}
               >
                 <FileIcon type={document.mimeType} />

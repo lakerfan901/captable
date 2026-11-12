@@ -427,7 +427,7 @@ const ShareClassForm = ({
               control={form.control}
               name="conversionRights"
               render={({ field }) => (
-                <FormItem className="space-y-3">
+                <FormItem className="[&>:not([hidden])~:not([hidden])]:mt-3">
                   <FormLabel>Conversion rights</FormLabel>
                   <FormControl>
                     <RadioGroup
@@ -435,7 +435,7 @@ const ShareClassForm = ({
                       defaultValue={field.value}
                       className="flex flex-col space-y-1"
                     >
-                      <FormItem className="flex items-center space-x-3 space-y-0">
+                      <FormItem className="flex items-center space-x-3 [&>:not([hidden])~:not([hidden])]:mt-0">
                         <FormControl>
                           <RadioGroupItem value="CONVERTS_TO_FUTURE_ROUND" />
                         </FormControl>
@@ -443,7 +443,7 @@ const ShareClassForm = ({
                           Converts to future round
                         </FormLabel>
                       </FormItem>
-                      <FormItem className="flex items-center space-x-3 space-y-0">
+                      <FormItem className="flex items-center space-x-3 [&>:not([hidden])~:not([hidden])]:mt-0">
                         <FormControl>
                           <RadioGroupItem value="CONVERTS_TO_SHARE_CLASS_ID" />
                         </FormControl>

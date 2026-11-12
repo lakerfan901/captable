@@ -78,7 +78,19 @@ const FormItem = React.forwardRef<
 
   return (
     <FormItemContext.Provider value={{ id }}>
-      <div ref={ref} className={cn("space-y-2", className)} {...props} />
+      {/* Tailwind v3 `space-y-2` semantics (margin-top on every child after
+          the first). v4's space-y-* puts margin-bottom on all but the last
+          child instead, which is ignored by the inline <label> and added
+          before Radix Select's hidden native <select>. Override the spacing
+          with the same variant, e.g. `[&>:not([hidden])~:not([hidden])]:mt-0`. */}
+      <div
+        ref={ref}
+        className={cn(
+          "[&>:not([hidden])~:not([hidden])]:mt-2",
+          className,
+        )}
+        {...props}
+      />
     </FormItemContext.Provider>
   );
 });
