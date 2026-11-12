@@ -4,6 +4,7 @@ import {
   assertCompanyOwns,
   assertKeyReadableByCompany,
   type BucketOwnershipRow,
+  type CompanyOwnedRefs,
   type CompanyRef,
   type CompanyScopedEntity,
   findForeignReference,
@@ -74,7 +75,47 @@ const world = fakeLoaders({
     equityPlan: [{ id: "ep_b", companyId: "cmp_b_internal" }],
     document: [{ id: "doc_b", companyId: "cmp_b_internal" }],
     member: [{ id: "mem_a", companyId: "cmp_a_internal" }],
+    unitClass: [
+      { id: "uc_a", companyId: "cmp_a_internal" },
+      { id: "uc_b", companyId: "cmp_b_internal" },
+    ],
+    commitment: [
+      { id: "cm_a", companyId: "cmp_a_internal" },
+      { id: "cm_b", companyId: "cmp_b_internal" },
+    ],
+    capitalReceipt: [
+      { id: "cr_a", companyId: "cmp_a_internal" },
+      { id: "cr_b", companyId: "cmp_b_internal" },
+    ],
+    template: [
+      { id: "tpl_a", companyId: "cmp_a_internal" },
+      { id: "tpl_b", companyId: "cmp_b_internal" },
+    ],
   },
+});
+
+describe("LLC entities", () => {
+  const cases: [CompanyScopedEntity, keyof CompanyOwnedRefs, string, string][] =
+    [
+      ["unitClass", "unitClassIds", "uc_a", "uc_b"],
+      ["commitment", "commitmentIds", "cm_a", "cm_b"],
+      ["capitalReceipt", "capitalReceiptIds", "cr_a", "cr_b"],
+      ["template", "templateIds", "tpl_a", "tpl_b"],
+    ];
+
+  for (const [entity, key, owned, foreign] of cases) {
+    test(`${entity}: owned id passes`, async () => {
+      await expect(
+        findForeignReference(world, companyA.id, { [key]: [owned] }),
+      ).resolves.toBeNull();
+    });
+
+    test(`${entity}: foreign id returns ${entity}`, async () => {
+      await expect(
+        findForeignReference(world, companyA.id, { [key]: [owned, foreign] }),
+      ).resolves.toBe(entity);
+    });
+  }
 });
 
 describe("isBucketOwnedByCompany", () => {

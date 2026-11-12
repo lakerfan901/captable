@@ -219,3 +219,25 @@ export const withAccessControl = t.procedure.use(
     });
   }),
 );
+
+export const withLlcAccessControl = withAccessControl.use(
+  async ({ ctx, next }) => {
+    const company = await ctx.db.company.findUnique({
+      where: { id: ctx.membership.companyId },
+      select: {
+        id: true,
+        publicId: true,
+        name: true,
+        entityType: true,
+        timezone: true,
+      },
+    });
+    if (company?.entityType !== "LLC") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "This feature is available for LLC companies only.",
+      });
+    }
+    return next({ ctx: { ...ctx, company } });
+  },
+);

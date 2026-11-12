@@ -8,5 +8,9 @@ export const SUBJECTS = [
   "company",
   "developer",
   "bank-accounts",
+  "unit-classes",
+  "commitments",
+  "emails",
+  "governance",
 ] as const;
 export type TSubjects = (typeof SUBJECTS)[number];

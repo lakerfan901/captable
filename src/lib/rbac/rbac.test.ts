@@ -58,6 +58,15 @@ describe("evaluating a query", () => {
       policies: { billing: { allow: ["read"] } },
     },
     {
+      name: "custom role without new LLC subjects is denied",
+      valid: false,
+      permissions: [
+        { subject: "stakeholder", actions: ["*"] },
+        { subject: "documents", actions: ["read"] },
+      ],
+      policies: { commitments: { allow: ["read"] } },
+    },
+    {
       name: "should pass on empty policies",
       valid: true,
       permissions: [{ subject: "billing", actions: ["*"] }],

@@ -35,7 +35,11 @@ export type CompanyScopedEntity =
   | "shareClass"
   | "equityPlan"
   | "document"
-  | "member";
+  | "member"
+  | "unitClass"
+  | "commitment"
+  | "capitalReceipt"
+  | "template";
 
 export type OwnershipEntity = "bucket" | CompanyScopedEntity;
 
@@ -61,6 +65,10 @@ export type CompanyOwnedRefs = {
   equityPlanIds?: readonly (string | null | undefined)[];
   documentIds?: readonly (string | null | undefined)[];
   memberIds?: readonly (string | null | undefined)[];
+  unitClassIds?: readonly (string | null | undefined)[];
+  commitmentIds?: readonly (string | null | undefined)[];
+  capitalReceiptIds?: readonly (string | null | undefined)[];
+  templateIds?: readonly (string | null | undefined)[];
 };
 
 /**
@@ -124,6 +132,10 @@ export async function findForeignReference(
     ["equityPlan", refs.equityPlanIds],
     ["document", refs.documentIds],
     ["member", refs.memberIds],
+    ["unitClass", refs.unitClassIds],
+    ["commitment", refs.commitmentIds],
+    ["capitalReceipt", refs.capitalReceiptIds],
+    ["template", refs.templateIds],
   ];
 
   for (const [entity, requested] of scoped) {
@@ -181,6 +193,14 @@ export function prismaOwnershipLoaders(
           return ids(await db.document.findMany(args));
         case "member":
           return ids(await db.member.findMany(args));
+        case "unitClass":
+          return ids(await db.unitClass.findMany(args));
+        case "commitment":
+          return ids(await db.commitment.findMany(args));
+        case "capitalReceipt":
+          return ids(await db.capitalReceipt.findMany(args));
+        case "template":
+          return ids(await db.template.findMany(args));
       }
     },
   };
