@@ -17,6 +17,21 @@
  *   cap). Under READ COMMITTED each statement after the lock sees the
  *   committed result of the transaction that held it, so two concurrent
  *   acceptances that together exceed the offering cap cannot both succeed.
+ *   Admission (acceptance, Common issuance, `admitStakeholder`) also locks
+ *   the Stakeholder row and re-reads it, because a Preferred acceptance and
+ *   a Common issuance hold different class locks. Lock order is always
+ *   unit class, then stakeholder.
+ * - Ledger invariant (H1), for every commitment after every mutation, over
+ *   its non-void receipts: cash received = cash applied as capital +
+ *   `refundDueCents` (refunds paid + refund still due) once decided, and all
+ *   of it held unapplied while PENDING; cash applied ≤ `acceptedCents`.
+ *   `decideCommitment` establishes it (`planAcceptance`), cash receipts on a
+ *   decided commitment are applied in full within the outstanding Balance,
+ *   and `voidCapitalReceipt` re-derives `refundDueCents` from the remaining
+ *   receipts and refuses voids that would break it (`planVoid`). Checked by
+ *   `ledgerInvariantErrors` (receipt-rules.ts) in the tests.
+ * - Dates (H2): a receipt's capital and units exist from
+ *   `appliedOnDate(receivedOn, acceptedOn)`, never earlier than either.
  */
 import type {
   AccreditationBasisEnum,
@@ -27,17 +42,18 @@ import type {
 } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import {
-  allocateHeldReceipts,
+  appliedOnDate,
   computeSubscriptionClock,
   decisionStatus,
   defaultKeepCents,
   deriveReceiptKind,
+  heldOnOrBefore,
   type OfferingTerms,
+  planAcceptance,
   prefReturnStartDate,
   type ReceiptKind,
   type RuleError,
   RuleViolation,
-  refundDueCents,
   validateAcceptance,
   validateCashReceipt,
 } from "@/lib/admission/commitment-rules";
@@ -58,6 +74,7 @@ import type { AuditSchemaType } from "@/server/audit/schema";
 import type { PrismaTransactionalClient } from "@/server/db";
 import {
   forfeitureUnits,
+  planVoid,
   type SpecialReceiptKind,
   sumCashApplied,
   sumUnits,
@@ -192,6 +209,20 @@ const KIND_LABEL: Record<ReceiptKind, string> = {
 
 const unitsText = (units: string) => `${trimUnits(units)} units`;
 
+/** H2: a decided commitment's receipt is applied from `appliedOnDate`. */
+function appliedOnFor(commitment: Commitment, receivedOn: string): Date {
+  const acceptedOn = dateToWire(commitment.acceptedOn);
+  return fromDateOnly(
+    acceptedOn === null ? receivedOn : appliedOnDate(receivedOn, acceptedOn),
+  );
+}
+
+function appliedOnNote(appliedOn: Date | null, receivedOn: string): string {
+  if (appliedOn === null) return "";
+  const on = wireDate(appliedOn);
+  return on === receivedOn ? "" : `, applied from ${on} (the acceptance date)`;
+}
+
 // ---------------------------------------------------------------------------
 // Locking and loading
 
@@ -296,18 +327,46 @@ function clockFor(
 }
 
 /**
+ * Row lock on the stakeholder (SELECT … FOR UPDATE), then a fresh read. Taken
+ * after the class lock by every admission step (L2).
+ */
+async function lockAndLoadStakeholder(
+  tx: Tx,
+  companyId: string,
+  stakeholderId: string,
+) {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Stakeholder"
+    WHERE id = ${stakeholderId} AND "companyId" = ${companyId}
+    FOR UPDATE`;
+  if (rows.length === 0) throw notFound("Member not found.");
+  const stakeholder = await tx.stakeholder.findFirst({
+    where: { id: stakeholderId, companyId },
+    select: { ...stakeholderSelect, currentRelationship: true },
+  });
+  if (!stakeholder) throw notFound("Member not found.");
+  return stakeholder;
+}
+
+/**
  * Admission side effects of an acceptance or a Common issuance. A PROSPECT
  * is admitted through `admitStakeholder`; anyone else (already a MEMBER, or a
  * FINANCIAL_INTEREST_ONLY holder, who is never upgraded implicitly) only has
- * `admittedOn` moved earlier when needed, audited when it was empty.
+ * `admittedOn` moved earlier when needed, audited when it was empty. Locks
+ * and re-reads the stakeholder first (L2).
  */
 async function applyAdmission(
   tx: Tx,
   companyId: string,
-  stakeholder: StakeholderSummary,
+  stakeholderId: string,
   admittedOn: string,
   actor: LedgerActor,
 ): Promise<void> {
+  const stakeholder = await lockAndLoadStakeholder(
+    tx,
+    companyId,
+    stakeholderId,
+  );
   if (stakeholder.memberStatus === "PROSPECT") {
     await admitStakeholder(
       tx,
@@ -403,7 +462,7 @@ export async function createCommitment(
       isReplacement: input.isReplacement ?? false,
     },
   });
-  await refreshSubscriptionClock(tx, created.id);
+  await refreshSubscriptionClock(tx, companyId, created.id);
 
   await writeAudit(
     tx,
@@ -430,8 +489,10 @@ export async function updatePendingCommitment(
     companyId: string;
     commitmentId: string;
     committedCents?: bigint;
-    signedOn?: string;
-    investmentSummaryDate?: string;
+    /** `null` clears the date; omitted leaves it unchanged. */
+    signedOn?: string | null;
+    /** `null` clears the date; omitted leaves it unchanged. */
+    investmentSummaryDate?: string | null;
     accreditationBasis?: AccreditationBasisEnum;
     notes?: string;
   },
@@ -449,8 +510,10 @@ export async function updatePendingCommitment(
   if (input.committedCents !== undefined && input.committedCents <= 0n) {
     throw badRequest("The committed amount must be more than zero.");
   }
-  const signedOn = optionalDbDate(input.signedOn, "The signature date");
-  const investmentSummaryDate = optionalDbDate(
+  const clearable = (value: string | null | undefined, label: string) =>
+    value === null ? null : optionalDbDate(value, label);
+  const signedOn = clearable(input.signedOn, "The signature date");
+  const investmentSummaryDate = clearable(
     input.investmentSummaryDate,
     "The Investment Summary date",
   );
@@ -464,9 +527,15 @@ export async function updatePendingCommitment(
       `amount ${formatCents(commitment.committedCents)} → ${formatCents(input.committedCents)}`,
     );
   }
-  const dateChange = (label: string, before: Date | null, after?: string) => {
+  const dateChange = (
+    label: string,
+    before: Date | null,
+    after: string | null | undefined,
+  ) => {
     if (after !== undefined && after !== dateToWire(before)) {
-      changes.push(`${label} ${dateToWire(before) ?? "none"} → ${after}`);
+      changes.push(
+        `${label} ${dateToWire(before) ?? "none"} → ${after ?? "none"}`,
+      );
     }
   };
   dateChange("signature date", commitment.signedOn, input.signedOn);
@@ -497,7 +566,7 @@ export async function updatePendingCommitment(
       notes: input.notes,
     },
   });
-  await refreshSubscriptionClock(tx, commitment.id);
+  await refreshSubscriptionClock(tx, companyId, commitment.id);
 
   await writeAudit(
     tx,
@@ -520,15 +589,17 @@ export async function updatePendingCommitment(
 
 /**
  * Recomputes the Section 4.8 decision deadline of a PENDING commitment from
- * its non-void receipts (stores `acceptanceDeadline` only). Called by the
- * services after they have scoped the commitment to the company.
+ * its non-void receipts (stores `acceptanceDeadline` only). Internal to this
+ * file (T1): called by the services after they have locked the class, and
+ * scoped by `companyId` like every other lookup.
  */
-export async function refreshSubscriptionClock(
+async function refreshSubscriptionClock(
   tx: Tx,
+  companyId: string,
   commitmentId: string,
 ): Promise<void> {
-  const commitment = await tx.commitment.findUnique({
-    where: { id: commitmentId },
+  const commitment = await tx.commitment.findFirst({
+    where: { id: commitmentId, companyId },
     include: {
       unitClass: true,
       receipts: { where: { voidedAt: null } },
@@ -537,7 +608,7 @@ export async function refreshSubscriptionClock(
   if (commitment?.status !== "PENDING") return;
   const clock = clockFor(commitment, commitment.unitClass, commitment.receipts);
   await tx.commitment.update({
-    where: { id: commitment.id },
+    where: { id: commitment.id, companyId },
     data: {
       acceptanceDeadline:
         clock.acceptanceDeadline === null
@@ -635,13 +706,16 @@ export async function decideCommitment(
     });
   }
 
-  // ACCEPT (in full or reduced)
+  // ACCEPT (in full or reduced). Only cash received on or before the
+  // acceptance date is the Initial Installment (H2); later receipts are
+  // Balance payments (`planAcceptance`).
   const terms = termsOf(unitClass);
   const accepted = input.acceptedCents ?? commitment.committedCents;
+  const heldAtAcceptance = heldOnOrBefore(heldReceipts(receipts), acceptedOn);
   const keep =
     input.keepCents ??
     defaultKeepCents({
-      heldCents: held,
+      heldCents: heldAtAcceptance,
       acceptedCents: accepted,
       committedCents: commitment.committedCents,
     });
@@ -662,7 +736,7 @@ export async function decideCommitment(
       acceptedOn,
       signedOn: dateToWire(commitment.signedOn),
       today,
-      heldCents: held,
+      heldCents: heldAtAcceptance,
       keepCents: keep,
       otherAcceptedCents: others._sum.acceptedCents ?? 0n,
       minimumWaived: input.minimumWaived ?? false,
@@ -674,33 +748,54 @@ export async function decideCommitment(
     decisionStatus(accepted, commitment.committedCents),
   );
 
-  const allocations = allocateHeldReceipts(heldReceipts(receipts), keep);
+  const plan = planAcceptance({
+    receipts: heldReceipts(receipts),
+    acceptedOn,
+    acceptedCents: accepted,
+    keepCents: keep,
+  });
   const issued: string[] = [];
-  for (const allocation of allocations) {
-    const receipt = receipts.find((r) => r.id === allocation.id);
+  let balanceApplied = 0n;
+  for (const row of plan.rows) {
+    const receipt = receipts.find((r) => r.id === row.id);
     if (!receipt) continue;
-    const applied = allocation.appliedCents;
+    const applied = row.appliedCents;
     const units = applied > 0n ? unitsFor(applied, unitClass) : "0.000000";
     issued.push(units);
+    if (row.kind === "BALANCE") balanceApplied += applied;
+    const start =
+      applied > 0n
+        ? prefReturnStartDate({
+            kind: row.kind,
+            receivedOn: wireDate(receipt.receivedOn),
+            dueDate: null,
+            terms,
+          })
+        : null;
+    if (start === undefined) {
+      throw badRequest(
+        "Set the Balance outside date of the unit class first (a receipt is dated after the acceptance date).",
+      );
+    }
     await tx.capitalReceipt.update({
       where: { id: receipt.id, companyId },
       data: {
-        kind: "INITIAL",
+        kind: row.kind,
         appliedCents: applied,
         unitsIssued: units,
-        appliedOn: applied > 0n ? acceptedOnDate : null,
-        prefReturnStartDate:
-          applied > 0n && unitClass.prefReturnBps > 0
-            ? receipt.receivedOn
-            : null,
+        appliedOn: row.appliedOn === null ? null : fromDateOnly(row.appliedOn),
+        prefReturnStartDate: start === null ? null : fromDateOnly(start),
       },
     });
   }
 
-  const refund = refundDueCents(held, keep);
-  const minimumWaived =
+  const refund = plan.refundCents;
+  // Section 4.9(ii): the minimum does not apply to a Replacement Funder, so
+  // a Replacement commitment below it is not a waiver (L4).
+  const belowMinimum =
     unitClass.minCommitmentCents !== null &&
     accepted < unitClass.minCommitmentCents;
+  const minimumWaived = belowMinimum && !commitment.isReplacement;
   await tx.commitment.update({
     where: { id: commitment.id, companyId },
     data: {
@@ -718,20 +813,40 @@ export async function decideCommitment(
     },
   });
 
-  await tx.stakeholder.update({
-    where: { id: stakeholder.id, companyId },
-    data: {
-      currentRelationship: "INVESTOR",
-      ...(stakeholder.accreditationBasis === null &&
-      commitment.accreditationBasis !== null
-        ? { accreditationBasis: commitment.accreditationBasis }
-        : {}),
-    },
-  });
-  await applyAdmission(tx, companyId, stakeholder, acceptedOn, actor);
+  // Lock and re-read the stakeholder before changing it (L2); the fresh row
+  // gives the before-values for the audit (G1).
+  const fresh = await lockAndLoadStakeholder(tx, companyId, stakeholder.id);
+  const memberChanges: string[] = [];
+  if (fresh.currentRelationship !== "INVESTOR") {
+    memberChanges.push(`relationship ${fresh.currentRelationship} → INVESTOR`);
+  }
+  const copyAccreditation =
+    fresh.accreditationBasis === null && commitment.accreditationBasis !== null;
+  if (copyAccreditation) {
+    memberChanges.push(
+      `accreditation basis set to ${commitment.accreditationBasis} from the commitment`,
+    );
+  }
+  if (memberChanges.length > 0) {
+    await tx.stakeholder.update({
+      where: { id: stakeholder.id, companyId },
+      data: {
+        currentRelationship: "INVESTOR",
+        ...(copyAccreditation
+          ? { accreditationBasis: commitment.accreditationBasis }
+          : {}),
+      },
+    });
+  }
+  await applyAdmission(tx, companyId, stakeholder.id, acceptedOn, actor);
 
   const totalUnits = sumUnits(issued);
   const verb = status === "ACCEPTED" ? "accepted" : "accepted (reduced)";
+  const minimumNote = minimumWaived
+    ? "; minimum waived (Section 3.7)"
+    : belowMinimum
+      ? "; the minimum does not apply to a Replacement Funder (Section 4.9(ii))"
+      : "";
   await writeAudit(
     tx,
     actor,
@@ -742,11 +857,19 @@ export async function decideCommitment(
       { type: "stakeholder", id: stakeholder.id },
       ...receipts.map((r) => ({ type: "capitalReceipt" as const, id: r.id })),
     ],
-    `${actor.name} ${verb} ${formatCents(accepted)} of ${formatCents(commitment.committedCents)} from ${stakeholder.name} on ${acceptedOn}; ${formatCents(keep)} applied, ${unitsText(totalUnits)} issued${
+    `${actor.name} ${verb} ${formatCents(accepted)} of ${formatCents(commitment.committedCents)} from ${stakeholder.name} on ${acceptedOn}; ${formatCents(keep + balanceApplied)} applied${
+      balanceApplied > 0n
+        ? ` (${formatCents(balanceApplied)} received after the acceptance date as Balance)`
+        : ""
+    }, ${unitsText(totalUnits)} issued${
       refund > 0n
         ? `; ${formatCents(refund)} to be refunded by ${dateToWire(refundDueByFor(refund))}`
         : ""
-    }${minimumWaived ? "; minimum waived (Section 3.7)" : ""}.`,
+    }${minimumNote}${
+      memberChanges.length > 0
+        ? `; member record: ${memberChanges.join(", ")}`
+        : ""
+    }.`,
   );
 
   return tx.commitment.findFirstOrThrow({
@@ -823,6 +946,9 @@ export async function recordRefund(
     input.commitmentId,
   );
   const paidOn = dbDate(input.paidOn, "The refund date");
+  if (input.paidOn > (await companyToday(tx, companyId))) {
+    throw badRequest("The refund date cannot be in the future.");
+  }
   const outstanding = commitment.refundDueCents - commitment.refundPaidCents;
   if (input.paidCents <= 0n || input.paidCents > outstanding) {
     throw badRequest(
@@ -923,7 +1049,7 @@ export async function recordCapitalReceipt(
       // ECONOMICS E9 adds its ledger-date guard here (decided commitments).
       appliedCents = input.amountCents;
       unitsIssued = unitsFor(appliedCents, unitClass);
-      appliedOn = receivedOnDate;
+      appliedOn = appliedOnFor(commitment, receivedOn);
       const start = prefReturnStartDate({ kind, receivedOn, dueDate, terms });
       if (start === undefined) {
         throw badRequest(
@@ -931,7 +1057,7 @@ export async function recordCapitalReceipt(
         );
       }
       startDate = start;
-      summary = `${actor.name} recorded ${formatCents(input.amountCents)} received from ${stakeholder.name} on ${receivedOn} (${KIND_LABEL[kind]}); ${unitsText(unitsIssued)}; ${
+      summary = `${actor.name} recorded ${formatCents(input.amountCents)} received from ${stakeholder.name} on ${receivedOn} (${KIND_LABEL[kind]}); ${unitsText(unitsIssued)}${appliedOnNote(appliedOn, receivedOn)}; ${
         startDate ? `return starts ${startDate}` : "no Preferred Return"
       }`;
     }
@@ -974,15 +1100,15 @@ export async function recordCapitalReceipt(
             unitClass.fractionalUnitsAllowed,
           )
         : unitsFor(appliedCents, unitClass);
-    appliedOn = receivedOnDate;
+    appliedOn = appliedOnFor(commitment, receivedOn);
     startDate =
       prefReturnStartDate({ kind, receivedOn, dueDate, terms }) ?? null;
     summary =
       special.kind === "REPLACEMENT"
-        ? `${actor.name} recorded ${formatCents(input.amountCents)} received from ${stakeholder.name} on ${receivedOn} (${KIND_LABEL[kind]}); ${unitsText(unitsIssued)}; ${
+        ? `${actor.name} recorded ${formatCents(input.amountCents)} received from ${stakeholder.name} on ${receivedOn} (${KIND_LABEL[kind]}); ${unitsText(unitsIssued)}${appliedOnNote(appliedOn, receivedOn)}; ${
             startDate ? `return starts ${startDate}` : "no Preferred Return"
           }`
-        : `${actor.name} recorded a ${KIND_LABEL[kind]} of ${formatCents(appliedCents)} for ${stakeholder.name} on ${receivedOn}; ${unitsText(unitsIssued)}${
+        : `${actor.name} recorded a ${KIND_LABEL[kind]} of ${formatCents(appliedCents)} for ${stakeholder.name} on ${receivedOn}; ${unitsText(unitsIssued)}${appliedOnNote(appliedOn, receivedOn)}${
             startDate ? `; return starts ${startDate}` : ""
           }`;
   }
@@ -1008,7 +1134,7 @@ export async function recordCapitalReceipt(
     },
   });
   if (commitment.status === "PENDING") {
-    await refreshSubscriptionClock(tx, commitment.id);
+    await refreshSubscriptionClock(tx, companyId, commitment.id);
   }
 
   await writeAudit(
@@ -1037,7 +1163,14 @@ async function loadLockedReceipt(tx: Tx, companyId: string, receiptId: string) {
     where: { id: receiptId, companyId },
     include: {
       stakeholder: { select: { id: true, name: true } },
-      commitment: { select: { id: true, status: true } },
+      commitment: {
+        select: {
+          id: true,
+          status: true,
+          refundDueCents: true,
+          refundPaidCents: true,
+        },
+      },
     },
   });
   if (!receipt) throw notFound("Receipt not found.");
@@ -1060,6 +1193,51 @@ export async function voidCapitalReceipt(
   if (receipt.voidedAt !== null) {
     throw badRequest("This receipt has already been voided.");
   }
+  const units = unitsToWire(receipt.unitsIssued);
+  const ledgerRow = (r: {
+    kind: ReceiptKind;
+    amountCents: bigint;
+    appliedCents: bigint;
+    unitsIssued: Parameters<typeof unitsToWire>[0];
+  }) => ({
+    kind: r.kind,
+    amountCents: r.amountCents,
+    appliedCents: r.appliedCents,
+    unitsIssued: unitsToWire(r.unitsIssued),
+  });
+  const remaining = await tx.capitalReceipt.findMany({
+    where: {
+      companyId,
+      commitmentId: receipt.commitmentId,
+      voidedAt: null,
+      id: { not: receipt.id },
+    },
+    select: {
+      kind: true,
+      amountCents: true,
+      appliedCents: true,
+      unitsIssued: true,
+    },
+  });
+  const member = await tx.capitalReceipt.aggregate({
+    where: {
+      companyId,
+      stakeholderId: receipt.stakeholderId,
+      unitClassId: receipt.unitClassId,
+      voidedAt: null,
+      id: { not: receipt.id },
+    },
+    _sum: { appliedCents: true, unitsIssued: true },
+  });
+  const plan = planVoid({
+    status: receipt.commitment.status,
+    receipt: ledgerRow(receipt),
+    refundPaidCents: receipt.commitment.refundPaidCents,
+    remaining: remaining.map(ledgerRow),
+    memberCapitalAfterCents: member._sum.appliedCents ?? 0n,
+    memberUnitsAfter: unitsToWire(member._sum.unitsIssued),
+  });
+  throwIfErrors(plan.errors);
   // ECONOMICS E9 adds its beforeVoidReceipt guard here.
   const voided = await tx.capitalReceipt.update({
     where: { id: receipt.id, companyId },
@@ -1070,9 +1248,21 @@ export async function voidCapitalReceipt(
     },
   });
   if (receipt.commitment.status === "PENDING") {
-    await refreshSubscriptionClock(tx, receipt.commitmentId);
+    await refreshSubscriptionClock(tx, companyId, receipt.commitmentId);
   }
-  const units = unitsToWire(receipt.unitsIssued);
+  // H1: the refund due of a decided commitment follows its receipts.
+  const refundBefore = receipt.commitment.refundDueCents;
+  const refundAfter = plan.refundDueCents;
+  const refundChanged = refundAfter !== null && refundAfter !== refundBefore;
+  if (refundChanged) {
+    await tx.commitment.update({
+      where: { id: receipt.commitmentId, companyId },
+      data: {
+        refundDueCents: refundAfter,
+        ...(refundAfter === 0n ? { refundDueBy: null } : {}),
+      },
+    });
+  }
   await writeAudit(
     tx,
     actor,
@@ -1083,7 +1273,11 @@ export async function voidCapitalReceipt(
       { type: "commitment", id: receipt.commitmentId },
       { type: "stakeholder", id: receipt.stakeholderId },
     ],
-    `${actor.name} voided the ${KIND_LABEL[receipt.kind]} receipt of ${formatCents(receipt.amountCents)} from ${receipt.stakeholder.name} dated ${wireDate(receipt.receivedOn)} (${formatCents(receipt.appliedCents)} applied, ${unitsText(units)}): ${reason}.`,
+    `${actor.name} voided the ${KIND_LABEL[receipt.kind]} receipt of ${formatCents(receipt.amountCents)} from ${receipt.stakeholder.name} dated ${wireDate(receipt.receivedOn)} (${formatCents(receipt.appliedCents)} applied, ${unitsText(units)}): ${reason}${
+      refundChanged
+        ? `; refund due ${formatCents(refundBefore)} → ${formatCents(refundAfter)}`
+        : ""
+    }.`,
   );
   return voided;
 }
@@ -1158,6 +1352,9 @@ export async function issueCommonUnits(
   if (!ref) throw notFound("The company has no Common unit class.");
   const unitClass = await lockAndLoadUnitClass(tx, companyId, ref.id);
   const issuedOnDate = dbDate(input.issuedOn, "The issue date");
+  if (input.issuedOn > (await companyToday(tx, companyId))) {
+    throw badRequest("The issue date cannot be in the future.");
+  }
 
   if (!UNITS_RE.test(input.units)) {
     throw badRequest("Enter the number of units with at most 6 decimals.");
@@ -1217,7 +1414,7 @@ export async function issueCommonUnits(
       recordedByMemberId: actor.memberId,
     },
   });
-  await applyAdmission(tx, companyId, stakeholder, input.issuedOn, actor);
+  await applyAdmission(tx, companyId, stakeholder.id, input.issuedOn, actor);
 
   await writeAudit(
     tx,
@@ -1246,11 +1443,11 @@ export async function admitStakeholder(
 ): Promise<Stakeholder> {
   const { companyId } = input;
   dbDate(input.admittedOn, "The admission date");
-  const stakeholder = await tx.stakeholder.findFirst({
-    where: { id: input.stakeholderId, companyId },
-    select: stakeholderSelect,
-  });
-  if (!stakeholder) throw notFound("Member not found.");
+  const stakeholder = await lockAndLoadStakeholder(
+    tx,
+    companyId,
+    input.stakeholderId,
+  );
   const current = dateToWire(stakeholder.admittedOn);
   const admittedOn =
     current !== null && current < input.admittedOn ? current : input.admittedOn;

@@ -1,0 +1,1042 @@
+/**
+ * Integration checks for the F6 ledger services (src/server/llc/commitments.ts)
+ * and the unit class router against a real database. Not part of `vitest run`
+ * (it needs Postgres). Run from the repository root:
+ *
+ *   SKIP_ENV_VALIDATION=1 \
+ *   DATABASE_URL=postgres://captable:password@localhost:54321/captable \
+ *   node_modules/.bin/tsx --conditions=react-server \
+ *     src/server/llc/__integration__/ledger.integration.ts
+ *
+ * It creates one throwaway LLC company (plus a user and team member for the
+ * router calls), runs every scenario, checks the ledger invariant
+ * (`ledgerInvariantErrors`) for every commitment after every mutation, and
+ * deletes everything it created in a `finally`. It never migrates or resets
+ * the database. Dates are fixed in early November 2026 and must not be after
+ * the company's "today".
+ */
+import { randomUUID } from "node:crypto";
+import type { Session } from "next-auth";
+import { db, type PrismaTransactionalClient } from "@/server/db";
+import * as ledger from "@/server/llc/commitments";
+import {
+  decideCommitment,
+  issueCommonUnits,
+  type LedgerActor,
+  recordCapitalReceipt,
+  recordRefund,
+  reduceAcceptedCommitment,
+  updatePendingCommitment,
+  voidCapitalReceipt,
+} from "@/server/llc/commitments";
+import { ledgerInvariantErrors } from "@/server/llc/receipt-rules";
+import { createCallerFactory } from "@/trpc/api/trpc";
+import { unitClassRouter } from "@/trpc/routers/unit-class-router/router";
+
+type Tx = PrismaTransactionalClient;
+
+const actor: LedgerActor = {
+  userId: "ledger-integration",
+  memberId: null,
+  name: "Integration",
+  requestIp: "127.0.0.1",
+  userAgent: "ledger-integration",
+};
+
+const failures: string[] = [];
+let checks = 0;
+
+function check(label: string, ok: boolean, detail = ""): void {
+  checks += 1;
+  if (ok) {
+    console.log(`  ok   ${label}`);
+  } else {
+    failures.push(`${label}${detail ? ` (${detail})` : ""}`);
+    console.log(`  FAIL ${label}${detail ? ` (${detail})` : ""}`);
+  }
+}
+
+function tx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db.$transaction(fn);
+}
+
+/** Runs `fn`; returns the error message, or null when it succeeded. */
+async function errorOf(fn: () => Promise<unknown>): Promise<string | null> {
+  try {
+    await fn();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function expectRefused(
+  label: string,
+  fn: () => Promise<unknown>,
+  pattern: RegExp,
+): Promise<void> {
+  const message = await errorOf(fn);
+  check(
+    label,
+    message !== null && pattern.test(message),
+    message ?? "it succeeded",
+  );
+}
+
+const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+let companyId = "";
+let preferredId = "";
+let commonId = "";
+
+/** Asserts the ledger invariant for every commitment of the company. */
+async function assertInvariant(label: string): Promise<void> {
+  const commitments = await db.commitment.findMany({
+    where: { companyId },
+    include: { receipts: { where: { voidedAt: null } } },
+  });
+  const errors = commitments.flatMap((c) =>
+    ledgerInvariantErrors(
+      c,
+      c.receipts.map((r) => ({ ...r, unitsIssued: r.unitsIssued.toFixed(6) })),
+    ).map((e) => `${c.id}: ${e}`),
+  );
+  check(`invariant after ${label}`, errors.length === 0, errors.join("; "));
+}
+
+function newMember(name: string, extra: object = {}) {
+  return db.stakeholder.create({
+    data: {
+      companyId,
+      name,
+      email: `${randomUUID()}@ledger-integration.test`,
+      ...extra,
+    },
+  });
+}
+
+function newCommitment(
+  stakeholderId: string,
+  committedCents: bigint,
+  opts: { signedOn?: string; isReplacement?: boolean } = {},
+) {
+  return tx((t) =>
+    ledger.createCommitment(
+      t,
+      {
+        companyId,
+        stakeholderId,
+        unitClassId: preferredId,
+        committedCents,
+        signedOn: opts.signedOn ?? "2026-11-02",
+        isReplacement: opts.isReplacement,
+      },
+      actor,
+    ),
+  );
+}
+
+function receive(commitmentId: string, receivedOn: string, cents: bigint) {
+  return tx((t) =>
+    recordCapitalReceipt(
+      t,
+      { companyId, commitmentId, receivedOn, amountCents: cents },
+      actor,
+    ),
+  );
+}
+
+function accept(
+  commitmentId: string,
+  acceptedOn: string,
+  extra: { acceptedCents?: bigint; keepCents?: bigint } = {},
+) {
+  return tx((t) =>
+    decideCommitment(
+      t,
+      { companyId, commitmentId, decision: "ACCEPT", acceptedOn, ...extra },
+      actor,
+    ),
+  );
+}
+
+function voidReceipt(receiptId: string) {
+  return tx((t) =>
+    voidCapitalReceipt(
+      t,
+      { companyId, receiptId, reason: "integration void" },
+      actor,
+    ),
+  );
+}
+
+const receiptRow = (id: string) =>
+  db.capitalReceipt.findFirstOrThrow({ where: { id } });
+const commitmentRow = (id: string) =>
+  db.commitment.findFirstOrThrow({ where: { id } });
+
+// ---------------------------------------------------------------------------
+// Scenarios
+
+async function m2Race(caller: ReturnType<typeof makeCaller>) {
+  console.log("M2 unit class update racing the first acceptance");
+  const m = await newMember("M2 Race");
+  const c = await newCommitment(m.id, 10_000_000n);
+  await receive(c.id, "2026-11-03", 4_000_000n);
+  const before = (await caller.list()).classes.find(
+    (k) => k.id === preferredId,
+  );
+  if (!before) throw new Error("no preferred class");
+  check("class not yet locked", before.termsLocked === false);
+
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: () => void = () => {};
+  const accepted = new Promise<void>((resolve) => {
+    signal = resolve;
+  });
+  const tx1 = db.$transaction(
+    async (t) => {
+      await decideCommitment(
+        t,
+        {
+          companyId,
+          commitmentId: c.id,
+          decision: "ACCEPT",
+          acceptedOn: "2026-11-05",
+        },
+        actor,
+      );
+      signal();
+      await gate;
+    },
+    { timeout: 15_000 },
+  );
+  await accepted;
+  const {
+    kind: _k,
+    issuedUnits: _i,
+    termsLocked: _t,
+    prefReturnDayCount: _d,
+    ...terms
+  } = before;
+  const update = errorOf(() =>
+    caller.update({ ...terms, prefReturnBps: 900, confirmAmendment: false }),
+  );
+  await new Promise((r) => setTimeout(r, 700));
+  release();
+  await tx1;
+  const message = await update;
+  const after = await db.unitClass.findFirstOrThrow({
+    where: { id: preferredId },
+  });
+  check(
+    "amendment-free change refused once the racing acceptance commits",
+    message !== null &&
+      /amendment/i.test(message) &&
+      after.prefReturnBps === 800,
+    message ?? `succeeded; prefReturnBps now ${after.prefReturnBps}`,
+  );
+  if (after.prefReturnBps !== 800) {
+    await db.unitClass.update({
+      where: { id: preferredId },
+      data: { prefReturnBps: 800 },
+    });
+  }
+}
+
+async function m2Reductions(caller: ReturnType<typeof makeCaller>) {
+  console.log("M2 cap below accepted total, authorized below issued");
+  const classes = (await caller.list()).classes;
+  const pref = classes.find((k) => k.id === preferredId);
+  const common = classes.find((k) => k.id === commonId);
+  if (!pref || !common) throw new Error("classes missing");
+  const strip = <T extends Record<string, unknown>>(k: T) => {
+    const {
+      kind: _k,
+      issuedUnits: _i,
+      termsLocked: _t,
+      prefReturnDayCount: _d,
+      ...rest
+    } = k;
+    return rest;
+  };
+  const accepted = await db.commitment.aggregate({
+    where: {
+      companyId,
+      unitClassId: preferredId,
+      status: { in: ["ACCEPTED", "REDUCED"] },
+    },
+    _sum: { acceptedCents: true },
+  });
+  const total = Number(accepted._sum.acceptedCents ?? 0n);
+  check("some capital accepted", total > 10_000_000);
+  const newCap = 10_000_000; // = minimum, below the accepted total
+  const message = await errorOf(() =>
+    caller.update({
+      ...(strip(pref) as typeof pref),
+      offeringCapCents: newCap,
+      confirmAmendment: true,
+      amendmentReason: "integration amendment test",
+    } as Parameters<typeof caller.update>[0]),
+  );
+  const after = await db.unitClass.findFirstOrThrow({
+    where: { id: preferredId },
+  });
+  check(
+    "offering cap below the accepted total refused",
+    message !== null &&
+      /cap/i.test(message) &&
+      after.offeringCapCents !== 10_000_000n,
+    message ?? "it succeeded",
+  );
+  if (after.offeringCapCents === 10_000_000n) {
+    await db.unitClass.update({
+      where: { id: preferredId },
+      data: { offeringCapCents: 200_000_000n },
+    });
+  }
+  const issued = Number(common.issuedUnits);
+  check("some common units issued", issued >= 1);
+  await expectRefused(
+    "authorized common units below units issued refused",
+    () =>
+      caller.update({
+        ...(strip(common) as typeof common),
+        authorizedUnits: "0.5",
+        confirmAmendment: true,
+        amendmentReason: "integration amendment test",
+      } as Parameters<typeof caller.update>[0]),
+    /fewer units than are issued/i,
+  );
+}
+
+async function h1Reduced() {
+  console.log("H1 void and re-record on a reduced commitment");
+  const m = await newMember("H1 Reduced");
+  const c = await newCommitment(m.id, 20_000_000n);
+  const r = await receive(c.id, "2026-11-03", 8_000_000n);
+  await accept(c.id, "2026-11-05", { acceptedCents: 10_000_000n });
+  const row = await receiptRow(r.id);
+  const com = await commitmentRow(c.id);
+  check(
+    "default keep $40k, refund $40k",
+    row.appliedCents === 4_000_000n && com.refundDueCents === 4_000_000n,
+  );
+  await assertInvariant("reduced acceptance");
+  const voidError = await errorOf(() => voidReceipt(r.id));
+  check(
+    "void of the partly applied receipt refused",
+    voidError !== null && /refund/i.test(voidError),
+    voidError ?? "void succeeded",
+  );
+  await assertInvariant("void attempt");
+  if (voidError === null) {
+    const again = await receive(c.id, "2026-11-03", 8_000_000n);
+    const againRow = await receiptRow(again.id);
+    console.log(
+      `       re-recorded receipt applied ${againRow.appliedCents}, refund due ${(await commitmentRow(c.id)).refundDueCents}`,
+    );
+    await assertInvariant("re-record");
+  }
+}
+
+async function h1RejectedDuplicate() {
+  console.log("H1 duplicate receipt voided on a rejected commitment");
+  const m = await newMember("H1 Rejected");
+  const c = await newCommitment(m.id, 10_000_000n);
+  const r1 = await receive(c.id, "2026-11-03", 4_000_000n);
+  const r2 = await receive(c.id, "2026-11-03", 4_000_000n);
+  await tx((t) =>
+    decideCommitment(
+      t,
+      {
+        companyId,
+        commitmentId: c.id,
+        decision: "REJECT",
+        acceptedOn: "2026-11-05",
+        rejectionReason: "integration",
+      },
+      actor,
+    ),
+  );
+  check(
+    "refund due $80k",
+    (await commitmentRow(c.id)).refundDueCents === 8_000_000n,
+  );
+  await assertInvariant("rejection");
+  await voidReceipt(r2.id);
+  check(
+    "refund due $40k after the duplicate is voided",
+    (await commitmentRow(c.id)).refundDueCents === 4_000_000n,
+    String((await commitmentRow(c.id)).refundDueCents),
+  );
+  await assertInvariant("void of duplicate");
+  await tx((t) =>
+    recordRefund(
+      t,
+      {
+        companyId,
+        commitmentId: c.id,
+        paidCents: 4_000_000n,
+        paidOn: "2026-11-06",
+      },
+      actor,
+    ),
+  );
+  await assertInvariant("refund paid");
+  await expectRefused(
+    "void of a receipt whose refund was paid refused",
+    () => voidReceipt(r1.id),
+    /refund/i,
+  );
+  await assertInvariant("refused void");
+}
+
+async function h1ZeroAppliedDuplicate() {
+  console.log("H1 zero-applied duplicate voided on a reduced commitment");
+  const m = await newMember("H1 Zero");
+  const c = await newCommitment(m.id, 20_000_000n);
+  const r1 = await receive(c.id, "2026-11-03", 8_000_000n);
+  const r2 = await receive(c.id, "2026-11-03", 8_000_000n);
+  await accept(c.id, "2026-11-05", { acceptedCents: 10_000_000n });
+  const [a, b] = [await receiptRow(r1.id), await receiptRow(r2.id)];
+  const zero = a.appliedCents === 0n ? a : b;
+  check(
+    "keep $80k, one receipt unapplied, refund $80k",
+    a.appliedCents + b.appliedCents === 8_000_000n &&
+      zero.appliedCents === 0n &&
+      (await commitmentRow(c.id)).refundDueCents === 8_000_000n,
+  );
+  await voidReceipt(zero.id);
+  check(
+    "refund due 0 after voiding the unapplied duplicate",
+    (await commitmentRow(c.id)).refundDueCents === 0n,
+    String((await commitmentRow(c.id)).refundDueCents),
+  );
+  await assertInvariant("void of unapplied duplicate");
+}
+
+async function h1Sequence() {
+  console.log("H1 accept / balance / void / re-record / reduce / refund");
+  const m = await newMember("H1 Sequence");
+  const c = await newCommitment(m.id, 25_000_000n);
+  await receive(c.id, "2026-11-03", 12_000_000n);
+  await assertInvariant("held receipt");
+  await accept(c.id, "2026-11-05");
+  await assertInvariant("full acceptance");
+  const bal = await receive(c.id, "2026-11-10", 5_000_000n);
+  await assertInvariant("balance receipt");
+  await voidReceipt(bal.id);
+  await assertInvariant("void of fully applied balance");
+  await receive(c.id, "2026-11-10", 5_000_000n);
+  await assertInvariant("re-recorded balance");
+  await tx((t) =>
+    reduceAcceptedCommitment(
+      t,
+      {
+        companyId,
+        commitmentId: c.id,
+        reduceByCents: 3_000_000n,
+        reason: "integration",
+      },
+      actor,
+    ),
+  );
+  await assertInvariant("reduction");
+  await expectRefused(
+    "overpayment after reduction refused",
+    () => receive(c.id, "2026-11-11", 6_000_000n),
+    /outstanding/i,
+  );
+  await receive(c.id, "2026-11-11", 5_000_000n);
+  await assertInvariant("final balance");
+
+  const m2 = await newMember("H1 Excess");
+  const c2 = await newCommitment(m2.id, 10_000_000n);
+  const r = await receive(c2.id, "2026-11-03", 12_000_000n);
+  await accept(c2.id, "2026-11-05");
+  check(
+    "excess $20k to refund",
+    (await commitmentRow(c2.id)).refundDueCents === 2_000_000n,
+  );
+  await tx((t) =>
+    recordRefund(
+      t,
+      {
+        companyId,
+        commitmentId: c2.id,
+        paidCents: 2_000_000n,
+        paidOn: "2026-11-06",
+      },
+      actor,
+    ),
+  );
+  await assertInvariant("excess refund paid");
+  await expectRefused(
+    "void of the split receipt refused",
+    () => voidReceipt(r.id),
+    /refund/i,
+  );
+  await expectRefused(
+    "second refund refused",
+    () =>
+      tx((t) =>
+        recordRefund(
+          t,
+          {
+            companyId,
+            commitmentId: c2.id,
+            paidCents: 1n,
+            paidOn: "2026-11-06",
+          },
+          actor,
+        ),
+      ),
+    /outstanding/i,
+  );
+  await assertInvariant("refund sequence");
+}
+
+async function h2() {
+  console.log("H2 acceptance date versus receipt dates");
+  const m = await newMember("H2 Before Wire");
+  const c = await newCommitment(m.id, 25_000_000n);
+  const r = await receive(c.id, "2026-11-09", 10_000_000n);
+  const message = await errorOf(() => accept(c.id, "2026-11-05"));
+  const row = await receiptRow(r.id);
+  check(
+    "acceptance dated before the only wire refused (no Initial Installment)",
+    message !== null && /Received \$0\.00/.test(message),
+    message ??
+      `accepted; appliedOn ${day(row.appliedOn)} received ${day(row.receivedOn)}`,
+  );
+  await assertInvariant("acceptance before wire");
+
+  const m2 = await newMember("H2 Later Balance");
+  const c2 = await newCommitment(m2.id, 10_000_000n);
+  const r1 = await receive(c2.id, "2026-11-03", 4_000_000n);
+  const r2 = await receive(c2.id, "2026-11-09", 3_000_000n);
+  await accept(c2.id, "2026-11-05");
+  const [a, b] = [await receiptRow(r1.id), await receiptRow(r2.id)];
+  check(
+    "earlier receipt INITIAL, applied on the acceptance date, return from the wire date",
+    a.kind === "INITIAL" &&
+      a.appliedCents === 4_000_000n &&
+      day(a.appliedOn) === "2026-11-05" &&
+      day(a.prefReturnStartDate) === "2026-11-03",
+    `${a.kind} ${a.appliedCents} ${day(a.appliedOn)} ${day(a.prefReturnStartDate)}`,
+  );
+  check(
+    "later receipt BALANCE, applied on its own date, return from the outside date",
+    b.kind === "BALANCE" &&
+      b.appliedCents === 3_000_000n &&
+      day(b.appliedOn) === "2026-11-09" &&
+      day(b.prefReturnStartDate) === "2027-03-31",
+    `${b.kind} ${b.appliedCents} ${day(b.appliedOn)} ${day(b.prefReturnStartDate)}`,
+  );
+  await assertInvariant("acceptance with a later receipt");
+
+  const m3 = await newMember("H2 Later Excess");
+  const c3 = await newCommitment(m3.id, 10_000_000n);
+  await receive(c3.id, "2026-11-03", 4_000_000n);
+  const r3 = await receive(c3.id, "2026-11-09", 7_000_000n);
+  await accept(c3.id, "2026-11-05");
+  const later = await receiptRow(r3.id);
+  check(
+    "later receipt applied up to the accepted amount, excess refunded",
+    later.appliedCents === 6_000_000n &&
+      (await commitmentRow(c3.id)).refundDueCents === 1_000_000n,
+    `${later.appliedCents} / ${(await commitmentRow(c3.id)).refundDueCents}`,
+  );
+  await assertInvariant("acceptance with later excess");
+
+  const m4 = await newMember("H2 Late Entry");
+  const c4 = await newCommitment(m4.id, 10_000_000n);
+  await receive(c4.id, "2026-11-03", 4_000_000n);
+  await accept(c4.id, "2026-11-05");
+  const late = await receive(c4.id, "2026-11-04", 1_000_000n);
+  const lateRow = await receiptRow(late.id);
+  check(
+    "receipt entered late and dated before acceptance applied on the acceptance date",
+    lateRow.kind === "INITIAL" &&
+      day(lateRow.appliedOn) === "2026-11-05" &&
+      day(lateRow.prefReturnStartDate) === "2026-11-04",
+    `${lateRow.kind} ${day(lateRow.appliedOn)} ${day(lateRow.prefReturnStartDate)}`,
+  );
+  await assertInvariant("late entry");
+}
+
+async function m1() {
+  console.log("M1 void leaving negative capital");
+  const m = await newMember("M1 Forfeit");
+  const c = await newCommitment(m.id, 10_000_000n);
+  const r = await receive(c.id, "2026-11-03", 4_000_000n);
+  await accept(c.id, "2026-11-05");
+  const f = await tx((t) =>
+    recordCapitalReceipt(
+      t,
+      {
+        companyId,
+        commitmentId: c.id,
+        receivedOn: "2026-11-10",
+        amountCents: 0n,
+        special: { kind: "FORFEITURE", appliedCents: -2_000_000n },
+      },
+      actor,
+    ),
+  );
+  await assertInvariant("forfeiture");
+  await expectRefused(
+    "void that would leave negative capital refused",
+    () => voidReceipt(r.id),
+    /negative/i,
+  );
+  await assertInvariant("refused void");
+  const message = await errorOf(() => voidReceipt(f.id));
+  check(
+    "void of the forfeiture itself allowed",
+    message === null,
+    message ?? "",
+  );
+  await assertInvariant("void of forfeiture");
+}
+
+async function l2() {
+  console.log("L2 concurrent admissions from two class locks");
+  const m = await newMember("L2 Concurrent");
+  const c = await newCommitment(m.id, 10_000_000n);
+  await receive(c.id, "2026-11-03", 4_000_000n);
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: () => void = () => {};
+  const decided = new Promise<void>((resolve) => {
+    signal = resolve;
+  });
+  const tx1 = db.$transaction(
+    async (t) => {
+      await decideCommitment(
+        t,
+        {
+          companyId,
+          commitmentId: c.id,
+          decision: "ACCEPT",
+          acceptedOn: "2026-11-05",
+        },
+        actor,
+      );
+      signal();
+      await gate;
+    },
+    { timeout: 15_000 },
+  );
+  await decided;
+  const tx2 = db.$transaction(
+    (t) =>
+      issueCommonUnits(
+        t,
+        { companyId, stakeholderId: m.id, units: "1", issuedOn: "2026-11-06" },
+        actor,
+      ),
+    { timeout: 15_000 },
+  );
+  await new Promise((r) => setTimeout(r, 700));
+  release();
+  await Promise.all([tx1, tx2]);
+  const s = await db.stakeholder.findFirstOrThrow({ where: { id: m.id } });
+  const audits = await db.audit.findMany({
+    where: { companyId, action: "stakeholder.admitted" },
+  });
+  const mine = audits.filter((a) => JSON.stringify(a.target).includes(m.id));
+  check(
+    "admitted once, on the earlier date",
+    mine.length === 1 && day(s.admittedOn) === "2026-11-05",
+    `${mine.length} admission audits, admittedOn ${day(s.admittedOn)}`,
+  );
+  await assertInvariant("concurrent admissions");
+}
+
+async function l4AndReplacement() {
+  console.log("L4 / G1 Replacement Funder commitments");
+  const m = await newMember("L4 Replacement");
+  const c = await newCommitment(m.id, 3_000_000n, {
+    signedOn: "2026-11-06",
+    isReplacement: true,
+  });
+  await tx((t) =>
+    decideCommitment(
+      t,
+      {
+        companyId,
+        commitmentId: c.id,
+        decision: "ACCEPT",
+        acceptedOn: "2026-11-06",
+        skipClosingDateCheck: true,
+      },
+      actor,
+    ),
+  );
+  const row = await commitmentRow(c.id);
+  const audit = await db.audit.findFirst({
+    where: { companyId, action: "commitment.accepted" },
+    orderBy: { occurredAt: "desc" },
+  });
+  check(
+    "replacement below the minimum is not a waiver",
+    row.minimumWaived === false &&
+      row.minimumWaiverNote === null &&
+      !/minimum waived/.test(audit?.summary ?? "") &&
+      /4\.9\(ii\)/.test(audit?.summary ?? ""),
+    `${row.minimumWaived} / ${audit?.summary}`,
+  );
+  const rr = await tx((t) =>
+    recordCapitalReceipt(
+      t,
+      {
+        companyId,
+        commitmentId: c.id,
+        receivedOn: "2026-11-05",
+        amountCents: 3_000_000n,
+        special: { kind: "REPLACEMENT", appliedCents: 3_000_000n },
+      },
+      actor,
+    ),
+  );
+  check(
+    "replacement receipt dated before acceptance applied on the acceptance date",
+    day((await receiptRow(rr.id)).appliedOn) === "2026-11-06",
+    String(day((await receiptRow(rr.id)).appliedOn)),
+  );
+  await assertInvariant("replacement funding");
+
+  const m2 = await newMember("G1 Replacement Reduced");
+  const c2 = await newCommitment(m2.id, 4_000_000n, {
+    signedOn: "2026-11-06",
+    isReplacement: true,
+  });
+  await tx((t) =>
+    decideCommitment(
+      t,
+      {
+        companyId,
+        commitmentId: c2.id,
+        decision: "ACCEPT",
+        acceptedCents: 3_000_000n,
+        acceptedOn: "2026-11-06",
+        skipClosingDateCheck: true,
+      },
+      actor,
+    ),
+  );
+  const message = await errorOf(() =>
+    tx((t) =>
+      recordCapitalReceipt(
+        t,
+        {
+          companyId,
+          commitmentId: c2.id,
+          receivedOn: "2026-11-06",
+          amountCents: 3_000_000n,
+          special: { kind: "REPLACEMENT", appliedCents: 3_000_000n },
+        },
+        actor,
+      ),
+    ),
+  );
+  check(
+    "replacement accepted at a reduced amount can be funded",
+    message === null,
+    message ?? "",
+  );
+  await assertInvariant("reduced replacement funding");
+}
+
+async function g1() {
+  console.log("G1 future dates, clearing dates, stakeholder audit, T1");
+  const m = await newMember("G1 Dates", {
+    currentRelationship: "EMPLOYEE",
+  });
+  const c = await tx((t) =>
+    ledger.createCommitment(
+      t,
+      {
+        companyId,
+        stakeholderId: m.id,
+        unitClassId: preferredId,
+        committedCents: 10_000_000n,
+        signedOn: "2026-11-02",
+        investmentSummaryDate: "2026-11-01",
+        accreditationBasis: "NET_WORTH",
+      },
+      actor,
+    ),
+  );
+  const cleared = await errorOf(() =>
+    tx((t) =>
+      updatePendingCommitment(
+        t,
+        {
+          companyId,
+          commitmentId: c.id,
+          signedOn: null,
+          investmentSummaryDate: null,
+        },
+        actor,
+      ),
+    ),
+  );
+  const afterClear = await commitmentRow(c.id);
+  check(
+    "pending commitment dates can be cleared with null",
+    cleared === null &&
+      afterClear.signedOn === null &&
+      afterClear.investmentSummaryDate === null,
+    cleared ??
+      `${day(afterClear.signedOn)} ${day(afterClear.investmentSummaryDate)}`,
+  );
+  await tx((t) =>
+    updatePendingCommitment(
+      t,
+      { companyId, commitmentId: c.id, signedOn: "2026-11-02" },
+      actor,
+    ),
+  );
+  await receive(c.id, "2026-11-03", 4_000_000n);
+  await accept(c.id, "2026-11-05");
+  const audit = await db.audit.findFirst({
+    where: { companyId, action: "commitment.accepted" },
+    orderBy: { occurredAt: "desc" },
+  });
+  check(
+    "acceptance audit records the stakeholder changes",
+    /relationship/i.test(audit?.summary ?? "") &&
+      /accreditation/i.test(audit?.summary ?? ""),
+    audit?.summary ?? "no audit",
+  );
+  const future = "2099-01-01";
+  await expectRefused(
+    "CREDIT with a future date refused",
+    () =>
+      tx((t) =>
+        recordCapitalReceipt(
+          t,
+          {
+            companyId,
+            commitmentId: c.id,
+            receivedOn: future,
+            amountCents: 0n,
+            special: { kind: "CREDIT", appliedCents: 100_000n },
+          },
+          actor,
+        ),
+      ),
+    /future/i,
+  );
+  await expectRefused(
+    "FORFEITURE with a future date refused",
+    () =>
+      tx((t) =>
+        recordCapitalReceipt(
+          t,
+          {
+            companyId,
+            commitmentId: c.id,
+            receivedOn: future,
+            amountCents: 0n,
+            special: { kind: "FORFEITURE", appliedCents: -100_000n },
+          },
+          actor,
+        ),
+      ),
+    /future/i,
+  );
+  await expectRefused(
+    "Common Units issued on a future date refused",
+    () =>
+      tx((t) =>
+        issueCommonUnits(
+          t,
+          { companyId, stakeholderId: m.id, units: "1", issuedOn: future },
+          actor,
+        ),
+      ),
+    /future/i,
+  );
+  const m2 = await newMember("G1 Refund");
+  const c2 = await newCommitment(m2.id, 10_000_000n);
+  await receive(c2.id, "2026-11-03", 12_000_000n);
+  await accept(c2.id, "2026-11-05");
+  await expectRefused(
+    "refund paid on a future date refused",
+    () =>
+      tx((t) =>
+        recordRefund(
+          t,
+          { companyId, commitmentId: c2.id, paidCents: 100n, paidOn: future },
+          actor,
+        ),
+      ),
+    /future/i,
+  );
+  check(
+    "refreshSubscriptionClock is not exported",
+    !("refreshSubscriptionClock" in ledger),
+  );
+  await assertInvariant("G1");
+}
+
+// ---------------------------------------------------------------------------
+// Setup, caller, cleanup
+
+let userId = "";
+let memberId = "";
+
+function makeCaller() {
+  const session = {
+    user: {
+      id: userId,
+      name: "Integration",
+      email: `${userId}@ledger-integration.test`,
+      companyId,
+      memberId,
+      companyPublicId: "x",
+      isOnboarded: true,
+    },
+    expires: "2099-01-01T00:00:00.000Z",
+  } as unknown as Session;
+  return createCallerFactory(unitClassRouter)({
+    db,
+    session,
+    requestIp: "127.0.0.1",
+    userAgent: "ledger-integration",
+    headers: new Headers(),
+  });
+}
+
+async function setup() {
+  const company = await db.company.create({
+    data: {
+      name: `zz ledger integration ${new Date().toISOString()}`,
+      publicId: `zz-ledger-${randomUUID()}`,
+      incorporationType: "llc",
+      incorporationDate: new Date("2026-01-01"),
+      incorporationCountry: "US",
+      incorporationState: "WY",
+      streetAddress: "1 Test St",
+      city: "Cheyenne",
+      state: "WY",
+      zipcode: "82001",
+      country: "US",
+      entityType: "LLC",
+      timezone: "America/Denver",
+    },
+  });
+  companyId = company.id;
+  const pref = await db.unitClass.create({
+    data: {
+      companyId,
+      name: "Preferred Units",
+      kind: "PREFERRED",
+      pricePerUnitCents: 100_000n,
+      fractionalUnitsAllowed: true,
+      votesPerUnit: 1,
+      prefReturnBps: 800,
+      residualSplitBps: 7000,
+      minCommitmentCents: 10_000_000n,
+      minCommitmentFloorCents: 5_000_000n,
+      offeringCapCents: 200_000_000n,
+      initialInstallmentBps: 4000,
+      finalClosingDate: new Date("2026-11-30"),
+      balanceOutsideDate: new Date("2027-03-31"),
+    },
+  });
+  preferredId = pref.id;
+  const common = await db.unitClass.create({
+    data: {
+      companyId,
+      name: "Common Units",
+      kind: "COMMON",
+      authorizedUnits: 1000,
+      fractionalUnitsAllowed: false,
+      residualSplitBps: 3000,
+    },
+  });
+  commonId = common.id;
+  const user = await db.user.create({
+    data: {
+      name: "Integration",
+      email: `${randomUUID()}@ledger-integration.test`,
+    },
+  });
+  userId = user.id;
+  const member = await db.member.create({
+    data: {
+      companyId,
+      userId,
+      status: "ACTIVE",
+      isOnboarded: true,
+      role: "ADMIN",
+    },
+  });
+  memberId = member.id;
+}
+
+async function cleanup() {
+  if (!companyId) return;
+  const id = companyId;
+  await db.$executeRaw`DELETE FROM "Audit" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "CapitalReceipt" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "Commitment" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "Stakeholder" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "UnitClass" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "Member" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "Company" WHERE id = ${id}`;
+  if (userId) await db.$executeRaw`DELETE FROM "User" WHERE id = ${userId}`;
+  const left = await db.$queryRaw<{ n: bigint }[]>`
+    SELECT (SELECT count(*) FROM "Audit" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "CapitalReceipt" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "Commitment" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "Stakeholder" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "UnitClass" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "Member" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "Company" WHERE id = ${id}) AS n`;
+  console.log(`cleanup: ${left[0]?.n ?? "?"} rows left for the test company`);
+}
+
+async function main() {
+  try {
+    await setup();
+    const caller = makeCaller();
+    const scenarios: [string, () => Promise<void>][] = [
+      ["M2 race", () => m2Race(caller)],
+      ["H1 reduced", h1Reduced],
+      ["H1 rejected", h1RejectedDuplicate],
+      ["H1 zero applied", h1ZeroAppliedDuplicate],
+      ["H1 sequence", h1Sequence],
+      ["H2", h2],
+      ["M1", m1],
+      ["L2", l2],
+      ["L4", l4AndReplacement],
+      ["G1", g1],
+      ["M2 reductions", () => m2Reductions(caller)],
+    ];
+    for (const [name, run] of scenarios) {
+      const message = await errorOf(run);
+      if (message !== null) check(`${name} ran to the end`, false, message);
+    }
+  } finally {
+    await cleanup();
+    await db.$disconnect();
+  }
+  console.log(`\n${checks - failures.length}/${checks} checks passed`);
+  if (failures.length > 0) {
+    console.log(failures.map((f) => `- ${f}`).join("\n"));
+    process.exit(1);
+  }
+}
+
+void main();
