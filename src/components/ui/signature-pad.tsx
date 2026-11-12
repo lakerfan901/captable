@@ -14,8 +14,10 @@ interface Point {
 const Drawing = forwardRef<SVGSVGElement, { lines: [Point][] }>(
   ({ lines }, ref) => {
     return (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: drawing surface for the signature preview, not informational
       <svg ref={ref} className="h-full w-full">
         {lines.map((line, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: lines are append-only and have no id
           <DrawingLine key={index} line={line} />
         ))}
       </svg>
@@ -89,12 +91,14 @@ export const SignaturePad = forwardRef<HTMLDivElement, SignaturePadProps>(
     if (prefilledValue) {
       return (
         <div ref={ref} className="h-64 w-full cursor-not-allowed border">
+          {/* biome-ignore lint/performance/noImgElement: prefilled value is a data URL, next/image does not apply */}
           <img src={prefilledValue} alt="signature" />
         </div>
       );
     }
 
     return (
+      // biome-ignore lint/a11y/noStaticElementInteractions: pointer-only drawing canvas; keyboard drawing is not supported
       <div
         className={cn(
           "h-64 w-full border",

@@ -4,6 +4,7 @@ type IconProps = React.HTMLAttributes<SVGElement>;
 
 export const SpinnerIcon = (props: IconProps) => {
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: decorative icon; adding a title/aria attribute would change rendered markup
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width="24"
@@ -25,6 +26,7 @@ export const UserAvatarIcon = (props: IconProps) => {
   const { className } = props;
 
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: decorative icon; adding a title/aria attribute would change rendered markup
     <svg
       className={className}
       width="200"
@@ -46,6 +48,7 @@ export const CompanyLogoIcon = (props: IconProps) => {
   const { className } = props;
 
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: decorative icon; adding a title/aria attribute would change rendered markup
     <svg
       className={className}
       width="200"
@@ -67,6 +70,7 @@ export const LogoIcon = (props: IconProps) => {
   const { className } = props;
 
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: decorative icon; adding a title/aria attribute would change rendered markup
     <svg
       className={cn(className)}
       width="800"
@@ -97,6 +101,7 @@ export const LogoIcon = (props: IconProps) => {
 export const SignatureIcon = (props: IconProps) => {
   const { className } = props;
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: decorative icon; adding a title/aria attribute would change rendered markup
     <svg
       className={cn(className)}
       fill="currentColor"
@@ -113,6 +118,7 @@ export const SignatureIcon = (props: IconProps) => {
 export const ArrowRight = (props: IconProps) => {
   const { className } = props;
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: decorative icon; adding a title/aria attribute would change rendered markup
     <svg
       className={cn(className)}
       width="15px"

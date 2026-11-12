@@ -43,6 +43,7 @@ export const ReadOnlyTemplateField = ({
     <ReadOnlyTemplateFieldContainer {...rest} color={color}>
       {type === "SIGNATURE" ? (
         prefilledValue || value !== "" ? (
+          // biome-ignore lint/performance/noImgElement: signature is a data URL, next/image does not apply
           <img
             src={prefilledValue ?? value}
             alt="signature"

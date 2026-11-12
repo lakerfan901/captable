@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: "New",
 };
 
-const OnboardingPage = async () => {
+const OnboardingPage = () => {
   return (
     <div className="flex min-h-screen justify-center bg-linear-to-br from-indigo-50 via-white to-cyan-100 px-5 pb-5 pt-20">
       <div className="border-rounded w-full max-w-2xl border bg-white p-10 shadow-sm">

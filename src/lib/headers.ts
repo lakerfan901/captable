@@ -6,7 +6,7 @@ export function getIp(headers: Headers) {
     return forwardedFor
       ? Array.isArray(forwardedFor)
         ? (forwardedFor[0] as string)
-        : forwardedFor.split(",")[0]!
+        : (forwardedFor.split(",")[0] ?? FALLBACK_IP_ADDRESS)
       : FALLBACK_IP_ADDRESS;
   }
 

@@ -27,7 +27,7 @@ const SecurityLists = [
   },
 ];
 
-export default async function SecurityPage() {
+export default function SecurityPage() {
   return (
     <>
       <SettingsHeader

@@ -1,8 +1,9 @@
-import { generatePublicId } from "@/common/id";
-import { db } from "@/server/db";
 import { faker } from "@faker-js/faker";
 import colors from "colors";
 import { sample } from "lodash-es";
+import { generatePublicId } from "@/common/id";
+import { db } from "@/server/db";
+
 colors.enable();
 
 type CompanyType = {

@@ -44,7 +44,7 @@ export function VerifyMemberForm({ memberId, token }: VerifyMemberFormProps) {
     },
   });
 
-  async function onSubmit(values: TypeZodAcceptMemberMutationSchema) {
+  function onSubmit(values: TypeZodAcceptMemberMutationSchema) {
     acceptMember.mutate(values);
   }
 

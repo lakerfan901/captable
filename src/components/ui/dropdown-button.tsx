@@ -11,11 +11,7 @@ type DropDownButtonProps = {
   buttonSlot: React.ReactNode | string;
 };
 
-const DropdownButton = ({
-  icon,
-  children,
-  buttonSlot,
-}: DropDownButtonProps) => {
+const DropdownButton = ({ children, buttonSlot }: DropDownButtonProps) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

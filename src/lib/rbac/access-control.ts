@@ -28,7 +28,7 @@ class MembershipNotFoundError extends BaseError {
   public readonly retry = false;
 }
 
-export async function checkAccessControlMembership({
+export function checkAccessControlMembership({
   session,
   tx,
 }: checkMembershipOptions) {

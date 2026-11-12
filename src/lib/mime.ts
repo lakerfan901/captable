@@ -1,7 +1,3 @@
-type FileProps = {
-  mimeType: string;
-};
-
 const fileType = (mimeType: string) => {
   switch (true) {
     case mimeType.includes("pdf"):

@@ -77,6 +77,7 @@ function DescendantProvider<DescendantType extends Descendant>({
   items: DescendantType[];
   set: React.Dispatch<React.SetStateAction<DescendantType[]>>;
 }) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: set is a state setter from useDescendantsInit and never changes between renders
   const registerDescendant = React.useCallback(
     ({
       element,

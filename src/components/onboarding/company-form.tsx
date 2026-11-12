@@ -141,7 +141,7 @@ export const CompanyForm = ({ type, data }: CompanyFormProps) => {
 
     if (!file) return;
 
-    const { isValid, title, errorMessage } = validateFile(file);
+    const { isValid, errorMessage } = validateFile(file);
 
     if (isValid) {
       try {

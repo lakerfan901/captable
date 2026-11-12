@@ -67,6 +67,6 @@ export const createDocumentShareHandler = async ({
 
 export const createDocumentShareProcedure = withAuth
   .input(DocumentShareMutationSchema)
-  .mutation(async (opts) => {
+  .mutation((opts) => {
     return createDocumentShareHandler(opts);
   });

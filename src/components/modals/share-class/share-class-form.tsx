@@ -115,6 +115,7 @@ const ShareClassForm = ({
       : await updateMutation.mutateAsync(values);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when form.getValues changes; shareClassTypeOpts is a per-render constant list and would re-run the effect every render
   useEffect(() => {
     setDefShareTypeOpt(
       shareClassTypeOpts.find(

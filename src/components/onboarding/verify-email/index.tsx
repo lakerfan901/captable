@@ -16,7 +16,7 @@ const VerifyEmail = ({ token }: { token: string }) => {
   const [success, setSuccess] = useState<string | undefined>("");
 
   const { mutateAsync } = api.auth.verifyEmail.useMutation({
-    onSuccess: async ({ message }) => {
+    onSuccess: ({ message }) => {
       setLoading(false);
       setSuccess(message);
     },
@@ -26,6 +26,7 @@ const VerifyEmail = ({ token }: { token: string }) => {
     },
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mutateAsync is intentionally not a dependency; the token is single-use, so the verify call must not be re-triggered by a changed identity
   const onSubmit = useCallback(async () => {
     if (success || error) return;
 

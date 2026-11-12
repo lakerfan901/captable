@@ -65,7 +65,8 @@ const StakeholderUploader = () => {
         , complete and upload it to import your existing or new stakeholders.
       </div>
 
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: <> */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: pre-existing click-only drop target; adding keyboard handling is a behaviour change */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: pre-existing click-only drop target; adding a role is a behaviour change */}
       <div
         className="flex h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-gray-300"
         onClick={() => fileInputRef.current?.click()}

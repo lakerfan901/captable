@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 
 export const CaptableLogo = ({ className }: { className?: string }) => {
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: decorative logo; adding a title would change rendered markup
     <svg
       className={cn(className)}
       width="1200"

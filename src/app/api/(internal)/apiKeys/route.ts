@@ -1,6 +1,6 @@
 import { withServerSession } from "@/server/auth";
 
-export const POST = async (req: Request) => {
-  const session = await withServerSession();
-  const { user } = session;
+export const POST = async () => {
+  // Session lookup kept: it throws for unauthenticated callers.
+  await withServerSession();
 };

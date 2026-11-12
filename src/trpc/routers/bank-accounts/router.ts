@@ -35,7 +35,7 @@ export const bankAccountsRouter = createTRPCRouter({
 
   create: withAccessControl
     .meta({ policies: { "bank-accounts": { allow: ["create"] } } })
-    .mutation(async ({ ctx }) => {
+    .mutation(async () => {
       // const {
       //   db,
       //   membership: { companyId, memberId },
@@ -46,7 +46,7 @@ export const bankAccountsRouter = createTRPCRouter({
   delete: withAccessControl
     .input(z.object({ id: z.string() }))
     .meta({ policies: { "bank-accounts": { allow: ["delete"] } } })
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async () => {
       // const {
       //   db,
       //   membership: { memberId, companyId },

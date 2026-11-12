@@ -43,6 +43,7 @@ export function NavLink({ active, href, icon, name, className }: NavLinkProps) {
         </Link>
       ) : (
         <button
+          type="button"
           className={cn(
             className,
             active

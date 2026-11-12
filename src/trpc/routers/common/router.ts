@@ -32,9 +32,13 @@ export const commonRouter = createTRPCRouter({
     (members || []).map((member) =>
       contacts.push({
         id: member.id,
+        // biome-ignore lint/style/noNonNullAssertion: contacts payload contract is non-nullable; substituting a default would change the API response
         image: member.user.image!,
+        // biome-ignore lint/style/noNonNullAssertion: contacts payload contract is non-nullable; substituting a default would change the API response
         email: member.user.email!,
+        // biome-ignore lint/style/noNonNullAssertion: contacts payload contract is non-nullable; substituting a default would change the API response
         value: member.user.email!,
+        // biome-ignore lint/style/noNonNullAssertion: contacts payload contract is non-nullable; substituting a default would change the API response
         name: member.user.name!,
         type: "member",
       }),
@@ -45,6 +49,7 @@ export const commonRouter = createTRPCRouter({
         email: stakeholder.email,
         value: stakeholder.email,
         name: stakeholder.name,
+        // biome-ignore lint/style/noNonNullAssertion: contacts payload contract is non-nullable; substituting a default would change the API response
         institutionName: stakeholder.institutionName!,
         type: "stakeholder",
       }),

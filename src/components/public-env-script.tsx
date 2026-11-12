@@ -7,6 +7,7 @@ export function PublicEnvScript() {
   noStore();
   const publicEnvs = JSON.stringify(getPublicEnv());
   return (
+    // biome-ignore lint/correctness/useInlineScriptId: adding an id would change the rendered script tag; kept as-is
     <Script
       strategy="beforeInteractive"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: inlines server-serialized public env JSON, no user input

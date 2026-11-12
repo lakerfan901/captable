@@ -206,11 +206,13 @@ const MultipleSelector = React.forwardRef<
       ref,
       () => ({
         selectedValue: [...selected],
+        // biome-ignore lint/style/noNonNullAssertion: handle is only used after mount, when the input ref is set
         input: inputRef.current!,
       }),
       [selected],
     );
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: setSelected is a caller-supplied prop; adding it would recreate the callback whenever the parent passes a new function
     const handleUnselect = React.useCallback(
       (option: Option) => {
         const newOptions = selected.filter((s) => s.value !== option.value);
@@ -226,6 +228,7 @@ const MultipleSelector = React.forwardRef<
         if (input) {
           if (e.key === "Delete" || e.key === "Backspace") {
             if (input.value === "" && selected.length > 0) {
+              // biome-ignore lint/style/noNonNullAssertion: guarded by selected.length > 0 above
               handleUnselect(selected[selected.length - 1]!);
             }
           }
@@ -238,12 +241,14 @@ const MultipleSelector = React.forwardRef<
       [handleUnselect, selected],
     );
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: setSelected is a caller-supplied prop; adding it would re-run the effect whenever the parent passes a new function
     useEffect(() => {
       if (value) {
         setSelected(value);
       }
     }, [value]);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: arrayDefaultOptions is listed on purpose (a new default array re-runs the effect); removing it would change when the effect runs
     useEffect(() => {
       /** If `onSearch` is provided, do not trigger options updated. */
       if (!arrayOptions || onSearch) {
@@ -255,6 +260,7 @@ const MultipleSelector = React.forwardRef<
       }
     }, [arrayDefaultOptions, arrayOptions, groupBy, onSearch, options]);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: onSearch is an inline callback in callers; adding it would re-trigger the search on every render
     useEffect(() => {
       const doSearch = async () => {
         setIsLoading(true);
@@ -278,6 +284,7 @@ const MultipleSelector = React.forwardRef<
       void exec();
     }, [debouncedSearchTerm, groupBy, open, triggerSearchOnFocus]);
 
+    // biome-ignore lint/correctness/noComponentHookFactories: CreatableItem is invoked as a plain function (CreatableItem()), never rendered as a component, so there is no remount
     const CreatableItem = () => {
       if (!creatable) return undefined;
 
@@ -385,6 +392,7 @@ const MultipleSelector = React.forwardRef<
                   data-disabled={disabled}
                 >
                   {option.label}
+                  {/* biome-ignore lint/a11y/useButtonType: pre-existing default type; adding type="button" would change form-submit behaviour */}
                   <button
                     className={cn(
                       "ml-1 rounded-full outline-hidden",

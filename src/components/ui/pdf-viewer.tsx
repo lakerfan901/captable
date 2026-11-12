@@ -67,8 +67,9 @@ export const PdfViewer = ({
         className="w-full overflow-hidden rounded"
         suspense={false}
       >
-        {Array.from(new Array(numPages), (el, index) => (
+        {Array.from(new Array(numPages), (_el, index) => (
           <Page
+            // biome-ignore lint/suspicious/noArrayIndexKey: pages are positional and never reorder
             key={`page_${index + 1}`}
             pageNumber={index + 1}
             renderAnnotationLayer={false}

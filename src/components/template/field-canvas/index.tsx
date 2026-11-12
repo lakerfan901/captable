@@ -48,6 +48,7 @@ export function FieldCanvas({ recipients, pageNumber }: FieldCanvasProp) {
 
   return (
     <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: pointer-only field placement canvas; keyboard placement is not supported */}
       <div
         ref={setContainerRef}
         className="absolute bottom-0 left-0 right-0 top-0 z-10 cursor-crosshair"

@@ -12,10 +12,11 @@ type FilePreviewProps = {
 };
 
 const ImagePreview = ({ url, name }: FilePreviewProps) => {
+  // biome-ignore lint/performance/noImgElement: arbitrary user-uploaded file URL, next/image does not apply
   return <img className="rounded" src={url} alt={name} />;
 };
 
-const AuditPreview = ({ url, name, mimeType }: FilePreviewProps) => {
+const AuditPreview = ({ url, mimeType }: FilePreviewProps) => {
   return (
     // biome-ignore lint/a11y/useMediaCaption: user-uploaded media has no caption track available
     <audio controls className="w-full">
@@ -25,7 +26,7 @@ const AuditPreview = ({ url, name, mimeType }: FilePreviewProps) => {
   );
 };
 
-const VideoPreview = ({ url, name, mimeType }: FilePreviewProps) => {
+const VideoPreview = ({ url, mimeType }: FilePreviewProps) => {
   return (
     // biome-ignore lint/a11y/useMediaCaption: user-uploaded media has no caption track available
     <video controls className="w-full rounded">

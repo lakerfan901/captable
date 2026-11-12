@@ -55,6 +55,7 @@ const InputOTPSeparator = React.forwardRef<
   React.ElementRef<"div">,
   React.ComponentPropsWithoutRef<"div">
 >(({ ...props }, ref) => (
+  // biome-ignore lint/a11y/useSemanticElements: separator wraps an icon child; <hr> cannot have children
   <div ref={ref} role="separator" {...props}>
     <RiCrossLine />
   </div>

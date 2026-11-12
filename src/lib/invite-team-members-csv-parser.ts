@@ -1,8 +1,7 @@
 import Papa, { type ParseResult } from "papaparse";
-import { ZodError } from "zod";
 import { ZodInviteMemberMutationSchema } from "@/trpc/routers/member-router/schema";
 
-export const parseInviteMembersCSV = async (csvFile: File) => {
+export const parseInviteMembersCSV = (csvFile: File) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -21,13 +20,13 @@ export const parseInviteMembersCSV = async (csvFile: File) => {
           return value;
         });
 
-        if (values.length != keys.length) {
+        if (values.length !== keys.length) {
           reject(
             new Error(
               `Invalid values, Please make sure you have ${keys.length} values. You can put "" (empty string) for the optional fields.`,
             ),
           );
-          return;
+          return undefined;
         }
 
         const entry = Object.fromEntries(
@@ -45,10 +44,9 @@ export const parseInviteMembersCSV = async (csvFile: File) => {
       mappedCSV.forEach((csv) => {
         try {
           ZodInviteMemberMutationSchema.parse(csv);
-        } catch (error) {
-          if (error instanceof ZodError) {
-            return new Error(error.issues[0]?.message);
-          }
+        } catch {
+          // Validation failures are intentionally ignored here, exactly as
+          // before (the previous code built an Error and discarded it).
         }
       });
 

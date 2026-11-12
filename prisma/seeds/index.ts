@@ -1,6 +1,7 @@
-import { db } from "@/server/db";
 import colors from "colors";
 import inquirer from "inquirer";
+import { db } from "@/server/db";
+
 colors.enable();
 
 import seedCompanies from "./companies";
@@ -33,7 +34,7 @@ const seed = async () => {
   }
 };
 
-const nuke = async () => {
+const nuke = () => {
   console.log("🚀 Nuking database records".yellow);
   return db.$transaction(async (db) => {
     await db.user.deleteMany();

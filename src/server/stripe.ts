@@ -123,7 +123,7 @@ export async function upsertPriceRecord(price: Stripe.Price) {
 export const manageSubscriptionStatusChange = async (
   subscriptionId: string,
   customerId: string,
-  createAction = false,
+  _createAction = false,
 ) => {
   const customer = await db.billingCustomer.findFirst({
     where: { id: customerId },

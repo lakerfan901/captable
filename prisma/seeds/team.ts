@@ -1,18 +1,10 @@
-import type { MemberStatusEnum } from "@/prisma/enums";
-import { db } from "@/server/db";
 import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import colors from "colors";
-colors.enable();
+import type { MemberStatusEnum } from "@/prisma/enums";
+import { db } from "@/server/db";
 
-type UserType = {
-  name: string;
-  email: string;
-  title?: string;
-  image?: string;
-  isOnboarded?: boolean;
-  status?: MemberStatusEnum;
-};
+colors.enable();
 
 const seedTeam = async () => {
   const team = [

@@ -21,7 +21,7 @@ const CheckEmailComponent = () => {
     },
   });
 
-  async function Resend() {
+  async function resend() {
     try {
       if (email) {
         await mutateAsync(email);
@@ -49,7 +49,7 @@ const CheckEmailComponent = () => {
           <span className="text-sm font-bold"> {email} </span>. Please click the
           link in the email to verify your account.
         </div>
-        <Button onClick={Resend} disabled={!email} loading={isPending}>
+        <Button onClick={resend} disabled={!email} loading={isPending}>
           Resend verification email
         </Button>
       </div>
