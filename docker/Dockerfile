@@ -2,8 +2,9 @@ ARG NODE_VERSION=24.22.3
 
 FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine AS base
 LABEL fly_launch_runtime="Next.js/Prisma"
-# Prisma needs OpenSSL in every stage (generate, build and runtime). Recent
-# Alpine releases no longer ship libssl in the base image.
+# The Prisma 7 client is Rust-free and no longer needs OpenSSL, but the Prisma
+# CLI's schema engine (`prisma migrate deploy` in scripts/migrate.sh) still
+# does. Recent Alpine releases no longer ship libssl in the base image.
 # Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
 RUN apk add --no-cache libc6-compat openssl
 
@@ -13,6 +14,7 @@ WORKDIR /app
 # Install Prisma Client - remove if not using Prisma
 
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 
 ENV HUSKY=0
 
@@ -61,7 +63,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # copy prisma and migrate script
+# prisma.config.ts is self-contained, so the CLI can load it without the
+# project's node_modules.
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.sh ./scripts/migrate.sh
+COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/migrations ./prisma/migrations
 

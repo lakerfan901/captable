@@ -38,7 +38,7 @@ export const createPasskeyRegistrationOptions = async ({
     timeout: PASSKEY_TIMEOUT,
     attestationType: "none",
     excludeCredentials: passkeys.map((passkey) => ({
-      id: passkey.credentialId.toString("utf8"),
+      id: Buffer.from(passkey.credentialId).toString("utf8"),
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       transports: passkey.transports as AuthenticatorTransportFuture[],
     })),

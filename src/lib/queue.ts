@@ -1,11 +1,38 @@
 import type { JOB_TYPES } from "@/constants/job";
 import { logger } from "@/lib/logger";
 import { singleton } from "@/lib/singleton";
-import PgBoss from "pg-boss";
+import {
+  type Job,
+  type JobInsert,
+  PgBoss,
+  type Queue,
+  type SendOptions,
+  type WorkHandler,
+} from "pg-boss";
 import type { z } from "zod";
 
 const CONNECTION_URL =
   process.env.QUEUE_DATABASE_URL ?? (process.env.DATABASE_URL as string);
+
+/**
+ * pg-boss >= 11 cannot migrate a v10 schema (`captable_queue`, schema
+ * version 24), so the queue lives in a fresh schema. Pending jobs left in the
+ * old schema can be moved with `scripts/move-pgboss-v10-jobs.mjs`.
+ */
+const QUEUE_SCHEMA = "captable_jobs";
+
+const TWO_DAYS_IN_SECONDS = 60 * 60 * 24 * 2;
+
+// Retry and retention settings are per queue since pg-boss 11.
+const QUEUE_OPTIONS = {
+  retryBackoff: true,
+  retryLimit: 4,
+  // Archive tables were removed in pg-boss 11: completed jobs now stay in the
+  // job table until they are deleted.
+  deleteAfterSeconds: TWO_DAYS_IN_SECONDS,
+  // Jobs that are never picked up expire after this.
+  retentionSeconds: TWO_DAYS_IN_SECONDS,
+} satisfies Omit<Queue, "name">;
 
 const queue = singleton(
   "pg-boss",
@@ -13,12 +40,7 @@ const queue = singleton(
     new PgBoss({
       connectionString: CONNECTION_URL,
       max: 5,
-      retryBackoff: true,
-      retryLimit: 4,
-      archiveCompletedAfterSeconds: 60 * 60 * 2, // 2 hours
-      deleteAfterDays: 2,
-      retentionDays: 2,
-      schema: "captable_queue",
+      schema: QUEUE_SCHEMA,
     }),
 );
 
@@ -34,7 +56,7 @@ export type JobType = {
 interface WorkerFactory {
   name: JobType;
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  handler: PgBoss.WorkHandler<any>;
+  handler: WorkHandler<any>;
 }
 
 function createQueue() {
@@ -52,7 +74,10 @@ function createQueue() {
     for (const [jobName, job] of jobs.entries()) {
       log.info(logPrefix(`Registering job:${jobName}`));
 
-      await queue.createQueue(jobName);
+      // createQueue() is a no-op for an existing queue, so apply the options
+      // explicitly to keep existing queues in sync with QUEUE_OPTIONS.
+      await queue.createQueue(jobName, QUEUE_OPTIONS);
+      await queue.updateQueue(jobName, QUEUE_OPTIONS);
       await queue.work(jobName, job.handler);
     }
   }
@@ -70,10 +95,10 @@ function defineWorker<
   U extends ReturnType<typeof defineWorkerConfig>,
   T extends U["schema"],
   V,
->(config: U, handler: (data: PgBoss.Job<z.infer<T>>) => Promise<V>) {
+>(config: U, handler: (data: Job<z.infer<T>>) => Promise<V>) {
   return {
     name: config.name,
-    handler: ([job]: PgBoss.Job<z.infer<T>>[]) => {
+    handler: ([job]: Job<z.infer<T>>[]) => {
       if (!job) {
         throw new Error("");
       }
@@ -86,19 +111,17 @@ function defineWorker<
 function defineJob<U extends ReturnType<typeof defineWorkerConfig>>(config: U) {
   type TSchema = U["schema"];
   return {
-    emit: (data: z.infer<TSchema>, options?: PgBoss.JobOptions) => {
+    emit: (data: z.infer<TSchema>, options?: SendOptions) => {
       const data_ = config.schema.parse(data);
 
       return queue.send(config.name, data_, options ?? {});
     },
-    bulkEmit: (data: Omit<PgBoss.JobInsert<z.infer<TSchema>>, "name">[]) => {
+    bulkEmit: (data: JobInsert<z.infer<TSchema>>[]) => {
       for (const item of data) {
         config.schema.parse(item.data);
       }
 
-      return queue.insert(
-        data.map((items) => ({ ...items, name: config.name })),
-      );
+      return queue.insert(config.name, data);
     },
   };
 }

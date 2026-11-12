@@ -1,3 +1,4 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
 import { env } from "@/env";
@@ -11,7 +12,12 @@ declare global {
 }
 
 function getExtendedClient() {
+  // Prisma 7 requires a driver adapter; the URL is no longer read from the
+  // schema.
+  const adapter = new PrismaPg({ connectionString: env.DATABASE_URL });
+
   return new PrismaClient({
+    adapter,
     log: env.LOGS ? ["query", "error", "warn"] : ["error"],
   }).$extends(pagination());
 }

@@ -54,7 +54,7 @@ export const createPasskeyAuthenticationOptions = async ({
     allowCredentials: preferredPasskey
       ? [
           {
-            id: preferredPasskey.credentialId.toString("utf8"),
+            id: Buffer.from(preferredPasskey.credentialId).toString("utf8"),
             // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
             transports:
               preferredPasskey.transports as AuthenticatorTransportFuture[],
