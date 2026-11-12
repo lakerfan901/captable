@@ -1,7 +1,9 @@
 import { generatePublicId } from "@/common/id";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { ZodAddExistingSafeMutationSchema } from "../schema";
 
 export const addExistingSafeProcedure = withAuth
@@ -14,6 +16,11 @@ export const addExistingSafeProcedure = withAuth
     try {
       await ctx.db.$transaction(async (tx) => {
         const { companyId, memberId } = await checkMembership({ session, tx });
+
+        await assertCompanyOwns(tx, companyId, {
+          bucketIds: documents.map((doc) => doc.bucketId),
+          stakeholderIds: [rest.stakeholderId],
+        });
 
         const safe = await tx.safe.create({
           data: {
@@ -60,6 +67,9 @@ export const addExistingSafeProcedure = withAuth
         message: "SAFEs imported for the stakeholder.",
       };
     } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
       console.error("Error adding existing SAFEs:", error);
       return {
         success: false,

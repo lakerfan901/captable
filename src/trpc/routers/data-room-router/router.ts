@@ -5,8 +5,10 @@ import { encode } from "@/lib/jwt";
 import { ShareRecipientSchema } from "@/schema/contacts";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { createTRPCRouter, withAuth } from "@/trpc/api/trpc";
 import type { DataRoom } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { DataRoomSchema } from "./schema";
 
@@ -61,6 +63,8 @@ export const dataRoomRouter = createTRPCRouter({
           const dataRoomDocument = await tx.dataRoomDocument.findMany({
             where: {
               id: { in: documentIds },
+              dataRoomId: dataRoom.id,
+              document: { companyId },
             },
 
             include: {
@@ -141,9 +145,29 @@ export const dataRoomRouter = createTRPCRouter({
             tx,
           );
         } else {
+          const { documents, recipients } = input;
+
+          await assertCompanyOwns(tx, companyId, {
+            documentIds: documents?.map((document) => document.documentId),
+            memberIds: recipients?.map((recipient) => recipient.memberId),
+            stakeholderIds: recipients?.map(
+              (recipient) => recipient.stakeholderId,
+            ),
+          });
+
+          const existing = await tx.dataRoom.findFirst({
+            where: { publicId, companyId },
+            select: { id: true },
+          });
+
+          if (!existing) {
+            throw new TRPCError({ code: "NOT_FOUND" });
+          }
+
           room = await tx.dataRoom.update({
             where: {
-              publicId,
+              id: existing.id,
+              companyId,
             },
             data: {
               name: input.name,
@@ -164,8 +188,6 @@ export const dataRoomRouter = createTRPCRouter({
             },
             tx,
           );
-
-          const { documents, recipients } = input;
 
           if (documents) {
             await tx.dataRoomDocument.createMany({
@@ -196,6 +218,9 @@ export const dataRoomRouter = createTRPCRouter({
         data: room,
       };
     } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
       console.error(error);
       return {
         success: false,
@@ -216,8 +241,9 @@ export const dataRoomRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { session, db, requestIp, userAgent } = ctx;
       const { dataRoomId, others, selectedContacts } = input;
-      const { name: senderName, email: senderEmail, companyId } = session.user;
+      const { name: senderName, email: senderEmail } = session.user;
       const { user } = session;
+      const { companyId } = await checkMembership({ session, tx: db });
       const dataRoom = await db.dataRoom.findUniqueOrThrow({
         where: {
           id: dataRoomId,
@@ -234,6 +260,17 @@ export const dataRoomRouter = createTRPCRouter({
       }
 
       const company = dataRoom.company;
+
+      // Recipient member/stakeholder ids come from the client.
+      const allRecipients = [...others, ...selectedContacts];
+      await assertCompanyOwns(db, companyId, {
+        memberIds: allRecipients
+          .filter((recipient) => recipient.type === "member")
+          .map((recipient) => recipient.id),
+        stakeholderIds: allRecipients
+          .filter((recipient) => recipient.type === "stakeholder")
+          .map((recipient) => recipient.id),
+      });
 
       const upsertManyRecipients = async () => {
         const baseUrl = env.NEXT_PUBLIC_BASE_URL;
@@ -329,7 +366,7 @@ export const dataRoomRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { session, db, requestIp, userAgent } = ctx;
       const { dataRoomId, recipientId } = input;
-      const companyId = session.user.companyId;
+      const { companyId } = await checkMembership({ session, tx: db });
       const { user } = session;
       const dataRoom = await db.dataRoom.findUniqueOrThrow({
         where: {

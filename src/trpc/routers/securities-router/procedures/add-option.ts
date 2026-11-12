@@ -1,7 +1,9 @@
 import { generatePublicId } from "@/common/id";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { ZodAddOptionMutationSchema } from "../schema";
 
 export const addOptionProcedure = withAuth
@@ -16,6 +18,12 @@ export const addOptionProcedure = withAuth
         const { companyId } = await checkMembership({
           tx,
           session: ctx.session,
+        });
+
+        await assertCompanyOwns(tx, companyId, {
+          bucketIds: documents.map((doc) => doc.bucketId),
+          stakeholderIds: [input.stakeholderId],
+          equityPlanIds: [input.equityPlanId],
         });
 
         const data = {
@@ -71,6 +79,9 @@ export const addOptionProcedure = withAuth
 
       return { success: true, message: "🎉 Successfully added an option" };
     } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
       console.error("Error adding options:", error);
       return {
         success: false,

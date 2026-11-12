@@ -1,6 +1,8 @@
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { createTRPCRouter, withAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { EquityPlanMutationSchema } from "./schema";
 
 export const equityPlanRouter = createTRPCRouter({
@@ -35,6 +37,10 @@ export const equityPlanRouter = createTRPCRouter({
         await ctx.db.$transaction(async (tx) => {
           const { companyId } = await checkMembership({ session, tx });
 
+          await assertCompanyOwns(tx, companyId, {
+            shareClassIds: [input.shareClassId],
+          });
+
           const data = {
             companyId,
             name: input.name,
@@ -67,6 +73,9 @@ export const equityPlanRouter = createTRPCRouter({
 
         return { success: true, message: "Equity plan created successfully." };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         console.error("Error creating an equity plan:", error);
         return {
           success: false,
@@ -84,6 +93,10 @@ export const equityPlanRouter = createTRPCRouter({
         await ctx.db.$transaction(async (tx) => {
           const { companyId } = await checkMembership({ tx, session });
 
+          await assertCompanyOwns(tx, companyId, {
+            shareClassIds: [input.shareClassId],
+          });
+
           const data = {
             name: input.name,
             planEffectiveDate: input.planEffectiveDate
@@ -97,7 +110,7 @@ export const equityPlanRouter = createTRPCRouter({
           };
 
           await tx.equityPlan.update({
-            where: { id: input.id },
+            where: { id: input.id, companyId },
             data,
           });
 
@@ -119,6 +132,9 @@ export const equityPlanRouter = createTRPCRouter({
 
         return { success: true, message: "Equity plan updated successfully." };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         console.error("Error updating an equity plan:", error);
         return {
           success: false,

@@ -1,7 +1,9 @@
 import { generatePublicId } from "@/common/id";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { ZodAddShareMutationSchema } from "../schema";
 
 export const addShareProcedure = withAuth
@@ -19,6 +21,12 @@ export const addShareProcedure = withAuth
         const { companyId } = await checkMembership({
           session: ctx.session,
           tx,
+        });
+
+        await assertCompanyOwns(tx, companyId, {
+          bucketIds: documents.map((doc) => doc.bucketId),
+          stakeholderIds: [input.stakeholderId],
+          shareClassIds: [input.shareClassId],
         });
 
         const data = {
@@ -78,6 +86,9 @@ export const addShareProcedure = withAuth
         message: "🎉 Successfully added a share",
       };
     } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
       console.error("Error adding shares: ", error);
       return {
         success: false,

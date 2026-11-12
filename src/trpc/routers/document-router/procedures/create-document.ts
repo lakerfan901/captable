@@ -1,6 +1,7 @@
 import { generatePublicId } from "@/common/id";
 import { Audit } from "@/server/audit";
 import type { TPrismaOrTransaction } from "@/server/db";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import {
   withAccessControl,
   type withAuthTrpcContextType,
@@ -28,6 +29,9 @@ export const createDocumentHandler = async ({
   uploaderName,
   uploaderId,
 }: createDocumentHandlerOptions) => {
+  // The bucket id may come from the client: refuse another company's bucket.
+  await assertCompanyOwns(db, companyId, { bucketIds: [input.bucketId] });
+
   const publicId = generatePublicId();
 
   const document = await db.document.create({

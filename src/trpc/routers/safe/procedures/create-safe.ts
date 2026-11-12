@@ -6,8 +6,10 @@ import { TAG } from "@/lib/tags";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
 import { uploadFile } from "@/server/file-uploads";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth } from "@/trpc/api/trpc";
 import type { Prisma } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 import { createBucketHandler } from "../../bucket-router/procedures/create-bucket";
 import { createTemplateHandler } from "../../template-router/procedures/create-template";
 import { ZodCreateSafeMutationSchema } from "../schema";
@@ -55,6 +57,12 @@ export const createSafeProcedure = withAuth
         const { companyId, memberId } = await checkMembership({
           session,
           tx,
+        });
+
+        await assertCompanyOwns(tx, companyId, {
+          stakeholderIds: [input.stakeholderId],
+          bucketIds:
+            input.safeTemplate === "CUSTOM" ? [input.document.bucketId] : [],
         });
 
         if (uploadData) {
@@ -145,6 +153,9 @@ export const createSafeProcedure = withAuth
         template,
       };
     } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
       console.error("Error creating safe:", error);
       return {
         success: false as const,

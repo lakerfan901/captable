@@ -3,6 +3,8 @@ import { ShareClassMutationSchema } from "./schema";
 
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
+import { TRPCError } from "@trpc/server";
 
 export const shareClassRouter = createTRPCRouter({
   create: withAuth
@@ -19,6 +21,10 @@ export const shareClassRouter = createTRPCRouter({
           const { companyId } = await checkMembership({
             tx,
             session: ctx.session,
+          });
+
+          await assertCompanyOwns(tx, companyId, {
+            shareClassIds: [input.convertsToShareClassId],
           });
 
           const maxIdx = await tx.shareClass.count({
@@ -67,6 +73,9 @@ export const shareClassRouter = createTRPCRouter({
 
         return { success: true, message: "Share class created successfully." };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         console.error("Error creating shareClass:", error);
         return {
           success: false,
@@ -91,6 +100,10 @@ export const shareClassRouter = createTRPCRouter({
             session: ctx.session,
           });
 
+          await assertCompanyOwns(tx, companyId, {
+            shareClassIds: [input.id, input.convertsToShareClassId],
+          });
+
           const data = {
             prefix,
             name: input.name,
@@ -109,7 +122,7 @@ export const shareClassRouter = createTRPCRouter({
           };
 
           await tx.shareClass.update({
-            where: { id: input.id },
+            where: { id: input.id, companyId },
             data,
           });
 
@@ -131,6 +144,9 @@ export const shareClassRouter = createTRPCRouter({
 
         return { success: true, message: "Share class updated successfully." };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         console.error("Error updating shareClass:", error);
         return {
           success: false,

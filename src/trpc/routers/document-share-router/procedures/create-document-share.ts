@@ -1,6 +1,8 @@
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withAuth, type withAuthTrpcContextType } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import {
   DocumentShareMutationSchema,
   type TypeDocumentShareMutation,
@@ -24,7 +26,11 @@ export const createDocumentShareHandler = async ({
     await ctx.db.$transaction(async (tx) => {
       const { companyId } = await checkMembership({ session, tx });
 
-      const documentShare = await ctx.db.documentShare.create({
+      await assertCompanyOwns(tx, companyId, {
+        documentIds: [rest.documentId],
+      });
+
+      const documentShare = await tx.documentShare.create({
         data: {
           ...rest,
           recipients: recipients ? [recipients] : [],
@@ -49,6 +55,9 @@ export const createDocumentShareHandler = async ({
 
     return { success: true, message: "Document share created successfully." };
   } catch (err) {
+    if (err instanceof TRPCError) {
+      throw err;
+    }
     return {
       success: false,
       message: "Oops, something went wrong. Please try again later.",
