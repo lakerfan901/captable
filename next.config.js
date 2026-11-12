@@ -17,6 +17,11 @@ const nextConfig = {
   // Pin the tracing root to this repo so a stray lockfile in a parent
   // directory cannot change what the standalone build includes.
   outputFileTracingRoot: import.meta.dirname,
+  // pdfkit (used by @react-pdf/renderer) loads its standard fonts with dynamic
+  // requires that file tracing cannot see, so include them explicitly.
+  outputFileTracingIncludes: {
+    "/**": ["./node_modules/.pnpm/pdfkit@*/node_modules/pdfkit/js/**"],
+  },
   images: {
     remotePatterns: [
       {
