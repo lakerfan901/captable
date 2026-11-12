@@ -72,7 +72,7 @@ export const update = withAuthApiV1
       userAgent: string;
     };
 
-    const body = await c.req.json<TUpdateStakeholderSchema>();
+    const body: TUpdateStakeholderSchema = c.req.valid("json");
 
     const updatedStakeHolder = await db.$transaction(async (tx) => {
       const stakeholder = await tx.stakeholder.findUnique({
@@ -97,6 +97,7 @@ export const update = withAuthApiV1
       const updatedStakeHolder = await tx.stakeholder.update({
         where: {
           id: stakeholder.id,
+          companyId: membership.companyId,
         },
         data: body,
       });

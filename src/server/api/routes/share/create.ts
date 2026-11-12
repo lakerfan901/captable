@@ -5,6 +5,7 @@ import {
 } from "../../schema/shares";
 
 import { authMiddleware, withAuthApiV1 } from "../../utils/endpoint-creator";
+import { assertCompanyOwnsForApi } from "../../utils/tenant-ownership";
 
 const ResponseSchema = z.object({
   message: z.string(),
@@ -60,6 +61,11 @@ export const create = withAuthApiV1
     const body = c.req.valid("json");
 
     const share = await db.$transaction(async (tx) => {
+      await assertCompanyOwnsForApi(tx, membership.companyId, {
+        stakeholderIds: [body.stakeholderId],
+        shareClassIds: [body.shareClassId],
+      });
+
       const share = await tx.share.create({
         data: { ...body, companyId: membership.companyId },
       });

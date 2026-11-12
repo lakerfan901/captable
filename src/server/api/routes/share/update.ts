@@ -8,6 +8,7 @@ import {
 } from "../../schema/shares";
 
 import { authMiddleware, withAuthApiV1 } from "../../utils/endpoint-creator";
+import { assertCompanyOwnsForApi } from "../../utils/tenant-ownership";
 
 const ParamsSchema = z.object({
   id: z.string().openapi({
@@ -41,7 +42,7 @@ export const update = withAuthApiV1
     description: "Update details of an issued share by its ID.",
     tags: ["Shares"],
     method: "patch",
-    path: "/v1/{companyId}/stakeholders/{id}",
+    path: "/v1/{companyId}/shares/{id}",
     middleware: [authMiddleware()],
     request: {
       params: ParamsSchema,
@@ -73,7 +74,12 @@ export const update = withAuthApiV1
     const body = c.req.valid("json");
 
     const updatedShare = await db.$transaction(async (tx) => {
-      const share = await db.share.findUnique({
+      await assertCompanyOwnsForApi(tx, membership.companyId, {
+        stakeholderIds: [body.stakeholderId],
+        shareClassIds: [body.shareClassId],
+      });
+
+      const share = await tx.share.findUnique({
         where: {
           id,
           companyId: membership.companyId,
@@ -87,9 +93,12 @@ export const update = withAuthApiV1
         });
       }
 
+      // `companyId` is not in UpdateShareSchema (zod strips it), so a share
+      // can't be moved to another company.
       const updatedShare = await tx.share.update({
         where: {
           id: share.id,
+          companyId: membership.companyId,
         },
         data: body,
       });

@@ -46,7 +46,7 @@ export const getOne = withAuthApiV1
     const { id: companyId } = c.req.valid("param");
 
     const member = await db.member.findFirst({
-      where: { companyId, id: membership.memberId },
+      where: { companyId, userId: membership.userId, status: "ACTIVE" },
       select: { companyId: true },
     });
 

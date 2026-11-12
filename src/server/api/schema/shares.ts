@@ -134,6 +134,7 @@ export const UpdateShareSchema = ShareSchema.omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  companyId: true,
 })
   .partial()
   .refine(
