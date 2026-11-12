@@ -12,7 +12,7 @@ export const checkoutProcedure = withAuth
     const { priceId, priceType } = input;
     const { db, session } = ctx;
 
-    const { stripeSessionId } = await db.$transaction(async (tx) => {
+    const { stripeSessionId, url } = await db.$transaction(async (tx) => {
       const { companyId } = await checkMembership({ session, tx });
 
       let customer: string;
@@ -51,8 +51,10 @@ export const checkoutProcedure = withAuth
 
       invariant(stripeSession, "session not found");
 
-      return { stripeSessionId: stripeSession.id };
+      // `url` is the hosted Checkout page; newer Stripe.js releases no longer
+      // offer redirectToCheckout, so clients can redirect to it directly.
+      return { stripeSessionId: stripeSession.id, url: stripeSession.url };
     });
 
-    return { stripeSessionId };
+    return { stripeSessionId, url };
   });
