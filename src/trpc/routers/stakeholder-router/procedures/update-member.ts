@@ -30,9 +30,23 @@ export const updateMemberProcedure = withLlcAccessControl
           }
 
           // Never changes memberStatus or admittedOn (not in the input).
+          // The edit form always submits every field, so an optional field
+          // that is absent means the Manager cleared it.
           const updated = await tx.stakeholder.update({
             where: { id, companyId },
-            data,
+            data: {
+              ...data,
+              residenceState: data.residenceState ?? null,
+              accreditationBasis: data.accreditationBasis ?? null,
+              signerName: data.signerName || null,
+              signerTitle: data.signerTitle || null,
+              noticeEmail: data.noticeEmail ?? null,
+              phone: data.phone || null,
+              streetAddress: data.streetAddress || null,
+              city: data.city || null,
+              state: data.state ?? null,
+              zipcode: data.zipcode || null,
+            },
           });
 
           await Audit.create(
