@@ -10,6 +10,7 @@ interface SigningFieldsProps {
   companyPublicId: string | undefined;
   recipientId: string;
   templateId: string;
+  token: string;
 }
 
 export function SigningFields({
@@ -17,11 +18,13 @@ export function SigningFields({
   companyPublicId,
   recipientId,
   templateId,
+  token,
 }: SigningFieldsProps) {
   return (
     <SigningFieldForm
       recipientId={recipientId}
       templateId={templateId}
+      token={token}
       companyPublicId={companyPublicId}
     >
       {fields.map((item) => (

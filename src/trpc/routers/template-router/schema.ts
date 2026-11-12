@@ -27,6 +27,8 @@ export const ZodGetTemplateQuerySchema = z.object({
 });
 
 export const SignTemplateMutationSchema = z.object({
+  /** The signing-link token; it binds the template and the recipient. */
+  token: z.string(),
   templateId: z.string(),
   data: z.record(z.string(), z.string()),
   recipientId: z.string(),

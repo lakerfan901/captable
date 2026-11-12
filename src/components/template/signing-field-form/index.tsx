@@ -12,6 +12,7 @@ interface SigningFieldFormProps extends ComponentProps<"form"> {
   children: ReactNode;
   recipientId: string;
   templateId: string;
+  token: string;
 }
 
 export function SigningFieldForm({
@@ -19,6 +20,7 @@ export function SigningFieldForm({
   children,
   recipientId,
   templateId,
+  token,
   ...rest
 }: SigningFieldFormProps) {
   const { handleSubmit } = useFormContext<TemplateSigningFieldForm>();
@@ -41,6 +43,7 @@ export function SigningFieldForm({
       data: values.fieldValues,
       recipientId,
       templateId,
+      token,
     });
   };
 

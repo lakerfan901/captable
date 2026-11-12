@@ -57,6 +57,7 @@ export default async function SigningPage(props: SigningPageProps) {
           <SigningFields
             recipientId={recipientId}
             templateId={templateId}
+            token={token}
             fields={signableFields}
             companyPublicId={companyPublicId}
           />

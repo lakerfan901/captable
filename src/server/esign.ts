@@ -69,10 +69,12 @@ export function getEsignTemplate({ tx, templateId }: getEsignTemplateOptions) {
         },
       },
       message: true,
+      status: true,
       company: {
         select: {
           name: true,
           logo: true,
+          publicId: true,
         },
       },
     },

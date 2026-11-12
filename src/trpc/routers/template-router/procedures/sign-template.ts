@@ -1,12 +1,26 @@
+import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
 import { EsignService } from "@/services/esign-service";
 import { withoutAuth } from "@/trpc/api/trpc";
+import { TRPCError } from "@trpc/server";
 import { UAParser } from "ua-parser-js";
+import { DecodeEmailToken } from "../../template-field-router/procedures/add-fields";
 import { SignTemplateMutationSchema } from "../schema";
 
 export const signTemplateProcedure = withoutAuth
   .input(SignTemplateMutationSchema)
   .mutation(async ({ ctx, input }) => {
     const { db, requestIp, userAgent } = ctx;
+
+    // Public endpoint: the signing token (sent by email) is the credential.
+    const token = await DecodeEmailToken(input.token).catch(() => null);
+
+    if (
+      !token ||
+      token.id !== input.templateId ||
+      token.rec !== input.recipientId
+    ) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Invalid token" });
+    }
 
     const userAgentParser = new UAParser(userAgent);
     const userAgentResult = userAgentParser.getResult();
@@ -15,9 +29,26 @@ export const signTemplateProcedure = withoutAuth
     const eSignService = new EsignService();
 
     await db.$transaction(async (tx) => {
-      const template = await eSignService.getTemplate(input.templateId, tx);
+      const template = await eSignService.getTemplate(token.id, tx);
+
+      if (template.status !== "PENDING") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This document is not open for signing.",
+        });
+      }
 
       const bucketKey = template.bucket.key;
+
+      // Never render another company's object into this company's document.
+      if (
+        !isKeyInCompanyNamespace(bucketKey, {
+          id: template.companyId,
+          publicId: template.company.publicId,
+        })
+      ) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
       const companyId = template.companyId;
       const templateName = template.name;
       const sender = template.uploader.user;
@@ -28,10 +59,17 @@ export const signTemplateProcedure = withoutAuth
       const isOrderedDelivery = template.orderedDelivery;
 
       const recipient = await eSignService.getRecipient(
-        input.recipientId,
+        token.rec,
         template.id,
         tx,
       );
+
+      if (recipient.status !== "SENT") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This signature request is not active.",
+        });
+      }
 
       await eSignService.updateRecipientStatus(recipient.id, "SIGNED", tx);
 

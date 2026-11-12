@@ -109,6 +109,20 @@ export const addFieldProcedure = withAuth
           },
         });
 
+        const templateRecipientIds = new Set(
+          recipientList.map((item) => item.id),
+        );
+        if (
+          input.data.some(
+            (field) => !templateRecipientIds.has(field.recipientId),
+          )
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Field recipient does not belong to this template.",
+          });
+        }
+
         const fieldsList = [];
 
         for (const field of input.data) {
