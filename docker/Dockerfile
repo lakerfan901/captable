@@ -1,6 +1,6 @@
 ARG NODE_VERSION=24.22.3
 
-FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine AS base
+FROM node:${NODE_VERSION}-alpine AS base
 LABEL fly_launch_runtime="Next.js/Prisma"
 # The Prisma 7 client is Rust-free and no longer needs OpenSSL, but the Prisma
 # CLI's schema engine (`prisma migrate deploy` in scripts/migrate.sh) still

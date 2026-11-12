@@ -38,7 +38,7 @@ services:
       EMAIL_SERVER: ${EMAIL_SERVER:-smtp://captable:password@smtp:1025}
       EMAIL_FROM: ${EMAIL_FROM:-captable@localhost}
       UPLOAD_ENDPOINT: ${UPLOAD_PUBLIC_URL:?set UPLOAD_PUBLIC_URL}
-      NEXT_PUBLIC_UPLOAD_DOMAIN: ${UPLOAD_PUBLIC_URL}
+      NEXT_PUBLIC_UPLOAD_DOMAIN: ${UPLOAD_PUBLIC_URL}/captable-public-bucket
       UPLOAD_REGION: us-east-1
       UPLOAD_FORCE_PATH_STYLE: "true"
       UPLOAD_ACCESS_KEY_ID: captable
