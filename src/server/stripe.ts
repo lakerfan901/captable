@@ -14,12 +14,20 @@ const toDateTime = (secs: number) => {
   return t;
 };
 
+// Billing is optional (STRIPE_API_KEY may be unset). stripe-node now throws
+// when constructed without a key, so fall back to a placeholder: requests then
+// fail with an authentication error, as they did with the empty key before.
+const STRIPE_API_KEY_NOT_CONFIGURED = "sk_not_configured";
+
 // Pinned to the API version that this stripe-node major is generated for, so
 // the TypeScript types match the responses. Bump it together with `stripe`.
-export const stripe = new Stripe(env.STRIPE_API_KEY ?? "", {
-  typescript: true,
-  apiVersion: "2026-10-28.endive",
-});
+export const stripe = new Stripe(
+  env.STRIPE_API_KEY ?? STRIPE_API_KEY_NOT_CONFIGURED,
+  {
+    typescript: true,
+    apiVersion: "2026-10-28.endive",
+  },
+);
 
 export { Stripe };
 
