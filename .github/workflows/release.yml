@@ -1,3 +1,8 @@
+# NOTE FOR FORKS: this workflow pushes to the upstream Docker Hub repo
+# (captable/captable) and deploys to the upstream Fly.io app, so it is guarded
+# to only run in captableinc/captable. To publish from your own fork, change the
+# image names / registry credentials and Fly app, then change or remove the
+# `if: github.repository == ...` guard on the job below.
 name: Production
 
 on:
@@ -7,6 +12,7 @@ on:
 jobs:
   push_to_registries:
     name: Publish docker image & deploy to production
+    if: github.repository == 'captableinc/captable'
     runs-on: ubuntu-latest
     concurrency:
       group: release
