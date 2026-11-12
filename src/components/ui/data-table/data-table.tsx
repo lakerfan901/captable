@@ -11,7 +11,7 @@ interface TDataTableContext<TData extends RowData> {
   table: ReactTable<DataTableFeatures, TData>;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: context is generic over any row type
 type AnyDataTableContext = TDataTableContext<any>;
 
 const dataTableContext = createContext<AnyDataTableContext | null>(null);

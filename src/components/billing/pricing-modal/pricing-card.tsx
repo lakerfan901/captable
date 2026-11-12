@@ -17,7 +17,7 @@ interface PricingCardProps {
   interval: PricingPlanInterval;
   subscribedUnitAmount?: bigint | null;
   unitAmount: number;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: click handler return type is caller-defined
   handleClick?: () => Promise<any>;
   isSubmitting: boolean;
 }

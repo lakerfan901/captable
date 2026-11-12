@@ -76,7 +76,7 @@ const TeamMemberUploader = ({ setOpen }: TeamMemberUploaderType) => {
         , complete and upload it to import your existing or new team members.
       </div>
 
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: <explanation> */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: pre-existing click-only drop target; adding keyboard handling is a behaviour change */}
       <div
         className="flex h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-gray-300"
         onClick={() => fileInputRef.current?.click()}

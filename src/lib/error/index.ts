@@ -48,7 +48,7 @@ export function invariant<T>(
   message?: string,
 ): asserts value is T;
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: invariant accepts any value to narrow
 export function invariant(value: any, message?: string) {
   if (value === false || value === null || typeof value === "undefined") {
     throw new Error(message);

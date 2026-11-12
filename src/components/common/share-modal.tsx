@@ -6,7 +6,7 @@ import {
   RiDeleteBin2Line as DeleteIcon,
   RiLink as LinkIcon,
 } from "@remixicon/react";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { useCopyToClipboard } from "usehooks-ts";
 import Loading from "@/components/common/loading";
 import Modal from "@/components/common/push-modal";
@@ -84,7 +84,6 @@ const Share = ({
             setSelected={setSelected}
             options={contacts?.map((contact) => ({
               label:
-                // biome-ignore lint: It's okay to concatenate with + ;)
                 `${contact.name}` +
                 (contact.institutionName
                   ? ` - ${contact.institutionName}`

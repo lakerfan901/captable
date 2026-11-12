@@ -59,7 +59,7 @@ export function Uploader({
   const [uploading, setUploading] = useState(false);
   const { mutateAsync } = api.bucket.create.useMutation();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: callback intentionally not recreated on every prop change; adding deps would change dropzone behaviour
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     try {
       if (!multiple && acceptedFiles.length > 1) {
@@ -90,7 +90,7 @@ export function Uploader({
           });
 
           if (onSuccess) {
-            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            // biome-ignore lint/suspicious/noExplicitAny: onSuccess payload type differs from the mutation result
             await onSuccess(data as any);
           }
 
@@ -98,7 +98,7 @@ export function Uploader({
         }
       } else {
         if (onSuccess) {
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          // biome-ignore lint/suspicious/noExplicitAny: onSuccess payload type differs from the mutation result
           await onSuccess(acceptedFiles as any);
         }
         toast.success("🎉 Successfully uploaded");

@@ -148,7 +148,7 @@ export function parseZodErrorMessage(err: z.ZodError): string {
       message: string;
       path: Array<string>;
     }[];
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    // biome-ignore lint/style/noNonNullAssertion: zod issue arrays are never empty; the surrounding try/catch handles malformed input
     const { path, message } = arr[0]!;
     return `${path.join(".")}: ${message}`;
   } catch {

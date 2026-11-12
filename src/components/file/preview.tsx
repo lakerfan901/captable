@@ -17,7 +17,7 @@ const ImagePreview = ({ url, name }: FilePreviewProps) => {
 
 const AuditPreview = ({ url, name, mimeType }: FilePreviewProps) => {
   return (
-    // biome-ignore lint/a11y/useMediaCaption: <explanation>
+    // biome-ignore lint/a11y/useMediaCaption: user-uploaded media has no caption track available
     <audio controls className="w-full">
       <source src={url} type={mimeType} />
       Your browser does not support the audio element.
@@ -27,7 +27,7 @@ const AuditPreview = ({ url, name, mimeType }: FilePreviewProps) => {
 
 const VideoPreview = ({ url, name, mimeType }: FilePreviewProps) => {
   return (
-    // biome-ignore lint/a11y/useMediaCaption: <explanation>
+    // biome-ignore lint/a11y/useMediaCaption: user-uploaded media has no caption track available
     <video controls className="w-full rounded">
       <source src={url} type={mimeType} />
       Your browser does not support the video type.

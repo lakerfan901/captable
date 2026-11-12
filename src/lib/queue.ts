@@ -55,7 +55,7 @@ export type JobType = {
 
 interface WorkerFactory {
   name: JobType;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: handler payload type varies per queue
   handler: WorkHandler<any>;
 }
 
@@ -131,7 +131,7 @@ interface defineWorkerConfigOptions<T> {
   name: JobType;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: schema generic is erased for heterogeneous worker configs
 function defineWorkerConfig<T extends z.ZodObject<any>>(
   opts: defineWorkerConfigOptions<T>,
 ) {

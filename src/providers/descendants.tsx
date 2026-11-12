@@ -7,7 +7,6 @@ import * as React from "react";
 import { useForceUpdate } from "@/hooks/use-force-update";
 import { useIsomorphicLayoutEffect as useLayoutEffect } from "@/hooks/use-isomorphic-layout-effect";
 
-// biome-ignore lint/suspicious/noEmptyBlockStatements: <explanation>
 export function noop(): void {}
 
 function createDescendantContext<DescendantType extends Descendant>(
@@ -178,7 +177,7 @@ function findDOMIndex<DescendantType extends Descendant>(
  * @returns A copy of the array with the item inserted at the specified index
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: generic over arbitrary array element types
 function insertAt<T extends any[]>(
   array: T,
   item: T[number],

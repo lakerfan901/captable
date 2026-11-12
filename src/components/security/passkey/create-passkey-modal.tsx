@@ -54,7 +54,7 @@ const PasskeyModal = ({ title, subtitle, trigger }: PasskeyModalType) => {
     },
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: effect must run only on mount to derive the default passkey name
   useEffect(() => {
     const extractDefaultPasskeyName = () => {
       if (!window?.navigator) {

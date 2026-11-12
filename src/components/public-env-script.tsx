@@ -9,7 +9,7 @@ export function PublicEnvScript() {
   return (
     <Script
       strategy="beforeInteractive"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: <explanation>
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: inlines server-serialized public env JSON, no user input
       dangerouslySetInnerHTML={{
         __html: `window.${PUBLIC_ENV_KEY} = ${publicEnvs}`,
       }}
