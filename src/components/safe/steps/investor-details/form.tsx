@@ -38,7 +38,7 @@ import { NumericFormat } from "react-number-format";
 import { z } from "zod";
 
 const formSchema = z.object({
-  capital: z.coerce.number(),
+  capital: z.coerce.number<number>(),
   issueDate: z.string().date(),
   boardApprovalDate: z.string().date(),
   stakeholderId: z.string(),

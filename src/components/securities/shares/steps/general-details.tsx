@@ -58,11 +58,11 @@ const formSchema = z.object({
   shareClassId: z.string(),
   certificateId: z.string(),
   status: z.nativeEnum(SecuritiesStatusEnum),
-  quantity: z.coerce.number().min(0),
-  cliffYears: z.coerce.number().min(0),
-  vestingYears: z.coerce.number().min(0),
+  quantity: z.coerce.number<number>().min(0),
+  cliffYears: z.coerce.number<number>().min(0),
+  vestingYears: z.coerce.number<number>().min(0),
   companyLegends: z.nativeEnum(ShareLegendsEnum).array(),
-  pricePerShare: z.coerce.number().min(0),
+  pricePerShare: z.coerce.number<number>().min(0),
 });
 
 type TFormSchema = z.infer<typeof formSchema>;

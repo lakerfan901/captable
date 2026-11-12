@@ -24,9 +24,9 @@ import { z } from "zod";
 
 const formSchema = z.object({
   safeId: z.string().min(1),
-  valuationCap: z.coerce.number(),
-  discountRate: z.coerce.number().optional(),
-  proRata: z.boolean().default(false).optional(),
+  valuationCap: z.coerce.number<number>(),
+  discountRate: z.coerce.number<number>().optional(),
+  proRata: z.boolean().optional(),
 });
 
 export type TFormSchema = z.infer<typeof formSchema>;

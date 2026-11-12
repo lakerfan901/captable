@@ -134,12 +134,16 @@ export const env = createEnv({
    */
   emptyStringAsUndefined: true,
 
-  onValidationError: (error) => {
+  onValidationError: (issues) => {
     if (!isBrowser()) {
-      console.error(
-        "❌ Invalid environment variables:",
-        error.flatten().fieldErrors,
-      );
+      // Same shape as ZodError#flatten().fieldErrors: { VAR: [messages] }
+      const fieldErrors = {};
+      for (const issue of issues) {
+        const segment = issue.path?.[0];
+        const key = typeof segment === "object" ? segment.key : segment;
+        fieldErrors[key] = [...(fieldErrors[key] ?? []), issue.message];
+      }
+      console.error("❌ Invalid environment variables:", fieldErrors);
       throw new Error("Invalid environment variables");
     }
   },

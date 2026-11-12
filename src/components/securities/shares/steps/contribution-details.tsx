@@ -37,10 +37,10 @@ interface ContributionDetailsProps {
 
 const formSchema = z.object({
   stakeholderId: z.string(),
-  capitalContribution: z.coerce.number().min(0),
-  ipContribution: z.coerce.number().min(0),
-  debtCancelled: z.coerce.number().min(0),
-  otherContributions: z.coerce.number().min(0),
+  capitalContribution: z.coerce.number<number>().min(0),
+  ipContribution: z.coerce.number<number>().min(0),
+  debtCancelled: z.coerce.number<number>().min(0),
+  otherContributions: z.coerce.number<number>().min(0),
 });
 
 type TFormSchema = z.infer<typeof formSchema>;

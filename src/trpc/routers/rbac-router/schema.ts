@@ -4,9 +4,9 @@ import { z } from "zod";
 
 export const ZodCreateRoleMutationSchema = z.object({
   name: z.string().min(1),
-  permissions: z.record(
+  permissions: z.partialRecord(
     z.enum(SUBJECTS),
-    z.record(z.enum(ACTIONS), z.boolean()),
+    z.partialRecord(z.enum(ACTIONS), z.boolean()),
   ),
 });
 
@@ -17,9 +17,9 @@ export type TypeZodCreateRoleMutationSchema = z.infer<
 export const ZodUpdateRoleMutationSchema = z.object({
   roleId: z.string().min(1),
   name: z.string().min(1),
-  permissions: z.record(
+  permissions: z.partialRecord(
     z.enum(SUBJECTS),
-    z.record(z.enum(ACTIONS), z.boolean()),
+    z.partialRecord(z.enum(ACTIONS), z.boolean()),
   ),
 });
 

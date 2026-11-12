@@ -5,6 +5,7 @@ import { httpBatchStreamLink, loggerLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import { useState } from "react";
 
+import "@/lib/zod-error-map";
 import { type AppRouter } from "@/trpc/api/root";
 import { getUrl, transformer } from "./shared";
 

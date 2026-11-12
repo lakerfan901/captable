@@ -20,7 +20,7 @@ const fields = z.array(z.any()) as z.ZodType<EsignGetTemplateType["fields"]>;
 const schema = z
   .object({
     fields,
-    data: z.record(z.string()),
+    data: z.record(z.string(), z.string()),
     bucketKey: z.string(),
   })
   .merge(EsignCompleteSchema.omit({ bucketData: true }));

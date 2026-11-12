@@ -1,4 +1,5 @@
 import { env } from "@/env";
+import "@/lib/zod-error-map";
 import { handleError, handleZodError } from "@/server/api/error";
 import type { TPrisma } from "@/server/db";
 import { swaggerUI } from "@hono/swagger-ui";

@@ -40,7 +40,7 @@ const typesOpts = TYPES.map((type) => ({ value: type, label: type }));
 const formSchema = z.object({
   grantId: z.string(),
   type: z.nativeEnum(OptionTypeEnum),
-  quantity: z.coerce.number(),
+  quantity: z.coerce.number<number>(),
   status: z.nativeEnum(OptionStatusEnum),
 });
 

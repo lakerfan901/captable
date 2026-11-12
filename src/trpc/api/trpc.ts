@@ -12,6 +12,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { isSentryEnabled } from "@/constants/sentry";
+import "@/lib/zod-error-map";
 import { getIp, getUserAgent } from "@/lib/headers";
 import { RBAC, type addPolicyOption } from "@/lib/rbac";
 import {
