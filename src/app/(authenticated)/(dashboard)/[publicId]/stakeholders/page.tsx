@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 const StakeholdersPage = async () => {
   const { allow } = await serverAccessControl();
-  const stakeholders = await allow(api.stakeholder.getStakeholders.query(), [
+  const stakeholders = await allow(api.stakeholder.getStakeholders(), [
     "stakeholder",
     "read",
   ]);

@@ -10,7 +10,7 @@ const CheckEmailComponent = () => {
   const searchParams = useSearchParams();
   const email = searchParams.get("email");
 
-  const { mutateAsync, isLoading } = api.auth.resendEmail.useMutation({
+  const { mutateAsync, isPending } = api.auth.resendEmail.useMutation({
     onSuccess: () => {
       toast.success("🎉 Email successfully re-sent.");
     },
@@ -49,7 +49,7 @@ const CheckEmailComponent = () => {
           <span className="text-sm font-bold"> {email} </span>. Please click the
           link in the email to verify your account.
         </div>
-        <Button onClick={Resend} disabled={!email} loading={isLoading}>
+        <Button onClick={Resend} disabled={!email} loading={isPending}>
           Resend verification email
         </Button>
       </div>

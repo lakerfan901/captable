@@ -17,7 +17,7 @@ const StakeholderUploader = () => {
 
   const router = useRouter();
 
-  const { mutateAsync, isLoading } =
+  const { mutateAsync, isPending } =
     api.stakeholder.addStakeholders.useMutation({
       onSuccess: ({ success, message }) => {
         if (success) {
@@ -96,7 +96,7 @@ const StakeholderUploader = () => {
       </div>
 
       <Button onClick={onImport} className="ml-auto block">
-        {isLoading ? "Importing..." : "Import"}
+        {isPending ? "Importing..." : "Import"}
       </Button>
     </div>
   );

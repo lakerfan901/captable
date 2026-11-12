@@ -157,6 +157,13 @@ const t = initTRPC
  */
 export const createTRPCRouter = t.router;
 
+/**
+ * Create a server-side caller.
+ *
+ * @see https://trpc.io/docs/server/server-side-calls
+ */
+export const createCallerFactory = t.createCallerFactory;
+
 const sentryMiddleware = t.middleware(
   Sentry.trpcMiddleware({
     attachRpcInput: true,

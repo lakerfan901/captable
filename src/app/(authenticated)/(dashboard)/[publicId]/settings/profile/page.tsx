@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 const ProfileSettingsPage = async () => {
-  const memberProfile = await api.member.getProfile.query();
+  const memberProfile = await api.member.getProfile();
 
   return <ProfileSettings memberProfile={memberProfile} />;
 };
