@@ -12,6 +12,7 @@ import {
   type BallotEmailJobData,
   emitBallotEmails,
 } from "./governance-ballot-email";
+import { emitReportFile } from "./governance-report-file";
 import { emitResolutionFinalize } from "./governance-resolution-finalize";
 
 // Scheduled resolution sweep (03-governance.md G8), every 15 minutes.
@@ -26,6 +27,10 @@ import { emitResolutionFinalize } from "./governance-resolution-finalize";
 //    FINALIZE_GRACE_MS after it closed (H2): the emit after the closing
 //    transaction may have failed, or the finalize job may have failed for
 //    good. Finalize is idempotent (row lock, claimed emails).
+// 4. Re-emits the member-report filing job (G13) for every SENT report still
+//    without a filed PDF more than FINALIZE_GRACE_MS after it was sent: the
+//    emit after `memberReport.send` may have failed. Filing is idempotent
+//    (row lock, re-check of `filedDocumentId`).
 // Closing does not depend on this job alone: reads close overdue resolutions
 // too (A7).
 
@@ -107,6 +112,25 @@ async function reEmitMissedFinalize(now: Date): Promise<number> {
   return failures;
 }
 
+/** G13: file every sent member report whose PDF was never filed. */
+async function reEmitMissedReportFiling(now: Date): Promise<number> {
+  const before = new Date(now.getTime() - FINALIZE_GRACE_MS);
+  const missed = await db.memberReport.findMany({
+    where: { status: "SENT", filedDocumentId: null, sentAt: { lt: before } },
+    select: { id: true },
+  });
+  let failures = 0;
+  for (const { id } of missed) {
+    try {
+      await emitReportFile(id);
+    } catch (err) {
+      failures++;
+      log.error({ err, reportId: id }, "Failed to re-emit report filing");
+    }
+  }
+  return failures;
+}
+
 async function emitAutoReminders(now: Date): Promise<void> {
   const open = await db.resolution.findMany({
     where: { status: "SENT", autoReminders: true, closesAt: { gt: now } },
@@ -151,12 +175,13 @@ export const resolutionSweepWorker = defineWorker(config, async () => {
   const now = new Date();
   const failures = await closeOverdueResolutions(now);
   await emitAutoReminders(now);
-  const missed = await reEmitMissedFinalize(now);
+  const missed =
+    (await reEmitMissedFinalize(now)) + (await reEmitMissedReportFiling(now));
   if (failures + missed > 0) {
     // Retried by pg-boss; already-closed resolutions are skipped, and a
     // finalize that could not be emitted is picked up by step 3 again.
     throw new Error(
-      `${failures} overdue resolution(s) could not be closed; ${missed} finalize job(s) could not be emitted`,
+      `${failures} overdue resolution(s) could not be closed; ${missed} finalize or filing job(s) could not be emitted`,
     );
   }
 });
