@@ -5,6 +5,7 @@ import { eSignConfirmationEmailWorker } from "./esign-confirmation-email";
 import { eSignNotificationEmailWorker } from "./esign-email";
 import { eSignPdfWorker } from "./esign-pdf";
 import { ballotEmailWorker } from "./governance-ballot-email";
+import { reportEmailWorker } from "./governance-report-email";
 import { resolutionFinalizeWorker } from "./governance-resolution-finalize";
 import { resolutionNoticeWorker } from "./governance-resolution-notice";
 import { resolutionSweepWorker } from "./governance-resolution-sweep";
@@ -29,6 +30,7 @@ export async function registerJobs() {
   queueManager.register(resolutionNoticeWorker);
   queueManager.register(resolutionFinalizeWorker);
   queueManager.register(resolutionSweepWorker);
+  queueManager.register(reportEmailWorker);
   queueManager.schedule({
     name: "governance.resolution-sweep",
     cron: "*/15 * * * *",
