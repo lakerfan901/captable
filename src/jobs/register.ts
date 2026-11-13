@@ -20,6 +20,7 @@ export async function registerJobs() {
   queueManager.register(eSignPdfWorker);
   queueManager.register(eSignCompletePDFWorker);
 
+  // governance workers and schedules are registered below by G8, G9, G12, G13, G14
   //start
   await queueManager.start();
 }

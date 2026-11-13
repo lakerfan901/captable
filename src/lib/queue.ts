@@ -59,8 +59,15 @@ interface WorkerFactory {
   handler: WorkHandler<any>;
 }
 
+interface ScheduleFactory {
+  name: JobType;
+  cron: string;
+  tz?: string;
+}
+
 function createQueue() {
   const jobs = new Map<string, WorkerFactory>();
+  const schedules: ScheduleFactory[] = [];
 
   async function start() {
     log.info(logPrefix("Starting queue manager"));
@@ -80,13 +87,31 @@ function createQueue() {
       await queue.updateQueue(jobName, QUEUE_OPTIONS);
       await queue.work(jobName, job.handler);
     }
+
+    // Queues must exist before pg-boss can schedule onto them.
+    for (const item of schedules) {
+      if (!jobs.has(item.name)) {
+        throw new Error(`Cannot schedule unregistered job ${item.name}`);
+      }
+      log.info(logPrefix(`Scheduling job:${item.name} (${item.cron})`));
+      await queue.schedule(
+        item.name,
+        item.cron,
+        {},
+        { tz: item.tz ?? "UTC", missed: "once" },
+      );
+    }
   }
 
   function register(jobFactory: WorkerFactory) {
     jobs.set(jobFactory.name, jobFactory);
   }
 
-  return { start, register };
+  function schedule(factory: ScheduleFactory) {
+    schedules.push(factory);
+  }
+
+  return { start, register, schedule };
 }
 
 const queueManager = createQueue();

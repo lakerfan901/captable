@@ -41,7 +41,9 @@ export type TypeKeyPrefixes =
   | "profile-avatars"
   | "generic-documents"
   | "shares-docs"
-  | `data-room/${string}`;
+  | `data-room/${string}`
+  | "resolutions"
+  | "member-reports";
 
 export interface getPresignedUrlOptions {
   contentType: string;
