@@ -119,6 +119,14 @@ export const DistributionNoticeEmail = (p: DistributionNoticeEmailProps) => {
             <Text className={text}>
               {`After this distribution: Unreturned Capital Contributions ${p.unreturnedAfter}; accrued and unpaid Preferred Return ${p.unpaidReturnAfter}; Preferred Units ${p.preferredUnits}.`}
             </Text>
+            {p.defaultOffset ? (
+              <Text className={text}>
+                These figures are stated before the amount applied to your
+                unpaid Balance, interest and costs. Any part applied to the
+                Balance is credited to you as a Capital Contribution and appears
+                on your next statement.
+              </Text>
+            ) : null}
             <Text className={text}>
               {`Reserve balance held by the LLC: ${p.reserveBalance} (Section 5.6(a)).`}
             </Text>
