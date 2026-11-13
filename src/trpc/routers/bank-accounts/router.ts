@@ -53,8 +53,13 @@ export const bankAccountsRouter = createTRPCRouter({
         },
       });
 
+      // Only the last four digits leave the server; the full number is read
+      // server-side through getWireInstructions when a notice is rendered.
       return {
-        bankAccounts,
+        bankAccounts: bankAccounts.map((account) => ({
+          ...account,
+          accountNumber: accountLast4(account.accountNumber),
+        })),
       };
     }),
 
