@@ -114,14 +114,18 @@ export interface DeadlineSyncPlan {
  * - with `ledgerRange` (the range the ECONOMICS feed was read for): an OPEN
  *   ECONOMICS row absent from the feed whose `dueOn` lies in that range is
  *   superseded (NOT_APPLICABLE) when it is of a date-keyed kind and the feed
- *   has a row of the same kind with another key, and otherwise completed
- *   (the ledger no longer reports it, so it is satisfied);
+ *   (or `farReplacements`) has a row of the same kind with another key, and
+ *   otherwise completed (the ledger no longer reports it, so it is satisfied);
+ * - `farReplacements` (see `splitLedgerFeed`) are date-keyed ledger items
+ *   beyond the calendar horizon: they only count as replacements and are
+ *   never created;
  * - nothing is ever deleted.
  */
 export function planDeadlineSync(
   existing: ExistingDeadline[],
   incoming: IncomingDeadline[],
   ledgerRange?: { from: Ymd; to: Ymd },
+  farReplacements: IncomingDeadline[] = [],
 ): DeadlineSyncPlan {
   const byKey = new Map(existing.map((e) => [e.dedupeKey, e]));
   const plan: DeadlineSyncPlan = {
@@ -173,7 +177,10 @@ export function planDeadlineSync(
   }
 
   if (ledgerRange !== undefined) {
-    const ledger = incoming.filter((d) => d.source === "ECONOMICS");
+    const ledger = [
+      ...incoming.filter((d) => d.source === "ECONOMICS"),
+      ...farReplacements,
+    ];
     for (const row of existing) {
       if (row.source !== "ECONOMICS" || row.status !== "OPEN") continue;
       if (seen.has(row.dedupeKey)) continue;
@@ -194,6 +201,30 @@ export function planDeadlineSync(
     }
   }
   return plan;
+}
+
+/**
+ * Splits a ledger feed read beyond the calendar horizon (`horizonEnd`):
+ * items due on or before it are synced as usual; of the items after it only
+ * the date-keyed kinds are kept, as `farReplacements` for `planDeadlineSync`.
+ * A date-keyed item (for example the Target Sale Date after a term
+ * extension) can move past the horizon; its old row must then be superseded,
+ * not completed as if the ledger had satisfied it. Far items are not created:
+ * the calendar shows the next `horizonEnd` only, and the row appears once the
+ * date comes within it.
+ */
+export function splitLedgerFeed(
+  ledger: IncomingDeadline[],
+  horizonEnd: Ymd,
+): { inHorizon: IncomingDeadline[]; farReplacements: IncomingDeadline[] } {
+  const inHorizon: IncomingDeadline[] = [];
+  const farReplacements: IncomingDeadline[] = [];
+  for (const item of ledger) {
+    if (item.dueOn <= horizonEnd) inHorizon.push(item);
+    else if (DATE_KEYED_KINDS.includes(item.ruleKey))
+      farReplacements.push(item);
+  }
+  return { inHorizon, farReplacements };
 }
 
 /** A G3 rule deadline as an incoming sync item. */

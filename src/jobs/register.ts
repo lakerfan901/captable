@@ -5,6 +5,7 @@ import { eSignConfirmationEmailWorker } from "./esign-confirmation-email";
 import { eSignNotificationEmailWorker } from "./esign-email";
 import { eSignPdfWorker } from "./esign-pdf";
 import { ballotEmailWorker } from "./governance-ballot-email";
+import { dailySweepWorker } from "./governance-daily-sweep";
 import { reportEmailWorker } from "./governance-report-email";
 import { reportFileWorker } from "./governance-report-file";
 import { resolutionFinalizeWorker } from "./governance-resolution-finalize";
@@ -36,6 +37,12 @@ export async function registerJobs() {
   queueManager.schedule({
     name: "governance.resolution-sweep",
     cron: "*/15 * * * *",
+  });
+  queueManager.register(dailySweepWorker);
+  queueManager.schedule({
+    name: "governance.daily-sweep",
+    cron: "0 7 * * *",
+    tz: "America/Denver",
   });
   //start
   await queueManager.start();
