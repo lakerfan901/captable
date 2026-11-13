@@ -76,6 +76,8 @@ export interface SendDialogProps {
   params: Record<string, unknown>;
   mailCatcher: boolean;
   defaultSignerName: string;
+  /** The company's time zone: `send` measures the record date and deadline in it. */
+  timeZone: string;
 }
 
 export function SendDialog({
@@ -86,13 +88,14 @@ export function SendDialog({
   params,
   mailCatcher,
   defaultSignerName,
+  timeZone,
 }: SendDialogProps) {
   const router = useRouter();
   const b = behaviour(type);
   const isPo = type === "PURCHASE_ORDER";
   const isTermExtension = b.fixedWindowDays !== null;
-  // The server measures dates in the governance time zone; use the same.
-  const today = useMemo(() => todayInZone(new Date()), []);
+  // The server measures dates in the company's time zone; use the same.
+  const today = useMemo(() => todayInZone(new Date(), timeZone), [timeZone]);
 
   const [recordDate, setRecordDate] = useState(today);
   const [closesOn, setClosesOn] = useState(addDays(today, 30));
@@ -138,6 +141,8 @@ export function SendDialog({
     );
   if (b.hasBallots && preview.data && selected.length === 0)
     problems.push("Choose at least one Member to ask.");
+  // Conditions `send` refuses (M5: overdue Balance with no declared default).
+  for (const blocker of preview.data?.blockers ?? []) problems.push(blocker);
   if (needsManager && !validSignature(signerName, signerCapacity))
     problems.push("Enter the signer's name and capacity (2–200 characters).");
   if (alsoCommon && !validSignature(commonName, commonCapacity))

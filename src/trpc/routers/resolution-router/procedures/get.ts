@@ -12,6 +12,8 @@ import {
 import { normalizeBlocks, type RichDoc } from "@/lib/governance/rich-doc";
 import type { BasisTally, RequirementState, VoteBasis } from "@/lib/llc/voting";
 import type { TPrisma } from "@/server/db";
+import { emitAfterCommit } from "@/server/governance/emit";
+import { frozenView } from "@/server/governance/frozen";
 import {
   evaluateAndTransition,
   loadEvaluation,
@@ -95,7 +97,15 @@ export async function closeOverdue(
         userAgent: `lazy-close:${source}`,
       }),
     );
-    if (transition) await emitResolutionFinalize(transition.resolutionId);
+    // A failed emit must not fail the read that closed it (H2): logged,
+    // and the sweep re-emits finalize for it.
+    if (transition) {
+      await emitAfterCommit(
+        "resolution finalize",
+        { resolutionId: transition.resolutionId, source },
+        () => emitResolutionFinalize(transition.resolutionId),
+      );
+    }
   }
 }
 
@@ -184,8 +194,13 @@ export const getProcedure = withLlcAccessControl
       });
     }
     const type = row.type as ResolutionType;
+    const shown = frozenView(row);
     const resolution = {
       ...row,
+      // After send: the title and params frozen at send, never the live
+      // columns (C1 defence in depth).
+      title: shown.title,
+      params: shown.params as typeof row.params,
       recordDate: ymdOrNull(row.recordDate),
       copyDueOn: ymdOrNull(row.copyDueOn),
     };

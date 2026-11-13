@@ -1,7 +1,9 @@
 import "server-only";
-import type { TPrismaOrTransaction } from "@/server/db";
+import { db, type TPrismaOrTransaction } from "@/server/db";
 
-// Resolution event log (03-governance.md G6, C3.6): INSERT ONLY.
+// Resolution event log (03-governance.md G6, C3.6): INSERT ONLY, with one
+// exception: `sendOnce` deletes its own claim row when the send it claimed
+// failed (the email never left), so a retry can claim and send it.
 
 export const RESOLUTION_EVENT_TYPES = [
   "SENT",
@@ -25,6 +27,7 @@ export const RESOLUTION_EVENT_TYPES = [
   "COPY_EMAILED",
   "COPY_DELIVERED",
   "MANAGER_NOTIFIED",
+  "ADDRESS_CHANGE_NOTICE_EMAILED",
 ] as const;
 
 export type ResolutionEventType = (typeof RESOLUTION_EVENT_TYPES)[number];
@@ -93,6 +96,38 @@ export async function recordEventOnce(
     }
     throw error;
   }
+}
+
+/**
+ * At-most-once email delivery per dedupe key (03-governance.md G9, M1).
+ *
+ * 1. CLAIM: insert the event with its unique `(resolutionId, dedupeKey)` in
+ *    its own committed statement (never inside the caller's transaction, so
+ *    a concurrent delivery of the same job sees it at once). Only the caller
+ *    whose insert succeeded goes on; every other delivery returns "SKIPPED".
+ * 2. SEND.
+ * 3. If the send throws, the claim is deleted (the email did not leave) and
+ *    the error is rethrown, so pg-boss retries and the retry can claim again.
+ *
+ * A crash between 1 and 2 leaves a claim with no email: at most once, never
+ * twice. `resolution.remind` (invites) and `resolution.resendNotice` (result
+ * notices, PO copies) are the recovery paths; both use a fresh key.
+ */
+export async function sendOnce(
+  claim: RecordEventInput & { dedupeKey: string },
+  send: () => Promise<void>,
+): Promise<"SENT" | "SKIPPED"> {
+  const claimed = await recordEventOnce(db, claim);
+  if (!claimed) return "SKIPPED";
+  try {
+    await send();
+  } catch (error) {
+    await db.resolutionEvent.deleteMany({
+      where: { resolutionId: claim.resolutionId, dedupeKey: claim.dedupeKey },
+    });
+    throw error;
+  }
+  return "SENT";
 }
 
 export async function hasEvent(

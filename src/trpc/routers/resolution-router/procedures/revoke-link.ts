@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { Audit } from "@/server/audit";
 import { recordEvent } from "@/server/governance/events";
+import { guardedWrite } from "@/server/governance/guarded";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionRevokeBallotLinkSchema } from "../schema";
 import { loadOpenBallotForLinkChange } from "./replace-link";
@@ -33,16 +34,19 @@ export const revokeBallotLinkProcedure = withLlcAccessControl
             message: `The link of ${ballot.name} is already revoked.`,
           });
         }
-        const { count } = await tx.resolutionBallot.updateMany({
-          where: {
-            id: ballot.id,
-            companyId,
-            submittedAt: null,
-            tokenRevokedAt: null,
-          },
-          data: { tokenRevokedAt: now },
-        });
-        if (count !== 1) {
+        const revoked = await guardedWrite(() =>
+          tx.resolutionBallot.update({
+            where: {
+              id: ballot.id,
+              companyId,
+              submittedAt: null,
+              tokenRevokedAt: null,
+            },
+            data: { tokenRevokedAt: now },
+            select: { id: true },
+          }),
+        );
+        if (!revoked) {
           throw new TRPCError({
             code: "CONFLICT",
             message: "This ballot changed at the same moment. Reload the page.",

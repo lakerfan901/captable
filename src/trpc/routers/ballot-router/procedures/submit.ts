@@ -1,7 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { emitResolutionFinalize } from "@/jobs/governance-resolution-finalize";
 import { Audit } from "@/server/audit";
+import { emitAfterCommit } from "@/server/governance/emit";
 import { recordEvent } from "@/server/governance/events";
+import { guardedWrite } from "@/server/governance/guarded";
 import {
   evaluateAndTransition,
   lockResolution,
@@ -34,11 +36,15 @@ import { resolveBallot } from "./resolve";
 // - The resolution row is locked (SELECT … FOR UPDATE) before the ballot is
 //   read for the decision; every check below uses rows re-read after the lock
 //   (a second `resolveBallot` inside the transaction).
-// - The vote is written with one guarded `updateMany` (C3.2): only while
-//   `submittedAt IS NULL AND deemed = false`, only for the token's current
-//   `tokenVersion`, an unrevoked and unexpired link, and the affected-row
-//   count must be 1. A link revoked or replaced by a transaction that does
-//   not take the resolution lock is still caught by the row-level re-check.
+// - The vote is written with ONE single-row guarded UPDATE (`guardedWrite`,
+//   C3.2): `UPDATE … WHERE id = $1 AND submittedAt IS NULL AND deemed = false
+//   AND tokenVersion = <token's> AND tokenRevokedAt IS NULL AND
+//   tokenExpiresAt > now`. Postgres evaluates that WHERE on the newest row
+//   version at write time, so it holds even against a writer that did not
+//   take the resolution lock. (Every writer of these columns does take it:
+//   replace/revoke link, addRecipients and the deemed-against close.) A
+//   guarded `updateMany` would NOT re-check: Prisma 7 selects the ids first
+//   and then updates by id only (see server/governance/guarded.ts).
 // - `evaluateAndTransition` runs under the same lock, so two ballots that
 //   together cross the threshold produce one EFFECTIVE transition.
 // - The client must send the `frozenHash` it was shown; a mismatch is
@@ -140,29 +146,33 @@ export const submitProcedure = withoutAuth
         }
 
         // 6. Write-once (C3.2).
-        const { count } = await tx.resolutionBallot.updateMany({
-          where: {
-            id: ballot.id,
-            resolutionId,
-            companyId: resolution.companyId,
-            submittedAt: null,
-            deemed: false,
-            tokenVersion,
-            tokenRevokedAt: null,
-            tokenExpiresAt: { gt: now },
-          },
-          data: {
-            choice: input.choice,
-            deemed: false,
-            signedName: input.signedName,
-            signerCapacity,
-            submittedAt: now,
-            submitIp: meta.ip,
-            submitUserAgent: meta.userAgent,
-            bodyHash: resolution.frozenHash,
-          },
-        });
-        if (count !== 1) {
+        const frozenHash = resolution.frozenHash;
+        const recorded = await guardedWrite(() =>
+          tx.resolutionBallot.update({
+            where: {
+              id: ballot.id,
+              resolutionId,
+              companyId: resolution.companyId,
+              submittedAt: null,
+              deemed: false,
+              tokenVersion,
+              tokenRevokedAt: null,
+              tokenExpiresAt: { gt: now },
+            },
+            data: {
+              choice: input.choice,
+              deemed: false,
+              signedName: input.signedName,
+              signerCapacity,
+              submittedAt: now,
+              submitIp: meta.ip,
+              submitUserAgent: meta.userAgent,
+              bodyHash: frozenHash,
+            },
+            select: { id: true },
+          }),
+        );
+        if (!recorded) {
           // Nothing was written. Submitted meanwhile -> ALREADY; otherwise
           // the link was revoked or replaced concurrently -> REPLACED.
           const current = await tx.resolutionBallot.findUnique({
@@ -220,9 +230,16 @@ export const submitProcedure = withoutAuth
       },
     );
 
-    // After commit only.
-    if (outcome.transition) {
-      await emitResolutionFinalize(outcome.transition.resolutionId);
+    // After commit only. The vote is recorded whatever happens to the emit:
+    // a failure is logged and recovered by the sweep (H2), never shown to
+    // the voter as an error (a retry would only say "closed").
+    const transition = outcome.transition;
+    if (transition) {
+      await emitAfterCommit(
+        "resolution finalize",
+        { resolutionId: transition.resolutionId },
+        () => emitResolutionFinalize(transition.resolutionId),
+      );
     }
 
     switch (outcome.result) {

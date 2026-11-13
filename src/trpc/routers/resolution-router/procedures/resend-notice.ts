@@ -8,14 +8,22 @@ import { withLlcAccessControl } from "@/trpc/api/trpc";
 
 // resolution.resendNotice (03-governance.md G9): re-sends the result notice
 // (or purchase-order copy) to one Member of the frozen register. No audit row:
-// the notice job records its own event.
+// the notice job records its own event. Always a fresh key (max seq + 1 over
+// the claims already recorded), so it is also the recovery path for a notice
+// whose claim was taken but never sent (M1).
 
 const CLOSED = ["EFFECTIVE", "FAILED", "EXPIRED", "WITHDRAWN"] as const;
 
 export const resendNoticeProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
   .input(
-    z.object({ publicId: z.string().min(1), stakeholderId: z.string().min(1) }),
+    // Bounded like every other resolution input (L6).
+    z
+      .object({
+        publicId: z.string().trim().min(1).max(64),
+        stakeholderId: z.string().trim().min(1).max(64),
+      })
+      .strict(),
   )
   .mutation(async ({ ctx, input }) => {
     const companyId = ctx.membership.companyId;

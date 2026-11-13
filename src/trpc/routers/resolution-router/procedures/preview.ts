@@ -11,9 +11,15 @@ import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionPreviewSchema } from "../schema";
 import { parseDraftParams } from "./create";
 import { requirementLabel } from "./get";
+import { undeclaredOverdueMessage } from "./send";
 
 // resolution.preview (03-governance.md G7): what `send` would do with this
 // type, params and record date. Builds the register but stores nothing.
+//
+// `blockers` are conditions `send` refuses (the send dialog disables Send and
+// shows them); `warnings` are shown for review. Dates are measured in the
+// company's time zone, exactly as `send` measures them; it is returned as
+// `timeZone` for the dialog.
 
 export type ExclusionReason =
   | "SUSPENDED"
@@ -27,6 +33,7 @@ export const previewProcedure = withLlcAccessControl
   .query(async ({ ctx, input }) => {
     const companyId = ctx.membership.companyId;
     const now = new Date();
+    const zone = ctx.company.timezone || GOVERNANCE_TIME_ZONE;
     const type = input.type as ResolutionType;
     const params = parseDraftParams(type, input.params);
     const specs = buildRequirements(type, params);
@@ -35,6 +42,7 @@ export const previewProcedure = withLlcAccessControl
     const entries = draft.entries;
     const byId = new Map(entries.map((e) => [e.stakeholderId, e]));
     const warnings: string[] = [];
+    const blockers: string[] = [];
 
     const requirements = specs.map(({ requirement: r, section }) => {
       const label = requirementLabel({
@@ -115,14 +123,19 @@ export const previewProcedure = withLlcAccessControl
           })
       : [];
 
-    for (const w of draft.warnings) {
-      const name = byId.get(w.stakeholderId)?.name ?? "A holder";
-      warnings.push(
-        `${name} has an overdue Balance but no declared default; its units still vote (Section 4.9).`,
-      );
+    // M5: an overdue Balance without a declared default (as of the record
+    // date) blocks a resolution with ballots, exactly as `send` refuses it.
+    if (b.hasBallots) {
+      const named = new Set<string>();
+      for (const w of draft.warnings) {
+        const name = byId.get(w.stakeholderId)?.name ?? "A holder";
+        if (named.has(name)) continue;
+        named.add(name);
+        blockers.push(undeclaredOverdueMessage(name));
+      }
     }
 
-    const today = todayInZone(now, GOVERNANCE_TIME_ZONE);
+    const today = todayInZone(now, zone);
     if (type === "AUDIT_CALL") {
       const effective = await ctx.db.resolution.findMany({
         where: {
@@ -138,8 +151,7 @@ export const previewProcedure = withLlcAccessControl
         effective.some(
           (r) =>
             r.effectiveAt !== null &&
-            todayInZone(r.effectiveAt, GOVERNANCE_TIME_ZONE).slice(0, 4) ===
-              year,
+            todayInZone(r.effectiveAt, zone).slice(0, 4) === year,
         )
       ) {
         warnings.push(
@@ -151,5 +163,12 @@ export const previewProcedure = withLlcAccessControl
       warnings.push("The record date cannot be in the future.");
     }
 
-    return { requirements, recipients, excluded, warnings };
+    return {
+      requirements,
+      recipients,
+      excluded,
+      warnings,
+      blockers,
+      timeZone: zone,
+    };
   });

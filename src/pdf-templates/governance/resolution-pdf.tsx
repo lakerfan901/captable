@@ -47,6 +47,12 @@ export interface ResolutionPdfData {
     preferredUnits: string;
     signedAt: string;
   }[];
+  /**
+   * One line per ballot whose email was changed after send (H1), printed
+   * under the Member signature table. Names only: the PDF goes to every
+   * Member, so no address is printed.
+   */
+  emailChanges?: string[];
   /** One block per UNIT_VOTE requirement, in requirement order. */
   tallies: {
     basisLabel: string;
@@ -239,6 +245,11 @@ export function ResolutionPdf({ data }: { data: ResolutionPdfData }) {
                   s.signedAt,
                 ]}
               />
+            ))}
+            {(data.emailChanges ?? []).map((line) => (
+              <Text key={line} style={{ marginTop: 4 }}>
+                {line}
+              </Text>
             ))}
           </View>
         ) : null}

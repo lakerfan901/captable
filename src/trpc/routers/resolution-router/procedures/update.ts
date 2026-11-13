@@ -2,6 +2,8 @@ import { TRPCError } from "@trpc/server";
 import type { ResolutionType } from "@/lib/governance/presets";
 import { normalizeBlocks } from "@/lib/governance/rich-doc";
 import { Audit } from "@/server/audit";
+import { guardedWrite } from "@/server/governance/guarded";
+import { lockResolution } from "@/server/governance/tally";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionUpdateSchema } from "../schema";
 import {
@@ -11,6 +13,12 @@ import {
 } from "./create";
 
 // resolution.update (03-governance.md G7): DRAFT only (C3.4).
+//
+// Takes the resolution's row lock (the lock `resolution.send` holds for its
+// whole transaction), re-reads the row and requires DRAFT AFTER the lock: an
+// edit started while a send is in flight waits for it and is then refused, so
+// it can never overwrite the title, params or body of a sent resolution. The
+// write itself is a single-row guarded update as a backstop.
 
 export const updateProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
@@ -19,8 +27,19 @@ export const updateProcedure = withLlcAccessControl
     const companyId = ctx.membership.companyId;
 
     return await ctx.db.$transaction(async (tx) => {
-      const existing = await tx.resolution.findFirst({
+      const found = await tx.resolution.findFirst({
         where: { publicId: input.publicId, companyId },
+        select: { id: true },
+      });
+      if (!found) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Resolution not found.",
+        });
+      }
+      await lockResolution(tx, found.id);
+      const existing = await tx.resolution.findFirst({
+        where: { id: found.id, companyId },
         select: { id: true, type: true, status: true },
       });
       if (!existing) {
@@ -46,17 +65,20 @@ export const updateProcedure = withLlcAccessControl
       }
       await assertDraftReferences(tx, companyId, type, params);
 
-      // Guarded write: a concurrent send moves the row out of DRAFT.
-      const { count } = await tx.resolution.updateMany({
-        where: { id: existing.id, companyId, status: "DRAFT" },
-        data: {
-          title: input.title,
-          params: params as object,
-          body: input.body as object[],
-          matterKey: matterKeyFor(type, params),
-        },
-      });
-      if (count !== 1) throw onlyDraft;
+      // Backstop (the lock above already excludes a concurrent send).
+      const updated = await guardedWrite(() =>
+        tx.resolution.update({
+          where: { id: existing.id, companyId, status: "DRAFT" },
+          data: {
+            title: input.title,
+            params: params as object,
+            body: input.body as object[],
+            matterKey: matterKeyFor(type, params),
+          },
+          select: { id: true },
+        }),
+      );
+      if (!updated) throw onlyDraft;
 
       await Audit.create(
         {

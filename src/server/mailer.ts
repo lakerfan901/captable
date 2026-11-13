@@ -10,6 +10,7 @@ import { env } from "@/env";
 import { normalizeRecipients } from "@/lib/email-recipients";
 import { logger } from "@/lib/logger";
 import { isMailCatcherUrl } from "@/lib/mail-catcher";
+import { buildFrom } from "@/lib/mail-from";
 import { db } from "@/server/db";
 
 const getTransport = () => {
@@ -103,27 +104,30 @@ const writeEmailLog = async (
   }
 };
 
+/**
+ * Sends one email. Callers may pass the sender's display name (usually the
+ * company name) as the `X-From-Name` pseudo-header: it is turned into the
+ * name of the From address and NOT sent as a header. The address is always
+ * EMAIL_FROM's; the name is cleaned and passed to nodemailer as
+ * `{ name, address }` so it can never change the sender (see lib/mail-from).
+ */
 export const sendMail = async (
   options: Omit<SendMailOptions, "from">,
   log?: EmailLogContext,
 ): Promise<SendMailResult> => {
-  let from = `Captable <${env.EMAIL_FROM}>`;
-  const headers = (options.headers || {}) as RecordType;
-
-  const senderName = headers["X-From-Name"];
-
-  if (senderName) {
-    from = `${senderName} <${env.EMAIL_FROM}>`;
-  }
-
+  const { "X-From-Name": senderName, ...headers } = (options.headers ||
+    {}) as RecordType;
   const toAddress = normalizeRecipients(options.to);
   const transport = getTransport();
 
   let info: SMTPTransport.SentMessageInfo;
   try {
+    // Inside the try: a missing / unparsable EMAIL_FROM is a failed send
+    // with a FAILED EmailLog row, like any transport error.
     info = await transport.sendMail({
-      from,
       ...options,
+      headers,
+      from: buildFrom(senderName, env.EMAIL_FROM ?? ""),
     });
   } catch (error) {
     // Connection errors (e.g. ECONNREFUSED as an AggregateError) can have an

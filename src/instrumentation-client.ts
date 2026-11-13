@@ -7,6 +7,8 @@
 // (evaluating it too early would cache missing public values app-wide).
 import { PUBLIC_ENV_KEY } from "@/constants/env";
 import { sentryDataCollection } from "@/constants/sentry-data-collection";
+import { sentryScrubbing } from "@/constants/sentry-scrub";
+import { redactDeep } from "@/lib/token-redaction";
 
 type CaptureRouterTransitionStart =
   typeof import("@sentry/nextjs").captureRouterTransitionStart;
@@ -30,15 +32,24 @@ const initSentry = async () => {
     tracesSampleRate: 1,
     debug: false,
     dataCollection: sentryDataCollection,
+    // Emailed-link tokens (ballot and member-report paths, `input` / `token`
+    // query parameters) never leave in an event, span or breadcrumb.
+    ...sentryScrubbing,
     replaysOnErrorSampleRate: 1.0,
     replaysSessionSampleRate: 0.1,
     integrations: [
       Sentry.replayIntegration({
         maskAllText: true,
         blockAllMedia: true,
+        // Recorded navigations and network requests carry URLs.
+        beforeAddRecordingEvent: (event) => redactDeep(event),
       }),
     ],
   });
+  // Replay events (their `urls` list) do not pass through `beforeSend`.
+  Sentry.addEventProcessor((event) =>
+    event.type === "replay_event" ? redactDeep(event) : event,
+  );
 
   captureRouterTransitionStart = Sentry.captureRouterTransitionStart;
 };
