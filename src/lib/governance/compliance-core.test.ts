@@ -4,9 +4,12 @@ import {
   type ExistingDeadline,
   economicsIncoming,
   type IncomingDeadline,
+  isSyncClosure,
+  LEDGER_COMPLETION_NOTE,
   normalizeSection,
   planDeadlineSync,
   ruleIncoming,
+  supersededNote,
   templateDueOn,
 } from "./compliance-core";
 import { addDays, generateRuleDeadlines, type Ymd } from "./dates";
@@ -45,12 +48,26 @@ function row(
 ): ExistingDeadline {
   return {
     id: `id-${over.dedupeKey}`,
+    ruleKey: over.dedupeKey.split(":")[1] ?? over.dedupeKey,
     title: "Target Sale Date",
     status: "OPEN",
     source: "ECONOMICS",
+    closedBySync: false,
     ...over,
   };
 }
+
+const EMPTY = {
+  create: [],
+  update: [],
+  complete: [],
+  closeMissing: [],
+  supersede: [],
+  reopen: [],
+};
+
+/** The range the ledger feed was read for in the rule tests below. */
+const RANGE = { from: "2026-10-01", to: "2028-01-01" };
 
 describe("planDeadlineSync", () => {
   it("1: creates the seven G3 rule deadlines once, then nothing", () => {
@@ -76,6 +93,8 @@ describe("planDeadlineSync", () => {
 
     const existing: ExistingDeadline[] = first.create.map((c, i) => ({
       id: `d${i}`,
+      ruleKey: c.ruleKey,
+      closedBySync: false,
       dedupeKey: c.dedupeKey,
       dueOn: c.dueOn,
       title: c.title,
@@ -86,6 +105,9 @@ describe("planDeadlineSync", () => {
       create: [],
       update: [],
       complete: [],
+      closeMissing: [],
+      supersede: [],
+      reopen: [],
     });
   });
 
@@ -105,6 +127,9 @@ describe("planDeadlineSync", () => {
         },
       ],
       complete: [],
+      closeMissing: [],
+      supersede: [],
+      reopen: [],
     });
   });
 
@@ -129,7 +154,7 @@ describe("planDeadlineSync", () => {
         [row({ dedupeKey: "E:TARGET_SALE_DATE", dueOn: "2031-11-30", status })],
         [econ("E:TARGET_SALE_DATE", "2032-11-30")],
       );
-      expect(plan).toEqual({ create: [], update: [], complete: [] });
+      expect(plan).toEqual(EMPTY);
     }
   });
 
@@ -147,6 +172,9 @@ describe("planDeadlineSync", () => {
       create: [],
       update: [],
       complete: ["id-E:DISTRIBUTION_DEADLINE:2027-03-31"],
+      closeMissing: [],
+      supersede: [],
+      reopen: [],
     });
   });
 
@@ -155,7 +183,7 @@ describe("planDeadlineSync", () => {
       [row({ dedupeKey: "E:CALL_NOTICE_DUE:line1", dueOn: "2027-01-15" })],
       [],
     );
-    expect(plan).toEqual({ create: [], update: [], complete: [] });
+    expect(plan).toEqual(EMPTY);
   });
 
   it("an incoming item that is already done is created (the caller completes it)", () => {
@@ -177,7 +205,209 @@ describe("planDeadlineSync", () => {
       ],
       [econ("E:A", "2027-05-15", true)],
     );
-    expect(plan).toEqual({ create: [], update: [], complete: [] });
+    expect(plan).toEqual(EMPTY);
+  });
+});
+
+describe("ledger rows that leave, move or come back (coordinator rulings)", () => {
+  it("R1: an OPEN ledger row in range that left the feed is completed", () => {
+    const plan = planDeadlineSync(
+      [row({ dedupeKey: "E:CALL_NOTICE_DUE:line1", dueOn: "2027-01-20" })],
+      [],
+      RANGE,
+    );
+    expect(plan).toEqual({
+      ...EMPTY,
+      closeMissing: ["id-E:CALL_NOTICE_DUE:line1"],
+    });
+  });
+
+  it("R1: rows outside the range, closed rows and RULE rows are left alone", () => {
+    const plan = planDeadlineSync(
+      [
+        row({
+          dedupeKey: "E:TARGET_SALE_DATE:2031-11-30",
+          dueOn: "2031-11-30",
+        }),
+        row({ dedupeKey: "E:FORFEITURE_DATE:d1", dueOn: "2026-09-01" }),
+        row({
+          dedupeKey: "E:CREDIT_DATE:d1",
+          dueOn: "2027-02-19",
+          status: "DONE",
+        }),
+        row({
+          dedupeKey: "QUARTERLY_REPORT:2026Q4",
+          dueOn: "2027-02-14",
+          source: "RULE",
+        }),
+        row({
+          dedupeKey: "PO_RESOLUTION_COPY:r1",
+          dueOn: "2027-02-14",
+          source: "RESOLUTION",
+        }),
+      ],
+      [],
+      RANGE,
+    );
+    expect(plan).toEqual(EMPTY);
+  });
+
+  it("R1: an OPEN ledger row still in the feed, however old, stays open", () => {
+    const plan = planDeadlineSync(
+      [row({ dedupeKey: "E:CALL_NOTICE_DUE:line1", dueOn: "2026-10-05" })],
+      [
+        econ(
+          "E:CALL_NOTICE_DUE:line1",
+          "2026-10-05",
+          false,
+          "Target Sale Date",
+        ),
+      ],
+      RANGE,
+    );
+    expect(plan).toEqual(EMPTY);
+  });
+
+  it("R2: a date-keyed row whose kind reappears with another date is superseded", () => {
+    const plan = planDeadlineSync(
+      [
+        row({
+          dedupeKey: "E:EXTENSION_REQUEST_DUE:2027-02-28",
+          dueOn: "2027-02-28",
+        }),
+      ],
+      [econ("E:EXTENSION_REQUEST_DUE:2027-05-31", "2027-05-31")],
+      RANGE,
+    );
+    expect(plan.supersede).toEqual([
+      {
+        id: "id-E:EXTENSION_REQUEST_DUE:2027-02-28",
+        note: "Superseded: date changed to 2027-05-31",
+      },
+    ]);
+    expect(plan.closeMissing).toEqual([]);
+    expect(plan.create.map((c) => c.dedupeKey)).toEqual([
+      "E:EXTENSION_REQUEST_DUE:2027-05-31",
+    ]);
+  });
+
+  it("R2: without a replacement of the same kind the row is completed (R1)", () => {
+    const plan = planDeadlineSync(
+      [row({ dedupeKey: "E:OCD_NOTICE_DUE:2027-01-10", dueOn: "2027-01-10" })],
+      [econ("E:TARGET_SALE_DATE:2031-11-30", "2031-11-30")],
+      RANGE,
+    );
+    expect(plan.supersede).toEqual([]);
+    expect(plan.closeMissing).toEqual(["id-E:OCD_NOTICE_DUE:2027-01-10"]);
+  });
+
+  it("R2: a kind that is not date-keyed is never superseded", () => {
+    const plan = planDeadlineSync(
+      [row({ dedupeKey: "E:CALL_NOTICE_DUE:line1", dueOn: "2027-01-20" })],
+      [econ("E:CALL_NOTICE_DUE:line2", "2027-03-20")],
+      RANGE,
+    );
+    expect(plan.supersede).toEqual([]);
+    expect(plan.closeMissing).toEqual(["id-E:CALL_NOTICE_DUE:line1"]);
+  });
+
+  it("R3: a row the sync closed reopens when the feed reports it open again", () => {
+    for (const status of ["DONE", "NOT_APPLICABLE"] as const) {
+      const plan = planDeadlineSync(
+        [
+          row({
+            dedupeKey: "E:DISTRIBUTION_DEADLINE:2026-12-31",
+            dueOn: "2027-02-14",
+            status,
+            closedBySync: true,
+          }),
+        ],
+        [econ("E:DISTRIBUTION_DEADLINE:2026-12-31", "2027-02-14")],
+        RANGE,
+      );
+      expect(plan).toEqual({
+        ...EMPTY,
+        reopen: [
+          {
+            id: "id-E:DISTRIBUTION_DEADLINE:2026-12-31",
+            dueOn: "2027-02-14",
+            title: "Target Sale Date",
+            resetReminders: false,
+          },
+        ],
+      });
+    }
+  });
+
+  it("R3: a row the sync closed stays closed while the feed says done", () => {
+    const plan = planDeadlineSync(
+      [
+        row({
+          dedupeKey: "E:DISTRIBUTION_DEADLINE:2026-12-31",
+          dueOn: "2027-02-14",
+          status: "DONE",
+          closedBySync: true,
+        }),
+      ],
+      [econ("E:DISTRIBUTION_DEADLINE:2026-12-31", "2027-02-14", true)],
+      RANGE,
+    );
+    expect(plan).toEqual(EMPTY);
+  });
+
+  it("R3: a row a user closed is never reopened", () => {
+    const plan = planDeadlineSync(
+      [
+        row({
+          dedupeKey: "E:CALL_NOTICE_DUE:line1",
+          dueOn: "2027-01-20",
+          status: "NOT_APPLICABLE",
+          closedBySync: false,
+        }),
+      ],
+      [econ("E:CALL_NOTICE_DUE:line1", "2027-01-20")],
+      RANGE,
+    );
+    expect(plan).toEqual(EMPTY);
+  });
+});
+
+describe("isSyncClosure", () => {
+  const base = {
+    completedById: null,
+    satisfiedByType: "MANUAL",
+    note: LEDGER_COMPLETION_NOTE,
+  };
+  it("recognizes the ledger completion and the superseded marking", () => {
+    expect(isSyncClosure({ ...base, status: "DONE" })).toBe(true);
+    expect(
+      isSyncClosure({
+        status: "NOT_APPLICABLE",
+        completedById: null,
+        satisfiedByType: null,
+        note: supersededNote("2027-05-31"),
+      }),
+    ).toBe(true);
+  });
+  it("rejects anything a user closed or annotated", () => {
+    expect(
+      isSyncClosure({ ...base, status: "DONE", completedById: "m1" }),
+    ).toBe(false);
+    expect(isSyncClosure({ ...base, status: "DONE", note: "Paid" })).toBe(
+      false,
+    );
+    expect(
+      isSyncClosure({ ...base, status: "DONE", satisfiedByType: "RESOLUTION" }),
+    ).toBe(false);
+    expect(
+      isSyncClosure({
+        status: "NOT_APPLICABLE",
+        completedById: null,
+        satisfiedByType: null,
+        note: "n/a",
+      }),
+    ).toBe(false);
+    expect(isSyncClosure({ ...base, status: "OPEN" })).toBe(false);
   });
 });
 

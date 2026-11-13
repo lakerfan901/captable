@@ -3,8 +3,11 @@ import {
   type ExistingDeadline,
   economicsIncoming,
   type IncomingDeadline,
+  isSyncClosure,
+  LEDGER_COMPLETION_NOTE,
   planDeadlineSync,
   ruleIncoming,
+  SUPERSEDED_NOTE_PREFIX,
 } from "@/lib/governance/compliance-core";
 import {
   addDays,
@@ -37,13 +40,18 @@ export const COMPLIANCE_HORIZON_DAYS = 400;
 /** How far back ledger deadlines are read (overdue items stay visible). */
 export const COMPLIANCE_LOOKBACK_DAYS = 30;
 
-export const LEDGER_COMPLETION_NOTE = "Completed according to the ledger";
+export { LEDGER_COMPLETION_NOTE };
 
 export interface SyncResult {
   today: Ymd;
   created: number;
   updated: number;
+  /** Ledger rows completed (reported done, or gone from the feed). */
   completed: number;
+  /** Date-keyed ledger rows marked NOT_APPLICABLE because their date moved. */
+  superseded: number;
+  /** Rows the sync had closed that the ledger reports open again. */
+  reopened: number;
 }
 
 /** The company's "today" in its own time zone. */
@@ -82,18 +90,56 @@ export async function syncComplianceDeadlines(
     today,
     horizonDays: COMPLIANCE_HORIZON_DAYS,
   }).map(ruleIncoming);
+  // The ledger feed is read from the earliest due date of any OPEN ledger row
+  // or any ledger row the sync itself closed (and at least 30 days back), so
+  // an item that is still unsatisfied stays in the feed however old it is
+  // (an OPEN row in that range that is no longer in the feed is therefore
+  // satisfied or superseded), and a row the sync closed is seen again if the
+  // ledger reopens it.
+  const oldestOpen = await tx.complianceDeadline.findFirst({
+    where: {
+      companyId,
+      source: "ECONOMICS",
+      OR: [
+        { status: "OPEN" },
+        {
+          status: "DONE",
+          completedById: null,
+          satisfiedByType: "MANUAL",
+          note: LEDGER_COMPLETION_NOTE,
+        },
+        {
+          status: "NOT_APPLICABLE",
+          completedById: null,
+          satisfiedByType: null,
+          note: { startsWith: SUPERSEDED_NOTE_PREFIX },
+        },
+      ],
+    },
+    orderBy: { dueOn: "asc" },
+    select: { dueOn: true },
+  });
+  const lookback = addDays(today, -COMPLIANCE_LOOKBACK_DAYS);
+  const oldestOpenOn = oldestOpen ? utcDateToYmd(oldestOpen.dueOn) : null;
+  const ledgerRange = {
+    from:
+      oldestOpenOn !== null && oldestOpenOn < lookback
+        ? oldestOpenOn
+        : lookback,
+    to: addDays(today, COMPLIANCE_HORIZON_DAYS),
+  };
   const ledger = economicsIncoming(
-    await getComplianceDates(tx, companyId, {
-      from: addDays(today, -COMPLIANCE_LOOKBACK_DAYS),
-      to: addDays(today, COMPLIANCE_HORIZON_DAYS),
-    }),
+    await getComplianceDates(tx, companyId, ledgerRange),
   );
   const incoming: IncomingDeadline[] = [...rules, ...ledger];
 
   const rows = await tx.complianceDeadline.findMany({
     where: {
       companyId,
-      dedupeKey: { in: incoming.map((d) => d.dedupeKey) },
+      OR: [
+        { dedupeKey: { in: incoming.map((d) => d.dedupeKey) } },
+        { source: "ECONOMICS", status: "OPEN" },
+      ],
     },
     select: {
       id: true,
@@ -103,16 +149,22 @@ export async function syncComplianceDeadlines(
       title: true,
       status: true,
       source: true,
+      completedById: true,
+      satisfiedByType: true,
+      note: true,
     },
   });
   const existing: ExistingDeadline[] = rows.map((r) => ({
     id: r.id,
+    ruleKey: r.ruleKey,
     dedupeKey: r.dedupeKey,
     dueOn: utcDateToYmd(r.dueOn),
     title: r.title,
     status: r.status,
     source: r.source,
+    closedBySync: isSyncClosure(r),
   }));
+  const byId = new Map(rows.map((r) => [r.id, r]));
 
   // K1_FINAL's date is an assumption the Manager may edit (`compliance.update`);
   // keep an edited OPEN row's date instead of resetting it to September 15.
@@ -126,7 +178,7 @@ export async function syncComplianceDeadlines(
     return kept === undefined ? d : { ...d, dueOn: kept };
   });
 
-  const plan = planDeadlineSync(existing, effective);
+  const plan = planDeadlineSync(existing, effective, ledgerRange);
 
   let created = 0;
   if (plan.create.length > 0) {
@@ -170,8 +222,9 @@ export async function syncComplianceDeadlines(
     if (ok) updated++;
   }
 
+  // Done according to the ledger: reported done, or gone from the feed.
   let completed = 0;
-  for (const id of plan.complete) {
+  for (const id of [...plan.complete, ...plan.closeMissing]) {
     const ok = await guardedWrite(() =>
       tx.complianceDeadline.update({
         where: { id, companyId, status: "OPEN" },
@@ -189,7 +242,58 @@ export async function syncComplianceDeadlines(
     if (ok) completed++;
   }
 
-  return { today, created, updated, completed };
+  let superseded = 0;
+  for (const s of plan.supersede) {
+    const ok = await guardedWrite(() =>
+      tx.complianceDeadline.update({
+        where: { id: s.id, companyId, status: "OPEN" },
+        data: {
+          status: "NOT_APPLICABLE",
+          completedAt: now,
+          completedById: null,
+          satisfiedByType: null,
+          satisfiedById: null,
+          note: s.note,
+        },
+        select: { id: true },
+      }),
+    );
+    if (ok) superseded++;
+  }
+
+  // Reopen only a row still exactly as the sync closed it (a user who closed
+  // or reopened it in the meantime changed `completedById` / `note`).
+  let reopened = 0;
+  for (const r of plan.reopen) {
+    const row = byId.get(r.id);
+    if (row === undefined || row.status === "OPEN") continue;
+    const ok = await guardedWrite(() =>
+      tx.complianceDeadline.update({
+        where: {
+          id: r.id,
+          companyId,
+          status: row.status,
+          completedById: null,
+          note: row.note,
+        },
+        data: {
+          status: "OPEN",
+          completedAt: null,
+          completedById: null,
+          satisfiedByType: null,
+          satisfiedById: null,
+          note: null,
+          dueOn: ymdToUtcDate(r.dueOn),
+          title: r.title,
+          ...(r.resetReminders ? { remindedBuckets: [] } : {}),
+        },
+        select: { id: true },
+      }),
+    );
+    if (ok) reopened++;
+  }
+
+  return { today, created, updated, completed, superseded, reopened };
 }
 
 export interface SourceDeadlineInput {

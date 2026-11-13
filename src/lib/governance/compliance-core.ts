@@ -21,11 +21,61 @@ export const SYNCED_SOURCES: readonly ComplianceSource[] = [
 
 export interface ExistingDeadline {
   id: string;
+  /** For ECONOMICS rows: the ECONOMICS kind. */
+  ruleKey: string;
   dedupeKey: string;
   dueOn: Ymd;
   title: string;
   status: ComplianceDeadlineStatus;
   source: string;
+  /** Closed by the sync itself, not by a user (see `isSyncClosure`). */
+  closedBySync: boolean;
+}
+
+/** Note on a row the sync completed because the ledger says it is done. */
+export const LEDGER_COMPLETION_NOTE = "Completed according to the ledger";
+/** Prefix of the note on a row the sync superseded (its date moved). */
+export const SUPERSEDED_NOTE_PREFIX = "Superseded: date changed to ";
+
+export function supersededNote(newDueOn: Ymd): string {
+  return `${SUPERSEDED_NOTE_PREFIX}${newDueOn}`;
+}
+
+/**
+ * ECONOMICS kinds whose key carries the due date (`${kind}:${dueOn}`): when
+ * the date moves the key changes, so the old row is superseded by the new one.
+ */
+export const DATE_KEYED_KINDS: readonly string[] = [
+  "BALANCE_OUTSIDE_DATE",
+  "REPLACEMENT_FUNDER_OUTSIDE_DATE",
+  "OCD_NOTICE_DUE",
+  "EXTENSION_REQUEST_DUE",
+  "TARGET_SALE_DATE",
+];
+
+/**
+ * True for a row the sync closed (never one a user closed): no
+ * `completedById`, and the ledger completion marking or the superseded note.
+ */
+export function isSyncClosure(row: {
+  status: ComplianceDeadlineStatus;
+  completedById: string | null;
+  satisfiedByType: string | null;
+  note: string | null;
+}): boolean {
+  if (row.completedById !== null) return false;
+  if (row.status === "DONE") {
+    return (
+      row.satisfiedByType === "MANUAL" && row.note === LEDGER_COMPLETION_NOTE
+    );
+  }
+  if (row.status === "NOT_APPLICABLE") {
+    return (
+      row.satisfiedByType === null &&
+      (row.note ?? "").startsWith(SUPERSEDED_NOTE_PREFIX)
+    );
+  }
+  return false;
 }
 
 export interface IncomingDeadline {
@@ -39,11 +89,17 @@ export interface IncomingDeadline {
 }
 
 export interface DeadlineSyncPlan {
-  /** New rows. One with `done: true` is created and completed by the caller. */
+  /** New rows. One with `done: true` is created already completed. */
   create: IncomingDeadline[];
   update: { id: string; dueOn: Ymd; title: string; resetReminders: boolean }[];
-  /** ids of existing OPEN rows to complete. */
+  /** ids of existing OPEN rows the ledger reports done. */
   complete: string[];
+  /** ids of OPEN ECONOMICS rows in the feed's range that left the feed (satisfied). */
+  closeMissing: string[];
+  /** OPEN date-keyed ECONOMICS rows replaced by a row of the same kind with another date. */
+  supersede: { id: string; note: string }[];
+  /** Rows the sync closed that the ledger reports open again. */
+  reopen: { id: string; dueOn: Ymd; title: string; resetReminders: boolean }[];
 }
 
 /**
@@ -52,16 +108,30 @@ export interface DeadlineSyncPlan {
  * - an OPEN RULE/ECONOMICS row whose incoming item is done → complete;
  * - an OPEN RULE/ECONOMICS row with another `dueOn` or title → update
  *   (`resetReminders` when `dueOn` changed);
- * - DONE and NOT_APPLICABLE rows are never touched;
+ * - a row the sync closed (`closedBySync`) whose incoming item is not done →
+ *   reopen; DONE and NOT_APPLICABLE rows a user closed are never touched;
  * - rows of any other source (CUSTOM, RESOLUTION, TRANSFER) are never touched;
- * - a row whose key is no longer incoming is never deleted or changed.
+ * - with `ledgerRange` (the range the ECONOMICS feed was read for): an OPEN
+ *   ECONOMICS row absent from the feed whose `dueOn` lies in that range is
+ *   superseded (NOT_APPLICABLE) when it is of a date-keyed kind and the feed
+ *   has a row of the same kind with another key, and otherwise completed
+ *   (the ledger no longer reports it, so it is satisfied);
+ * - nothing is ever deleted.
  */
 export function planDeadlineSync(
   existing: ExistingDeadline[],
   incoming: IncomingDeadline[],
+  ledgerRange?: { from: Ymd; to: Ymd },
 ): DeadlineSyncPlan {
   const byKey = new Map(existing.map((e) => [e.dedupeKey, e]));
-  const plan: DeadlineSyncPlan = { create: [], update: [], complete: [] };
+  const plan: DeadlineSyncPlan = {
+    create: [],
+    update: [],
+    complete: [],
+    closeMissing: [],
+    supersede: [],
+    reopen: [],
+  };
   const seen = new Set<string>();
 
   for (const item of incoming) {
@@ -74,13 +144,24 @@ export function planDeadlineSync(
       continue;
     }
     if (!SYNCED_SOURCES.includes(row.source as ComplianceSource)) continue;
-    if (row.status !== "OPEN") continue;
+    const dueChanged = row.dueOn !== item.dueOn;
+
+    if (row.status !== "OPEN") {
+      if (row.closedBySync && !item.done) {
+        plan.reopen.push({
+          id: row.id,
+          dueOn: item.dueOn,
+          title: item.title,
+          resetReminders: dueChanged,
+        });
+      }
+      continue;
+    }
 
     if (item.done) {
       plan.complete.push(row.id);
       continue;
     }
-    const dueChanged = row.dueOn !== item.dueOn;
     if (dueChanged || row.title !== item.title) {
       plan.update.push({
         id: row.id,
@@ -88,6 +169,28 @@ export function planDeadlineSync(
         title: item.title,
         resetReminders: dueChanged,
       });
+    }
+  }
+
+  if (ledgerRange !== undefined) {
+    const ledger = incoming.filter((d) => d.source === "ECONOMICS");
+    for (const row of existing) {
+      if (row.source !== "ECONOMICS" || row.status !== "OPEN") continue;
+      if (seen.has(row.dedupeKey)) continue;
+      if (row.dueOn < ledgerRange.from || row.dueOn > ledgerRange.to) continue;
+      const replacement = DATE_KEYED_KINDS.includes(row.ruleKey)
+        ? ledger.find(
+            (d) => d.ruleKey === row.ruleKey && d.dedupeKey !== row.dedupeKey,
+          )
+        : undefined;
+      if (replacement !== undefined) {
+        plan.supersede.push({
+          id: row.id,
+          note: supersededNote(replacement.dueOn),
+        });
+      } else {
+        plan.closeMissing.push(row.id);
+      }
     }
   }
   return plan;
