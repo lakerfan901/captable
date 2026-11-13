@@ -4,6 +4,9 @@ import { eSignCompletePDFWorker } from "./esign-complete-pdf";
 import { eSignConfirmationEmailWorker } from "./esign-confirmation-email";
 import { eSignNotificationEmailWorker } from "./esign-email";
 import { eSignPdfWorker } from "./esign-pdf";
+import { ballotEmailWorker } from "./governance-ballot-email";
+import { resolutionFinalizeWorker } from "./governance-resolution-finalize";
+import { resolutionNoticeWorker } from "./governance-resolution-notice";
 import { sendMemberInviteEmailWorker } from "./member-inivite-email";
 import { passwordResetEmailWorker } from "./password-reset-email";
 import { shareDataRoomEmailWorker } from "./share-data-room-email";
@@ -21,6 +24,9 @@ export async function registerJobs() {
   queueManager.register(eSignCompletePDFWorker);
 
   // governance workers and schedules are registered below by G8, G9, G12, G13, G14
+  queueManager.register(ballotEmailWorker);
+  queueManager.register(resolutionNoticeWorker);
+  queueManager.register(resolutionFinalizeWorker);
   //start
   await queueManager.start();
 }
