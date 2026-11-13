@@ -3,10 +3,23 @@ import { logger } from "@/lib/logger";
 import { env } from "./env";
 
 const log = logger.child({ module: "proxy" });
+
+// Emailed links (ballots, member reports, signing, updates) carry a signed
+// token in the path or in the tRPC query string. A token is a credential, so
+// the access log records the path with token-shaped segments redacted and
+// never the query string.
+const TOKEN_SEGMENT = /^[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}$/;
+export function loggablePath(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((segment) => (TOKEN_SEGMENT.test(segment) ? "[token]" : segment))
+    .join("/");
+}
 // This function can be marked `async` if using `await` inside
 export function proxy(request: NextRequest) {
   if (env.LOGS || env.NODE_ENV === "production" || env.NODE_ENV === "staging") {
-    const { url, method } = request;
+    const { method } = request;
+    const url = loggablePath(request.nextUrl.pathname);
     // `request.ip` and `request.geo` were removed in Next.js 15; read the
     // client address from the proxy header instead.
     const ip =
