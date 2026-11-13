@@ -6,6 +6,8 @@ export enum TAG {
   EQUITY = "equity",
   DATA_ROOM = "data-room",
   GENERIC = "generic",
+  RESOLUTION = "resolution",
+  MEMBER_REPORT = "member-report",
 }
 
 const TagSchema = z.nativeEnum(TAG);
