@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { dayjsExt } from "@/common/dayjs";
 import FileIcon from "@/components/common/file-icon";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Table,
@@ -42,7 +43,13 @@ export const ESignTable = ({ documents, companyPublicId }: ESignTableProps) => {
               <span className="flex">{item.name}</span>
             </TableCell>
 
-            <TableCell>{item.status}</TableCell>
+            <TableCell>
+              {item.isMaster ? (
+                <Badge variant="info">Master</Badge>
+              ) : (
+                item.status
+              )}
+            </TableCell>
             <TableCell suppressHydrationWarning>
               {dayjsExt().to(item.createdAt)}
             </TableCell>
@@ -66,10 +73,12 @@ export const ESignTable = ({ documents, companyPublicId }: ESignTableProps) => {
                 </Link>
               )}
 
-              <TemplateCancelButton
-                templateId={item.id}
-                publicId={item.publicId}
-              />
+              {!item.isMaster && (
+                <TemplateCancelButton
+                  templateId={item.id}
+                  publicId={item.publicId}
+                />
+              )}
             </TableCell>
           </TableRow>
         ))}

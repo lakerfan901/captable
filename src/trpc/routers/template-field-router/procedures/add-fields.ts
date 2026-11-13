@@ -4,6 +4,10 @@ import {
   eSignNotificationEmailJob,
   type TESignNotificationEmailJobInput,
 } from "@/jobs/esign-email";
+import {
+  canonicalOptionsFor,
+  isSubscriptionFieldKey,
+} from "@/lib/esign/subscription-fields";
 import { decode, encode } from "@/lib/jwt";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
@@ -61,6 +65,59 @@ export const addFieldProcedure = withAuth
           message: "Required sender name and email",
         };
       }
+
+      // Checked before the transaction: its first write deletes the fields,
+      // and a failure envelope cannot be returned from inside it.
+      const target = await ctx.db.template.findFirst({
+        where: { publicId: input.templatePublicId, companyId: user.companyId },
+        select: { isMaster: true, workflow: true },
+      });
+
+      // Masters stay DRAFT forever; packets are cloned from them (B22).
+      if (target?.isMaster && input.status === "PENDING") {
+        return {
+          success: false,
+          title: "Not allowed",
+          message:
+            "A master cannot be sent. Use Admissions → Send subscription.",
+        };
+      }
+
+      const unknownKeys = [
+        ...new Set(
+          input.data
+            .map((field) => field.semanticKey)
+            .filter(
+              (key): key is string => !!key && !isSubscriptionFieldKey(key),
+            ),
+        ),
+      ];
+      if (unknownKeys.length) {
+        return {
+          success: false,
+          title: "Validation failed",
+          message: `Unknown field meaning: ${unknownKeys.join(", ")}`,
+        };
+      }
+
+      // Subscription SELECT keys always carry the canonical options, so the
+      // stored answer is an enum name (B25, A3.14).
+      const inputFields =
+        target?.workflow === "SUBSCRIPTION"
+          ? input.data.map((field) => {
+              const options = field.semanticKey
+                ? canonicalOptionsFor(field.semanticKey)
+                : undefined;
+              const [first, ...rest] = options ?? [];
+              return first
+                ? {
+                    ...field,
+                    type: "SELECT" as const,
+                    meta: { ...field.meta, options: [first, ...rest] },
+                  }
+                : field;
+            })
+          : input.data;
 
       const template = await ctx.db.$transaction(async (tx) => {
         const { companyId } = await checkMembership({
@@ -134,7 +191,7 @@ export const addFieldProcedure = withAuth
 
         const fieldsList = [];
 
-        for (const field of input.data) {
+        for (const field of inputFields) {
           if (field) {
             fieldsList.push({ ...field, templateId: template.id });
           }

@@ -31,6 +31,9 @@ export const ZodAddFieldMutationSchema = z.object({
       readOnly: z.boolean(),
       recipientId: z.string(),
       meta: TemplateFieldMetaType.optional(),
+      // Meaning of the field on a subscription master (A3.14); must be in the
+      // form schema or it is lost on the delete-and-recreate save.
+      semanticKey: z.string().max(64).nullish(),
     }),
   ),
   message: z.string().optional(),

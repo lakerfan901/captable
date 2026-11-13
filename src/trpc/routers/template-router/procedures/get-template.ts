@@ -19,6 +19,8 @@ export const getTemplateProcedure = withAuth
         select: {
           name: true,
           status: true,
+          isMaster: true,
+          workflow: true,
           company: { select: { id: true, publicId: true } },
           bucket: {
             select: {
@@ -43,6 +45,7 @@ export const getTemplateProcedure = withAuth
               recipientId: true,
               prefilledValue: true,
               meta: true,
+              semanticKey: true,
             },
             orderBy: {
               top: "asc",
@@ -53,6 +56,7 @@ export const getTemplateProcedure = withAuth
               email: true,
               id: true,
               name: true,
+              role: true,
             },
           },
         },
@@ -71,6 +75,8 @@ export const getTemplateProcedure = withAuth
       url,
       name: template.name,
       status: template.status,
+      isMaster: template.isMaster,
+      workflow: template.workflow,
       recipients: template.eSignRecipient,
     };
   });

@@ -16,6 +16,8 @@ export const getAllTemplateProcedure = withAuth.query(async ({ ctx }) => {
         completedOn: true,
         name: true,
         createdAt: true,
+        isMaster: true,
+        workflow: true,
       },
       orderBy: {
         createdAt: "desc",
