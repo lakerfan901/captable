@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { VoteBasis } from "@/lib/llc/voting";
+import { formatVoteBps, type VoteBasis } from "@/lib/llc/voting";
 import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
 
@@ -49,8 +49,7 @@ const BASIS_WORDING: Record<VoteBasis, string> = {
  * decimals, by integer arithmetic so it can never round up: 6666 -> "66.66".
  */
 export function formatBps(bps: number): string {
-  const b = Math.max(0, Math.floor(bps));
-  return `${Math.floor(b / 100)}.${String(b % 100).padStart(2, "0")}`;
+  return formatVoteBps(bps);
 }
 
 /** A 6-decimal units string with thousands separators: "1050.000000" -> "1,050.000000". */

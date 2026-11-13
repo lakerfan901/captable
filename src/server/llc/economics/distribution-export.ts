@@ -24,7 +24,8 @@ import type {
 import { guardedUpdate } from "@/server/guarded-write";
 import type { LedgerActor } from "@/server/llc/commitments";
 import { unitsToWire } from "@/server/llc/serialize";
-import { isMailCatcherConfigured, sendMail } from "@/server/mailer";
+import { assertMailDeliverable } from "@/server/mail-delivery";
+import { sendMail } from "@/server/mailer";
 import { calendarDate, longDate } from "./call-notices.logic";
 import {
   buildDistributionCsv,
@@ -58,9 +59,6 @@ const TYPE_LABEL: Record<DistributionTypeEnum, string> = {
   RETURN_OF_UNUSED_CAPITAL: "Return of unused capital",
   SALE_OR_LIQUIDATION: "Sale or liquidation distribution",
 };
-
-const MAIL_CATCHER_BLOCKED =
-  "Email is not configured for real delivery. Set EMAIL_SERVER and EMAIL_FROM before sending distribution notices.";
 
 async function audit(
   tx: Reader,
@@ -149,9 +147,8 @@ export async function sendDistributionNotices(
   },
 ): Promise<{ results: NoticeLineResult[] }> {
   const companyId = i.company.id;
-  if (process.env.NODE_ENV === "production" && isMailCatcherConfigured()) {
-    ruleViolation(MAIL_CATCHER_BLOCKED);
-  }
+  // Production with the bundled mail catcher: refused (src/lib/mail-delivery.ts).
+  assertMailDeliverable("DISTRIBUTION_NOTICES");
   const d = await loadDeliverable(db, companyId, i.id);
   let lines = d.lines;
   if (i.lineIds) {

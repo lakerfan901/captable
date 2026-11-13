@@ -4,6 +4,7 @@ import { normalizeBlocks } from "@/lib/governance/rich-doc";
 import { Audit } from "@/server/audit";
 import { guardedWrite } from "@/server/governance/guarded";
 import { lockResolution } from "@/server/governance/tally";
+import { termExtensionDraftFields } from "@/server/governance/term-extension";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionUpdateSchema } from "../schema";
 import {
@@ -55,7 +56,15 @@ export const updateProcedure = withLlcAccessControl
       if (existing.status !== "DRAFT") throw onlyDraft;
 
       const type = existing.type as ResolutionType;
-      const params = parseDraftParams(type, input.params);
+      let params = parseDraftParams(type, input.params);
+      let title = input.title;
+      // A term extension's dates and title come from the term clock (saving
+      // a stale draft refreshes them), never from the input.
+      if (type === "TERM_EXTENSION") {
+        const canonical = await termExtensionDraftFields(tx, companyId);
+        params = canonical.params;
+        title = canonical.title;
+      }
       const normalized = normalizeBlocks(input.body);
       if (!normalized.ok) {
         throw new TRPCError({
@@ -70,7 +79,7 @@ export const updateProcedure = withLlcAccessControl
         tx.resolution.update({
           where: { id: existing.id, companyId, status: "DRAFT" },
           data: {
-            title: input.title,
+            title,
             params: params as object,
             body: input.body as object[],
             matterKey: matterKeyFor(type, params),
@@ -87,10 +96,14 @@ export const updateProcedure = withLlcAccessControl
           actor: { type: "user", id: ctx.session.user.id },
           context: { requestIp: ctx.requestIp, userAgent: ctx.userAgent },
           target: [{ type: "resolution", id: existing.id }],
-          summary: `${ctx.session.user.name ?? "A user"} edited the draft resolution "${input.title}"`,
+          summary: `${ctx.session.user.name ?? "A user"} edited the draft resolution "${title}"`,
         },
         tx,
       );
-      return { success: true as const };
+      return {
+        success: true as const,
+        // What was stored when the server set it (TERM_EXTENSION).
+        ...(type === "TERM_EXTENSION" ? { title, params } : {}),
+      };
     });
   });

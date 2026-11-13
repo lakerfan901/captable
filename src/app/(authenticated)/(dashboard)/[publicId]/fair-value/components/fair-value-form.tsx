@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatDateOnly } from "@/lib/date-only";
 import { api } from "@/trpc/react";
 import { FairValueTable } from "./fair-value-table";
 
@@ -35,6 +36,17 @@ type Query = {
   unitClass?: UnitClass;
   unitsValued?: string;
 };
+
+/** A field filled from the prefill: the value and the valuation date it is as of. */
+type Prefilled = { asOf: string; cents: number } | null;
+
+function PrefilledNote({ p }: { p: Prefilled }) {
+  return p ? (
+    <p className="text-xs text-muted-foreground">
+      Prefilled as of {formatDateOnly(p.asOf)}
+    </p>
+  ) : null;
+}
 
 function PrefillButton({
   label,
@@ -76,6 +88,43 @@ export function FairValueForm({
   );
   const [unitClass, setUnitClass] = useState<UnitClass | null>(null);
   const [units, setUnits] = useState("");
+  // Which fields hold a prefilled value, and as of which date. A hand-typed
+  // value is never touched; a prefilled one is cleared when the valuation
+  // date changes (it was measured on the old date).
+  const [cashPrefilled, setCashPrefilled] = useState<Prefilled>(null);
+  const [liabilitiesPrefilled, setLiabilitiesPrefilled] =
+    useState<Prefilled>(null);
+  const [clearedNote, setClearedNote] = useState<string | null>(null);
+
+  // Prefill figures for the SELECTED date (not the last calculated one).
+  const prefillQuery = api.llcEconomics.fairValuePrefill.useQuery(
+    { asOf },
+    { enabled: ISO.test(asOf), retry: false, refetchOnWindowFocus: false },
+  );
+  const prefill =
+    prefillQuery.data && prefillQuery.data.asOf === asOf
+      ? prefillQuery.data
+      : null;
+
+  const changeAsOf = (next: string) => {
+    setAsOf(next);
+    const cleared: string[] = [];
+    if (cashPrefilled && cashPrefilled.asOf !== next) {
+      setCash(null);
+      setCashPrefilled(null);
+      cleared.push("cash on hand");
+    }
+    if (liabilitiesPrefilled && liabilitiesPrefilled.asOf !== next) {
+      setLiabilities(null);
+      setLiabilitiesPrefilled(null);
+      cleared.push("liabilities");
+    }
+    if (cleared.length > 0) {
+      setClearedNote(
+        `The prefilled ${cleared.join(" and ")} ${cleared.length === 1 ? "was" : "were"} measured on another date and ${cleared.length === 1 ? "was" : "were"} cleared. Prefill again for the new date.`,
+      );
+    }
+  };
 
   const [query, setQuery] = useState<Query>({
     asOf: today,
@@ -129,7 +178,6 @@ export function FairValueForm({
     });
   };
 
-  const prefill = data?.prefill;
   const selected = result.data?.selected ?? null;
 
   return (
@@ -145,8 +193,13 @@ export function FairValueForm({
               id="fv-as-of"
               type="date"
               value={asOf}
-              onChange={(e) => setAsOf(e.target.value)}
+              onChange={(e) => changeAsOf(e.target.value)}
             />
+            {clearedNote ? (
+              <p className="text-xs text-amber-700" role="status">
+                {clearedNote}
+              </p>
+            ) : null}
           </div>
           <div className="grid gap-1.5">
             <Label>Fair market value of the LLC&apos;s assets</Label>
@@ -154,29 +207,57 @@ export function FairValueForm({
           </div>
           <div className="grid gap-1.5">
             <Label>Cash on hand</Label>
-            <MoneyInput value={cash} onChange={setCash} />
+            <MoneyInput
+              value={cash}
+              onChange={(cents) => {
+                setCash(cents);
+                // Typed over: no longer the prefilled figure.
+                if (cashPrefilled && cents !== cashPrefilled.cents) {
+                  setCashPrefilled(null);
+                }
+              }}
+            />
+            <PrefilledNote p={cashPrefilled} />
             <div className="flex gap-3">
               <PrefillButton
-                label="Prefill: Available Cash (before reserves) + reserves"
+                label={`Prefill: Available Cash (before reserves) + reserves as of ${ISO.test(asOf) ? formatDateOnly(asOf) : "the valuation date"}`}
                 disabled={!prefill}
-                onClick={() =>
-                  prefill &&
-                  setCash(
-                    Math.max(0, prefill.availableCashRaw) + prefill.reserves,
-                  )
-                }
+                onClick={() => {
+                  if (!prefill) return;
+                  const cents =
+                    Math.max(0, prefill.availableCashRaw) + prefill.reserves;
+                  setCash(cents);
+                  setCashPrefilled({ asOf: prefill.asOf, cents });
+                  setClearedNote(null);
+                }}
               />
             </div>
           </div>
           <div className="grid gap-1.5">
             <Label>Liabilities to creditors</Label>
-            <MoneyInput value={liabilities} onChange={setLiabilities} />
+            <MoneyInput
+              value={liabilities}
+              onChange={(cents) => {
+                setLiabilities(cents);
+                if (
+                  liabilitiesPrefilled &&
+                  cents !== liabilitiesPrefilled.cents
+                ) {
+                  setLiabilitiesPrefilled(null);
+                }
+              }}
+            />
+            <PrefilledNote p={liabilitiesPrefilled} />
             <PrefillButton
-              label="Prefill: unpaid Management Fee"
+              label={`Prefill: unpaid Management Fee as of ${ISO.test(asOf) ? formatDateOnly(asOf) : "the valuation date"}`}
               disabled={!prefill}
-              onClick={() =>
-                prefill && setLiabilities(prefill.unpaidManagementFee)
-              }
+              onClick={() => {
+                if (!prefill) return;
+                const cents = prefill.unpaidManagementFee;
+                setLiabilities(cents);
+                setLiabilitiesPrefilled({ asOf: prefill.asOf, cents });
+                setClearedNote(null);
+              }}
             />
           </div>
           <div className="flex items-center gap-2 md:col-span-2">
@@ -186,7 +267,8 @@ export function FairValueForm({
               onCheckedChange={(v) => setIncludeLoans(v === true)}
             />
             <Label htmlFor="fv-loans">
-              Include member loans (principal and accrued interest:{" "}
+              Include member loans (principal and accrued interest
+              {prefill ? ` as of ${formatDateOnly(prefill.asOf)}` : ""}:{" "}
               <Money cents={prefill?.memberLoans ?? null} />)
             </Label>
           </div>

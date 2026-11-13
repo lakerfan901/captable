@@ -352,6 +352,74 @@ export async function getCommitmentStates(
   return states.sort(byName);
 }
 
+export interface CapitalTotals {
+  /** Σ acceptedCents of every ACCEPTED / REDUCED Preferred commitment. */
+  committed: Cents;
+  /** Cash applied as capital: Σ INITIAL + BALANCE + REPLACEMENT receipts. */
+  paid: Cents;
+  /** Σ uncalled Balance of the callable (non-replacement) commitments. */
+  uncalled: Cents;
+}
+
+/**
+ * Committed, paid and uncalled capital of the Preferred class (optionally of
+ * one holder), reconciling with the ledger (`getClassTotals` committed and
+ * cash applied). `getCommitmentStates` lists the CALLABLE commitments only
+ * (`isReplacement = false`); a Replacement Funder's commitment is added here:
+ * the defaulter's commitment is already reduced by the funded amount
+ * (`reduceAcceptedCommitment`) and the funder's new commitment carries it
+ * with its REPLACEMENT receipt, so each dollar is counted once. A replacement
+ * commitment is funded in full when it is made and is never called, so it
+ * adds nothing to `uncalled`.
+ */
+export async function getCapitalTotals(
+  tx: Reader,
+  companyId: string,
+  filter?: { stakeholderId?: string },
+): Promise<CapitalTotals> {
+  const states = (await getCommitmentStates(tx, companyId)).filter(
+    (s) =>
+      filter?.stakeholderId === undefined ||
+      s.stakeholderId === filter.stakeholderId,
+  );
+  let committed = 0n;
+  let paid = 0n;
+  let uncalled = 0n;
+  for (const s of states) {
+    committed += s.acceptedCents;
+    paid += s.totalPaid;
+    uncalled += s.uncalled;
+  }
+  const preferred = await tx.unitClass.findFirst({
+    where: { companyId, kind: "PREFERRED" },
+    select: { id: true },
+  });
+  if (!preferred) return { committed, paid, uncalled };
+  const replacements = await tx.commitment.findMany({
+    where: {
+      companyId,
+      unitClassId: preferred.id,
+      status: { in: ["ACCEPTED", "REDUCED"] },
+      isReplacement: true,
+      ...(filter?.stakeholderId ? { stakeholderId: filter.stakeholderId } : {}),
+    },
+    select: { id: true, acceptedCents: true },
+  });
+  if (replacements.length === 0) return { committed, paid, uncalled };
+  for (const r of replacements) committed += r.acceptedCents;
+  const cash = await tx.capitalReceipt.aggregate({
+    where: {
+      companyId,
+      commitmentId: { in: replacements.map((r) => r.id) },
+      voidedAt: null,
+      kind: { in: ["INITIAL", "BALANCE", "REPLACEMENT"] },
+    },
+    _sum: { appliedCents: true },
+  });
+  paid += cash._sum.appliedCents ?? 0n;
+  return { committed, paid, uncalled };
+}
+
 /** The commitment's BALANCE receipts with money not yet allocated to a line, oldest first. */
 async function loadPrepaidReceipts(
   tx: Reader,

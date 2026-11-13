@@ -7,6 +7,7 @@ import {
 import { logger } from "@/lib/logger";
 import { db } from "@/server/db";
 import { evaluateAndTransition } from "@/server/governance/tally";
+import { currentMailDelivery } from "@/server/mail-delivery";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
 import {
   type BallotEmailJobData,
@@ -132,6 +133,14 @@ async function reEmitMissedReportFiling(now: Date): Promise<number> {
 }
 
 async function emitAutoReminders(now: Date): Promise<void> {
+  // Production with the bundled mail catcher: a reminder would be recorded
+  // as emailed while no Member receives it. Skipped (and retried by a later
+  // sweep on the next reminder day) until real delivery is configured.
+  const blocked = currentMailDelivery("MEMBER_EMAIL").blockedReason;
+  if (blocked !== null) {
+    log.warn({ reason: blocked }, "Automatic ballot reminders skipped");
+    return;
+  }
   const open = await db.resolution.findMany({
     where: { status: "SENT", autoReminders: true, closesAt: { gt: now } },
     select: {

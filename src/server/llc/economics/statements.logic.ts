@@ -106,6 +106,41 @@ export interface StatementReceiptRow {
   amount: Cents;
   /** unitsIssued (negative for FORFEITURE) */
   units: MicroUnits;
+  /** The date the money was received (wire date); defaults to `on`. */
+  receivedOn?: IsoDate;
+  /** prefReturnStartDate: where this receipt's Preferred Return accrual starts. */
+  accrualStartOn?: IsoDate | null;
+}
+
+/**
+ * The activity line of a receipt. The row is dated as the ledger dates it
+ * (`on` = appliedOn: capital and Units exist from then). Money wired before
+ * the commitment was accepted is received earlier than that, and an Initial
+ * Installment or Replacement funding accrues Preferred Return from the
+ * receipt date (02-economics.md "receipts", FOUNDATION Q3): both dates are
+ * then stated so the row does not read as a contribution on the wrong day.
+ * A Balance receipt's accrual can start per Call Notice allocation, so no
+ * single accrual date is printed for it.
+ */
+export function receiptDescription(r: StatementReceiptRow): string {
+  const label = RECEIPT_LABEL[r.kind];
+  const cash =
+    r.kind === "INITIAL" || r.kind === "BALANCE" || r.kind === "REPLACEMENT";
+  if (!cash || r.receivedOn === undefined || r.receivedOn === r.on) {
+    return label;
+  }
+  const parts = [
+    `received ${r.receivedOn}`,
+    `capital and Units from ${r.on} (acceptance)`,
+  ];
+  if (
+    r.kind !== "BALANCE" &&
+    r.accrualStartOn !== undefined &&
+    r.accrualStartOn !== null
+  ) {
+    parts.push(`Preferred Return accrues from ${r.accrualStartOn}`);
+  }
+  return `${label} (${parts.join("; ")})`;
 }
 
 /** The member's line of a FINALIZED, non-reversal distribution. */
@@ -309,7 +344,7 @@ export function buildMemberStatement(i: {
       on: r.on,
       kind:
         r.kind === "INITIAL" || r.kind === "BALANCE" ? "CONTRIBUTION" : r.kind,
-      description: RECEIPT_LABEL[r.kind],
+      description: receiptDescription(r),
       amount: r.amount,
       units: r.units,
       refId: r.id,

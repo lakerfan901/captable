@@ -10,9 +10,22 @@ type DataCollection = NonNullable<
 >;
 
 const deny = ["forwarded", "-ip", "remote-", "via", "-user"];
-// Query parameters that can carry an emailed-link token (`token`) or a tRPC
-// input holding one (`input`); see also constants/sentry-scrub.ts.
-const denyQueryParams = [...deny, "input", "token"];
+// Query parameters that can carry an emailed-link token (`token`), a tRPC
+// input holding one (`input`) or a presigned storage URL's signature
+// (`X-Amz-*` & co.); see also constants/sentry-scrub.ts, which drops the
+// whole query of a presigned URL wherever it appears.
+const denyQueryParams = [
+  ...deny,
+  "input",
+  "token",
+  "x-amz-",
+  "x-goog-",
+  "awsaccesskeyid",
+  "signature",
+  "sig",
+  "policy",
+  "key-pair-id",
+];
 
 export const sentryDataCollection: DataCollection = {
   userInfo: false,

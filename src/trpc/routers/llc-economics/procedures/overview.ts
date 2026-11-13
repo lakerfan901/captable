@@ -8,6 +8,7 @@ import {
 import { addYears, compareIso, type IsoDate } from "@/lib/llc/dates";
 import { managementFeeSummary } from "@/lib/llc/management-fee";
 import {
+  getCapitalTotals,
   getCommitmentStates,
   getLineStates,
 } from "@/server/llc/economics/call-notices";
@@ -78,15 +79,12 @@ export const overviewProcedures = {
         { cashLedger, lineStates, commitmentStates },
       );
 
-      // Capital
-      let committed = 0n;
-      let paid = 0n;
-      let uncalled = 0n;
-      for (const c of commitmentStates) {
-        committed += c.acceptedCents;
-        paid += c.totalPaid;
-        uncalled += c.uncalled;
-      }
+      // Capital: every Preferred commitment, Replacement Funder commitments
+      // included (reconciles with the ledger, getCapitalTotals).
+      const { committed, paid, uncalled } = await getCapitalTotals(
+        db,
+        companyId,
+      );
       let calledOutstanding = 0n;
       let openLines = 0;
       let overdueLines = 0;

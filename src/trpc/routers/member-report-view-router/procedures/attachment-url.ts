@@ -44,7 +44,7 @@ export const attachmentUrlProcedure = withoutAuth
 
     const bucket = await ctx.db.bucket.findUnique({
       where: { id: attachment.bucketId },
-      select: { key: true },
+      select: { key: true, mimeType: true, name: true },
     });
     if (!bucket) return notFound();
     // Throws NOT_FOUND unless the key is in the company's namespace.
@@ -53,6 +53,11 @@ export const attachmentUrlProcedure = withoutAuth
       publicId: company.publicId,
     });
 
-    const { url } = await getPresignedGetUrl(bucket.key);
+    // Served with the stored type: PDF and images inline, the rest as a
+    // download (src/lib/inline-content-type.ts).
+    const { url } = await getPresignedGetUrl(bucket.key, {
+      mimeType: bucket.mimeType,
+      name: bucket.name,
+    });
     return { url };
   });

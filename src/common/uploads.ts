@@ -1,4 +1,5 @@
 import { env } from "@/env";
+import { storedContentType } from "@/lib/inline-content-type";
 import { getPresignedPutUrl } from "@/server/file-upload-actions";
 import type { getPresignedUrlOptions } from "@/server/file-uploads";
 
@@ -37,9 +38,14 @@ export const uploadFile = async (
   const res = await fetch(url, {
     method: "PUT",
     headers: {
-      // Public-bucket URLs are signed with the file's content type.
+      // Public-bucket URLs are signed with the file's content type. A
+      // private object keeps its real type only when a browser may show it
+      // inline safely (PDF, raster images); anything else stays
+      // application/octet-stream (src/lib/inline-content-type.ts).
       "Content-Type":
-        bucketMode === "publicBucket" ? file.type : "application/octet-stream",
+        bucketMode === "publicBucket"
+          ? file.type
+          : storedContentType(file.type),
     },
     body,
   });

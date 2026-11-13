@@ -7,6 +7,7 @@ import { reportTokenExpiry } from "@/lib/governance/token-payload";
 import { Audit } from "@/server/audit";
 import { emitAfterCommit } from "@/server/governance/emit";
 import { guardedWrite } from "@/server/governance/guarded";
+import { assertMailDeliverable } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportReplaceLinkSchema } from "../schema";
 import { auditContext, badRequest, loadLockedReport } from "./shared";
@@ -28,6 +29,9 @@ export const replaceLinkProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
   .input(ZMemberReportReplaceLinkSchema)
   .mutation(async ({ ctx, input }) => {
+    // Production with the bundled mail catcher: refused before anything
+    // is written (Members would not receive the email).
+    assertMailDeliverable("MEMBER_EMAIL");
     const companyId = ctx.membership.companyId;
     const now = new Date();
     const userName = ctx.session.user.name ?? "A user";

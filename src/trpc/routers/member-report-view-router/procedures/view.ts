@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { GOVERNANCE_TIME_ZONE, utcDateToYmd } from "@/lib/governance/dates";
+import { isInlineContentType } from "@/lib/inline-content-type";
 import { withoutAuth } from "@/trpc/api/trpc";
 import { readFrozenContent } from "../../member-report-router/procedures/shared";
 import { visibleAttachmentWhere } from "../access";
@@ -42,8 +43,25 @@ export const viewProcedure = withoutAuth
         ...visibleAttachmentWhere(recipient.stakeholderId, report.type),
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true, name: true, kind: true, stakeholderId: true },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        stakeholderId: true,
+        bucketId: true,
+      },
     });
+    // PDF / image attachments open in a tab; anything else downloads.
+    const inlineBuckets = new Set(
+      (
+        await ctx.db.bucket.findMany({
+          where: { id: { in: attachments.map((a) => a.bucketId) } },
+          select: { id: true, mimeType: true },
+        })
+      )
+        .filter((b) => isInlineContentType(b.mimeType))
+        .map((b) => b.id),
+    );
 
     return {
       state: "OK" as const,
@@ -70,6 +88,7 @@ export const viewProcedure = withoutAuth
         name: a.name,
         kind: a.kind,
         private: a.stakeholderId !== null,
+        inline: inlineBuckets.has(a.bucketId),
       })),
     };
   });

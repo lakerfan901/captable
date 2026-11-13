@@ -1,6 +1,9 @@
 import * as Sentry from "@sentry/nextjs";
 import { sentryDataCollection } from "@/constants/sentry-data-collection";
-import { sentryScrubbing } from "@/constants/sentry-scrub";
+import {
+  isSignedStorageRequest,
+  sentryScrubbing,
+} from "@/constants/sentry-scrub";
 import { env } from "@/env";
 
 Sentry.init({
@@ -8,6 +11,13 @@ Sentry.init({
   tracesSampleRate: 1,
   debug: false,
   dataCollection: sentryDataCollection,
-  // Emailed-link tokens never leave in an event, span or breadcrumb.
+  // Emailed-link tokens and presigned storage URLs never leave in an event,
+  // span or breadcrumb.
   ...sentryScrubbing,
+  integrations: [
+    // No span for a presigned storage URL (breadcrumbs are scrubbed).
+    Sentry.winterCGFetchIntegration({
+      shouldCreateSpanForRequest: (url) => !isSignedStorageRequest(url),
+    }),
+  ],
 });

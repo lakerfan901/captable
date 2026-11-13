@@ -3,6 +3,7 @@ import { z } from "zod";
 import { microUnitsFromDecimal } from "@/lib/llc/money";
 import {
   getFairValue,
+  getFairValuePrefill,
   getMemberStatement,
 } from "@/server/llc/economics/statements";
 import { toWire } from "@/server/llc/economics/wire";
@@ -80,4 +81,14 @@ export const statementProcedures = {
         }),
       );
     }),
+
+  /** Prefill figures for the selected valuation date (Codex review 2, finding 4). */
+  fairValuePrefill: withLlcAccessControl
+    .meta({ policies: { distributions: { allow: ["read"] } } })
+    .input(z.object({ asOf: zIsoDate }))
+    .query(async ({ ctx, input }) =>
+      toWire(
+        await getFairValuePrefill(ctx.db, ctx.membership.companyId, input.asOf),
+      ),
+    ),
 };

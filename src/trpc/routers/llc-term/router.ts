@@ -12,6 +12,7 @@ import {
   ruleViolation,
 } from "@/server/llc/economics/scope";
 import {
+  assertNoPendingTermExtension,
   countTermExtensions,
   getOrCreateLlcTerm,
   getTermClock,
@@ -162,6 +163,15 @@ export const llcTermRouter = createTRPCRouter({
         );
         if (changed.length === 0) return toWire({ term: toTermDto(term) });
 
+        // The Target Sale Date (and what an open term-extension consent
+        // states) depends on the term length.
+        if (changed.some((k) => k === "targetSaleYears")) {
+          await assertNoPendingTermExtension(
+            tx,
+            companyId,
+            "The term parameters",
+          );
+        }
         if (changed.some((k) => LOCKED.has(k))) {
           if (await isEconomicsLocked(tx, companyId)) {
             ruleViolation(
@@ -245,6 +255,13 @@ export const llcTermRouter = createTRPCRouter({
           );
         }
         const current = dateOrNull(term.operationsCommencementDate);
+        if (current !== input.date) {
+          await assertNoPendingTermExtension(
+            tx,
+            companyId,
+            "The Operations Commencement Date",
+          );
+        }
         if (current !== null && current !== input.date) {
           if ((await countTermExtensions(tx, companyId)) > 0) {
             ruleViolation(
@@ -292,6 +309,13 @@ export const llcTermRouter = createTRPCRouter({
         if (term.operationsCommencementDate === null) {
           ruleViolation(
             "Set the Operations Commencement Date first (Section 1.21).",
+          );
+        }
+        if (input.days !== term.loiExtensionDays) {
+          await assertNoPendingTermExtension(
+            tx,
+            companyId,
+            "The LOI extension",
           );
         }
         if (input.days > term.loiExtensionMaxDays) {

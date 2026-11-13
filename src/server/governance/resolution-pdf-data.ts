@@ -12,6 +12,7 @@ import {
 } from "@/lib/governance/presets";
 import { RichDocSchema } from "@/lib/governance/rich-doc";
 import {
+  formatVoteBps,
   fromMicro,
   isEligible,
   tallyBasis,
@@ -70,7 +71,7 @@ function formatUnits(units: string): string {
 
 /** Basis points (already floored) -> "76.19": two decimals, truncated. */
 function formatBps(bps: number): string {
-  return `${Math.floor(bps / 100)}.${String(bps % 100).padStart(2, "0")}`;
+  return formatVoteBps(bps);
 }
 
 /** The percentage wording of G5 for one basis (single source: `describeRequirements`). */

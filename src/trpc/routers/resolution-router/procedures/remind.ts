@@ -3,6 +3,7 @@ import {
   type BallotEmailJobData,
   emitBallotEmails,
 } from "@/jobs/governance-ballot-email";
+import { assertMailDeliverable } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionRemindSchema } from "../schema";
 
@@ -27,6 +28,9 @@ export const remindProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
   .input(ZResolutionRemindSchema)
   .mutation(async ({ ctx, input }) => {
+    // Production with the bundled mail catcher: refused before anything
+    // is written (Members would not receive the email).
+    assertMailDeliverable("MEMBER_EMAIL");
     const companyId = ctx.membership.companyId;
     const now = new Date();
 

@@ -531,6 +531,27 @@ function proposedDate(currentTargetSaleDate: string): Ymd {
   return addMonthsYmd(parseYmd(currentTargetSaleDate), 12);
 }
 
+function ymdIso(date: Ymd): string {
+  return `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}`;
+}
+
+/**
+ * The two dates a TERM_EXTENSION consent states (title and locked clause 2):
+ * the current Target Sale Date and the date it would be extended to, as
+ * `YYYY-MM-DD`. `resolution.send` refuses unless both equal the term clock's
+ * (03-governance.md R14; Codex review 2, finding 3).
+ */
+export function termExtensionDates(params: unknown): {
+  current: string;
+  proposed: string;
+} {
+  const p = parseParams("TERM_EXTENSION", params);
+  return {
+    current: ymdIso(parseYmd(p.currentTargetSaleDate)),
+    proposed: ymdIso(proposedDate(p.currentTargetSaleDate)),
+  };
+}
+
 /** "412500.00" → "412,500.00" (keeps the decimals as entered). */
 function withThousands(amount: string): string {
   const [whole = "", fraction] = amount.split(".");

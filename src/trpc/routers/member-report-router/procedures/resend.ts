@@ -5,6 +5,7 @@ import {
 } from "@/jobs/governance-report-email";
 import { reportTokenExpiry } from "@/lib/governance/token-payload";
 import { Audit } from "@/server/audit";
+import { assertMailDeliverable } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportResendSchema } from "../schema";
 import { k1Holders } from "./audience";
@@ -27,6 +28,9 @@ export const resendProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
   .input(ZMemberReportResendSchema)
   .mutation(async ({ ctx, input }) => {
+    // Production with the bundled mail catcher: refused before anything
+    // is written (Members would not receive the email).
+    assertMailDeliverable("MEMBER_EMAIL");
     const companyId = ctx.membership.companyId;
     const now = new Date();
     const userName = ctx.session.user.name ?? "A user";

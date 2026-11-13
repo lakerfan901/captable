@@ -149,10 +149,11 @@ export function DistributionWizard({
       : step;
   const current = STEPS.findIndex((s) => s.key === effective);
 
+  /** Saves the draft; true when saved (a failure is shown and returns false). */
   const persist = async (
     v: Omit<DraftValue, "id">,
     next: WizardStep | null,
-  ) => {
+  ): Promise<boolean> => {
     setSaveError(null);
     try {
       const r = await save.mutateAsync({
@@ -168,10 +169,12 @@ export function DistributionWizard({
       await utils.distribution.compute.invalidate({ id: r.id });
       if (next) router.push(`${base}/${r.id}?step=${next}`);
       router.refresh();
+      return true;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setSaveError(message);
       toast.error(message);
+      return false;
     }
   };
 
@@ -212,7 +215,7 @@ export function DistributionWizard({
             draft={draft}
             saving={save.isPending}
             error={saveError}
-            onSave={(v) => persist(v, "inputs")}
+            onSave={(v) => void persist(v, "inputs")}
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -254,10 +257,17 @@ export function DistributionWizard({
             companyBase={companyBase}
             unpaidFee={unpaidFee}
             saving={save.isPending}
+            saveError={saveError}
             recalculating={compute.isFetching}
             onRecalculate={() => void compute.refetch()}
             onSaveInputs={
-              canCreate ? (inputs) => persist({ ...draft, inputs }, null) : null
+              canCreate
+                ? (inputs, opts) =>
+                    persist(
+                      { ...draft, inputs },
+                      opts?.thenReview ? "review" : null,
+                    )
+                : null
             }
             setupHref={hrefFor("setup")}
             onContinue={() => router.push(hrefFor("review"))}

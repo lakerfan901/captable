@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { NewResolutionFlow } from "@/components/governance/resolution-preset-form";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { serverAccessControl } from "@/lib/rbac/access-control";
+import { db } from "@/server/db";
 import { requireLlc } from "@/server/entity";
+import { canonicalTermExtension } from "@/server/governance/term-extension";
 import { api } from "@/trpc/server";
 
 export const metadata: Metadata = { title: "New resolution" };
@@ -32,6 +34,9 @@ export default async function NewResolutionPage() {
     };
   }
 
+  // A term extension's dates come from the term clock (read-only in the form).
+  const term = await canonicalTermExtension(db, entity.id);
+
   const stakeholders =
     (await allow(api.stakeholder.getStakeholders(), ["stakeholder", "read"])) ??
     [];
@@ -51,7 +56,11 @@ export default async function NewResolutionPage() {
       <NewResolutionFlow
         base={`/${entity.publicId}/resolutions`}
         members={members}
-        prefill={{ PURCHASE_ORDER: poPrefill }}
+        prefill={{
+          PURCHASE_ORDER: poPrefill,
+          ...(term.ok ? { TERM_EXTENSION: { ...term.params } } : {}),
+        }}
+        unavailable={term.ok ? {} : { TERM_EXTENSION: term.reason }}
       />
     </div>
   );

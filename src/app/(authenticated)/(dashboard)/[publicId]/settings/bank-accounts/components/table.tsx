@@ -26,7 +26,13 @@ export type BankAccountRow = {
   primary: boolean;
 };
 
-const BankAccountsTable = ({ accounts }: { accounts: BankAccountRow[] }) => {
+const BankAccountsTable = ({
+  accounts,
+  canDelete,
+}: {
+  accounts: BankAccountRow[];
+  canDelete: boolean;
+}) => {
   const router = useRouter();
   const remove = api.bankAccounts.delete.useMutation({
     onSuccess: () => {
@@ -66,21 +72,23 @@ const BankAccountsTable = ({ accounts }: { accounts: BankAccountRow[] }) => {
                 {account.primary ? <Badge>Primary</Badge> : null}
               </TableCell>
               <TableCell className="text-right">
-                <ConfirmDialog
-                  title="Delete bank account?"
-                  body={`${account.bankName} ${maskAccountNumber(account.accountNumber)} will be removed.`}
-                  trigger={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={remove.isPending}
-                      aria-label="Delete bank account"
-                    >
-                      <RiDeleteBinLine className="h-4 w-4" />
-                    </Button>
-                  }
-                  onConfirm={() => remove.mutate({ id: account.id })}
-                />
+                {canDelete ? (
+                  <ConfirmDialog
+                    title="Delete bank account?"
+                    body={`${account.bankName} ${maskAccountNumber(account.accountNumber)} will be removed.`}
+                    trigger={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={remove.isPending}
+                        aria-label="Delete bank account"
+                      >
+                        <RiDeleteBinLine className="h-4 w-4" />
+                      </Button>
+                    }
+                    onConfirm={() => remove.mutate({ id: account.id })}
+                  />
+                ) : null}
               </TableCell>
             </TableRow>
           ))}

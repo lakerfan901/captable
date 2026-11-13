@@ -10,6 +10,8 @@ import {
   normalizeBlocks,
   type RichDoc,
 } from "@/lib/governance/rich-doc";
+import { isInlineContentType } from "@/lib/inline-content-type";
+import { currentMailDelivery } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportGetSchema } from "../schema";
 import { deriveAudience } from "./audience";
@@ -53,6 +55,7 @@ export const getProcedure = withLlcAccessControl
           name: true,
           stakeholderId: true,
           createdAt: true,
+          bucketId: true,
         },
       }),
       ctx.db.memberReportRecipient.findMany({
@@ -117,6 +120,16 @@ export const getProcedure = withLlcAccessControl
       const normalized = normalizeBlocks(row.commentary);
       doc = normalized.ok ? normalized.doc : [];
     }
+    const inlineBuckets = new Set(
+      (
+        await ctx.db.bucket.findMany({
+          where: { id: { in: attachments.map((a) => a.bucketId) } },
+          select: { id: true, mimeType: true },
+        })
+      )
+        .filter((b) => isInlineContentType(b.mimeType))
+        .map((b) => b.id),
+    );
     // Unparsable figures count as empty (every figure item not ok).
     const checklist = reportChecklist(
       type,
@@ -191,6 +204,8 @@ export const getProcedure = withLlcAccessControl
     }
 
     return {
+      // Production with the mail catcher: `send` refuses; elsewhere "Test mode".
+      mailDelivery: currentMailDelivery("REPORT"),
       report: {
         publicId: row.publicId,
         type,
@@ -219,8 +234,10 @@ export const getProcedure = withLlcAccessControl
         updatedAt: row.updatedAt,
       },
       checklist,
-      attachments: attachments.map((a) => ({
+      attachments: attachments.map(({ bucketId, ...a }) => ({
         ...a,
+        // PDF / image: opens in a tab; anything else downloads.
+        inline: inlineBuckets.has(bucketId),
         holderName: a.stakeholderId
           ? (holderName.get(a.stakeholderId) ?? null)
           : null,

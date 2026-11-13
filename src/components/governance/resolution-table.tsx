@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { ResolutionType } from "@/lib/governance/presets";
+import { formatVoteBps } from "@/lib/llc/voting";
 import type { RouterOutputs } from "@/trpc/shared";
 import { StatusBadge } from "./status-badge";
 
@@ -46,9 +47,8 @@ export function progressText(
   if (!vote) {
     return summaries.length > 0 ? "Manager only" : "—";
   }
-  const pct = (vote.forBps / 100).toLocaleString("en-US", {
-    maximumFractionDigits: 2,
-  });
+  // Truncated like every vote share (formatVoteBps): never rounded up.
+  const pct = formatVoteBps(vote.forBps);
   return `${pct}% of ${THRESHOLD_BY_LABEL[vote.label]}%`;
 }
 

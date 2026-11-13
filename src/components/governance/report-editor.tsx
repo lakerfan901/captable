@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +49,7 @@ import {
   type ReportFigures,
   TRANSFER_NOTICE_KINDS,
 } from "@/lib/governance/report-figures";
+import { TEST_MODE_TEXT } from "@/lib/mail-delivery";
 import { api } from "@/trpc/react";
 import type { MemberReportTypeValue } from "@/trpc/routers/member-report-router/schema";
 import type { RouterOutputs } from "@/trpc/shared";
@@ -305,6 +307,7 @@ function ReviewSendDialog({
         ? periodNotEndedText(report.periodEnd)
         : null;
     blocked =
+      data.mailDelivery.blockedReason ??
       notEnded ??
       data.candidatesProblem ??
       (missing.length > 0
@@ -317,6 +320,12 @@ function ReviewSendDialog({
       TRANSFER_NOTICE_KINDS.includes(report.noticeKind as NoticeKind);
     body = (
       <div className="space-y-3 text-sm">
+        {data.mailDelivery.testMode && !data.mailDelivery.blockedReason ? (
+          <Alert variant="destructive">
+            <AlertTitle>Test mode</AlertTitle>
+            <AlertDescription>{TEST_MODE_TEXT}</AlertDescription>
+          </Alert>
+        ) : null}
         <p>
           {report.type === "TAX_K1"
             ? "Each holder receives only its own Schedule K-1."
@@ -577,6 +586,7 @@ export function ReportEditor({
               <RichTextEditorLazy
                 initialBlocks={initialBlocks}
                 onChange={onCommentary}
+                editable={canUpdate}
               />
             </CardContent>
           </Card>

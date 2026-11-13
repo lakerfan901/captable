@@ -11,8 +11,57 @@ const bundleAnalyzer = withBundleAnalyzer({
  */
 await import("./src/env.js");
 
+// Security headers on every response. The Content-Security-Policy is the
+// framing / base / plugin / form-target part only: a full script/style/
+// connect policy has not been verified across the app (BlockNote editor,
+// react-pdf worker, presigned uploads to the S3 / MinIO origin, Sentry,
+// Google sign-in), so it is not shipped yet. Nothing in the app frames its
+// own pages (the only iframes are a sandboxed `srcdoc` email preview and the
+// Office viewer, which frames Microsoft's origin), hence DENY / 'none'.
+const CONTENT_SECURITY_POLICY =
+  "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'";
+
+/** @type {{ key: string; value: string }[]} */
+const SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
+  // Production only: a development server on http://localhost must not pin
+  // HTTPS for the host.
+  ...(process.env.NODE_ENV === "production"
+    ? [
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=31536000; includeSubDomains",
+        },
+      ]
+    : []),
+];
+
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  headers() {
+    return Promise.resolve([
+      {
+        source: "/:path*",
+        headers: [
+          ...SECURITY_HEADERS,
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+      // The emailed-link pages carry a credential in the path: no Referer
+      // ever leaves them. Listed after the catch-all: for the same key the
+      // last matching entry wins.
+      {
+        source: "/ballots/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/member-reports/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+    ]);
+  },
   output: process.env.DOCKER_OUTPUT ? "standalone" : undefined,
   // Image builds run on shared hosts and in small VMs: by default Next uses one
   // worker per CPU for page-data collection, which can exhaust memory there.
