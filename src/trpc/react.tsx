@@ -24,6 +24,18 @@ export function TRPCReactProvider(props: {
           enabled: (op) =>
             process.env.NODE_ENV === "development" ||
             (op.direction === "down" && op.result instanceof Error),
+          // Outside development a failed call is logged without its input:
+          // the input of a public page's call is its emailed token (W-9,
+          // ballot, member report, signing link).
+          ...(process.env.NODE_ENV !== "development" && {
+            logger: (op) => {
+              if (op.direction === "down" && op.result instanceof Error) {
+                console.error(
+                  `tRPC ${op.type} ${op.path} failed: ${op.result.message}`,
+                );
+              }
+            },
+          }),
         }),
         httpBatchStreamLink({
           transformer,

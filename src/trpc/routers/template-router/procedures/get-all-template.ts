@@ -8,6 +8,10 @@ export const getAllTemplateProcedure = withAuth.query(async ({ ctx }) => {
     const documents = await tx.template.findMany({
       where: {
         companyId,
+        // Subscription packets (one per investor) live on the Admissions
+        // page, which applies the admission rules; masters stay listed so
+        // their editor can be opened from here too.
+        NOT: { workflow: "SUBSCRIPTION", isMaster: false },
       },
       select: {
         id: true,
