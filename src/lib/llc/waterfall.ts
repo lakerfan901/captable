@@ -430,7 +430,14 @@ export function hypotheticalLiquidation(i: {
   };
 }
 
-/** Value of `unitsValued` of the `unitsHeld` units behind `holderGross` (R43). */
+/**
+ * Value of `unitsValued` of the `unitsHeld` units behind `holderGross` (R43).
+ * `holderGross` must be the gross attributable to the class being valued, and
+ * `unitsHeld` the holder's units of that class: for Preferred Units
+ * `tierC + tierD + tierEPreferred` over `preferredUnits`; for Common Units
+ * `tierECommon` over `commonUnits`. Passing `WaterfallLine.gross` is right only
+ * for a holder of a single class.
+ */
 export function fairValueOfUnits(
   holderGross: Cents,
   unitsValued: MicroUnits,

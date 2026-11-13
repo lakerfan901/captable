@@ -375,7 +375,8 @@ export function computePositions(
           if (part <= 0n) continue;
           const start = maxIso(lot.accrualStartOn, t);
           to.lots.push({
-            lotId: `${lot.lotId}>${to.holderId}@${t}`,
+            // seq keeps ids unique when several transfers to one holder share a date
+            lotId: `${lot.lotId}>${to.holderId}@${t}#${e.seq}`,
             accrualStartOn: start,
             original: part,
             outstanding: part,

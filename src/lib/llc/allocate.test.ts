@@ -80,6 +80,22 @@ describe("allocateProRata", () => {
     ).toEqual({ a: 0n, b: 5n });
   });
 
+  it("equal remainders: the larger weight gets the leftover cent before key order", () => {
+    // 2 × 1/4 = 0 r 2, 2 × 3/4 = 1 r 2: remainders tie, so weight decides (b),
+    // although key order alone would give the cent to a.
+    expect(
+      obj(
+        allocateProRata(
+          2n,
+          w([
+            ["a", 1n],
+            ["b", 3n],
+          ]),
+        ),
+      ),
+    ).toEqual({ a: 0n, b: 2n });
+  });
+
   it("errors", () => {
     expect(() => allocateProRata(5n, w([["a", 0n]]))).toThrow(
       expect.objectContaining({ code: "ZERO_WEIGHT" }),

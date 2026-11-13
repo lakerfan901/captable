@@ -189,6 +189,55 @@ describe("outstandingBalance / fullyFundedOn", () => {
       ]),
     ).toBeNull();
   });
+  it("same-day reductions: MEMBER before REPLACEMENT_FUNDER, any input order", () => {
+    const rfFirst: BalanceReduction[] = [
+      { on: "2027-01-25", amount: $(30_000), by: "REPLACEMENT_FUNDER" },
+      { on: "2027-01-25", amount: $(30_000), by: "MEMBER" },
+    ];
+    const memberFirst = [...rfFirst].reverse();
+    for (const rs of [rfFirst, memberFirst]) {
+      expect(fullyFundedOn($(60_000), rs)).toBe("2027-01-25");
+      expect(outstandingBalance($(60_000), rs, "2027-01-25")).toBe(0n);
+      expect(outstandingBalance($(60_000), rs, "2027-01-24")).toBe($(60_000));
+      expect(
+        defaultInterest(
+          {
+            unpaidAtDue: $(60_000),
+            dueOn: "2027-01-20",
+            reductions: rs,
+            asOf: "2027-02-19",
+          },
+          cfg,
+        ),
+      ).toBe(
+        defaultInterest(
+          {
+            unpaidAtDue: $(60_000),
+            dueOn: "2027-01-20",
+            reductions: [],
+            asOf: "2027-01-25",
+          },
+          cfg,
+        ),
+      );
+      const f = computeForfeiture(
+        {
+          unpaidAtDue: $(60_000),
+          reductions: rs,
+          forfeitureDate: "2027-01-27",
+          position: {
+            contributed: $(40_000),
+            unreturned: $(40_000),
+            unpaidReturn: 0n,
+            preferredUnits: u(40),
+          },
+        },
+        cfg,
+      );
+      expect(f.unpaidAtForfeiture).toBe($(30_000));
+      expect(f.forfeited).toBe($(15_000));
+    }
+  });
 });
 
 describe("defaultInterest", () => {
@@ -229,6 +278,20 @@ describe("defaultInterest", () => {
         cfg,
       ),
     ).toBe($(1_321.64));
+  });
+  it("rounded once where per-segment rounding differs", () => {
+    // 60,000 × 1 day + 59,000 × 1 day at 12% / 365 = 39.1233 → $39.12;
+    // per segment 19.73 + 19.40 would give $39.13.
+    expect(
+      defaultInterest(
+        {
+          ...i,
+          reductions: [{ on: "2027-01-21", amount: $(1_000), by: "MEMBER" }],
+          asOf: "2027-01-22",
+        },
+        cfg,
+      ),
+    ).toBe(3_912n);
   });
   it("I-5", () => {
     expect(
@@ -337,6 +400,31 @@ describe("computeForfeiture", () => {
       cfg,
     );
     expect(r.unpaidAtForfeiture).toBe($(60_000));
+  });
+  it("R33 member payment on the Forfeiture Date itself is in time", () => {
+    const full = computeForfeiture(
+      {
+        unpaidAtDue: $(60_000),
+        reductions: [{ on: "2027-01-27", amount: $(60_000), by: "MEMBER" }],
+        forfeitureDate: "2027-01-27",
+        position: pos40,
+      },
+      cfg,
+    );
+    expect(full.unpaidAtForfeiture).toBe(0n);
+    expect(full.forfeited).toBe(0n);
+    expect(full.unitsAfter).toBe(u(40));
+    const part = computeForfeiture(
+      {
+        unpaidAtDue: $(60_000),
+        reductions: [{ on: "2027-01-27", amount: $(20_000), by: "MEMBER" }],
+        forfeitureDate: "2027-01-27",
+        position: pos40,
+      },
+      cfg,
+    );
+    expect(part.unpaidAtForfeiture).toBe($(40_000));
+    expect(part.forfeited).toBe($(20_000));
   });
   it("FF-5 capital already returned", () => {
     const r = computeForfeiture(
@@ -468,6 +556,52 @@ describe("computeCreditAllocation", () => {
     expect(r.blocked).toBe("NO_ELIGIBLE_HOLDERS");
     expect(r.credits).toEqual([]);
   });
+  it("two tranches by one funder equal one summed funding", () => {
+    const base = {
+      forfeited: $(30_000),
+      unpaidAtForfeiture: $(60_000),
+      holdersOnDueDate: holders,
+    };
+    const summed = computeCreditAllocation(
+      {
+        ...base,
+        fundings: [
+          { holderId: "A", amount: $(30_000), isInsider: false },
+          { holderId: "K", amount: $(15_000), isInsider: true },
+        ],
+      },
+      cfg,
+    );
+    const tranches = computeCreditAllocation(
+      {
+        ...base,
+        fundings: [
+          { holderId: "A", amount: $(10_000), isInsider: false },
+          { holderId: "K", amount: $(5_000), isInsider: true },
+          { holderId: "A", amount: $(20_000), isInsider: false },
+          { holderId: "K", amount: $(10_000), isInsider: true },
+        ],
+      },
+      cfg,
+    );
+    expect(tranches).toEqual(summed);
+  });
+  it("tranches of one funder with different insider flags throw", () => {
+    expect(() =>
+      computeCreditAllocation(
+        {
+          forfeited: $(30_000),
+          unpaidAtForfeiture: $(60_000),
+          fundings: [
+            { holderId: "A", amount: $(10_000), isInsider: false },
+            { holderId: "A", amount: $(20_000), isInsider: true },
+          ],
+          holdersOnDueDate: holders,
+        },
+        cfg,
+      ),
+    ).toThrow(expect.objectContaining({ code: "INCONSISTENT_INSIDER" }));
+  });
 });
 
 describe("isSuspended / suspendedHolderIds", () => {
@@ -549,5 +683,25 @@ describe("cureStatus", () => {
   });
   it("member paid balance but interest owed is not cured", () => {
     expect(cureStatus({ ...base, interestOwed: 1n }).cured).toBe(false);
+  });
+  it("R37 member pays the rest after a partial replacement funding: PAID_IN_FULL", () => {
+    const reductions: BalanceReduction[] = [
+      { on: "2027-01-25", amount: $(30_000), by: "REPLACEMENT_FUNDER" },
+      { on: "2027-01-26", amount: $(30_000), by: "MEMBER" },
+    ];
+    expect(outstandingBalance($(60_000), reductions, "2027-01-26")).toBe(0n);
+    expect(fullyFundedOn($(60_000), reductions)).toBeNull();
+    expect(
+      cureStatus({
+        ...base,
+        outstandingBalance: outstandingBalance(
+          $(60_000),
+          reductions,
+          "2027-01-26",
+        ),
+        lastReductionBy: "MEMBER",
+        forfeitureDatePassed: false,
+      }),
+    ).toEqual({ cured: true, method: "PAID_IN_FULL" });
   });
 });

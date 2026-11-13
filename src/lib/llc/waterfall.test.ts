@@ -572,6 +572,48 @@ describe("hypotheticalLiquidation and fairValueOfUnits", () => {
     for (const l of r.waterfall.lines) expect(l.gross).toBe(0n);
   });
 
+  it("dual-class holder: each class is valued on its own gross", () => {
+    const X: WaterfallHolder = {
+      holderId: "X",
+      unpaidReturn: 0n,
+      unreturned: 10_000_000n,
+      preferredUnits: 100n * U,
+      commonUnits: 100n * U,
+    };
+    const r = runWaterfall(
+      30_000_000n,
+      [X, pref("Y", 0n, 10_000_000n, 100n)],
+      FULL,
+    );
+    const x = line(r, "X");
+    expect(x).toEqual({
+      holderId: "X",
+      tierC: 0n,
+      tierD: 10_000_000n,
+      tierEPreferred: 3_500_000n,
+      tierECommon: 3_000_000n,
+      gross: 16_500_000n,
+    });
+    const preferredGross = x.tierC + x.tierD + x.tierEPreferred;
+    const commonGross = x.tierECommon;
+    // 50 of X's 100 Preferred Units: $67,500.00 (not 16.5M × ½ = $82,500.00).
+    expect(fairValueOfUnits(preferredGross, 50n * U, X.preferredUnits)).toBe(
+      6_750_000n,
+    );
+    expect(fairValueOfUnits(x.gross, 50n * U, X.preferredUnits)).not.toBe(
+      6_750_000n,
+    );
+    // 40 of X's 100 Common Units: $12,000.00.
+    expect(fairValueOfUnits(commonGross, 40n * U, X.commonUnits)).toBe(
+      1_200_000n,
+    );
+    // All units of both classes add back to the holder's gross.
+    expect(
+      fairValueOfUnits(preferredGross, X.preferredUnits, X.preferredUnits) +
+        fairValueOfUnits(commonGross, X.commonUnits, X.commonUnits),
+    ).toBe(x.gross);
+  });
+
   it("fairValueOfUnits bounds", () => {
     expect(fairValueOfUnits(18_820_053n, 100n * U, 100n * U)).toBe(18_820_053n);
     expect(fairValueOfUnits(18_820_053n, 0n, 100n * U)).toBe(0n);

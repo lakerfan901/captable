@@ -290,6 +290,34 @@ describe("computePositions — forfeiture", () => {
     expect(d.unpaidReturn).toBe(0n);
   });
 
+  it("forfeiture larger than unreturned capital extinguishes only min(amount, unreturned)", () => {
+    const ev: LedgerEvent[] = [
+      c("C", "c1", "2026-11-30", 40_000, 1),
+      dist("2027-01-20", 2, [{ holderId: "C", tierD: 2_000_000n }]),
+      {
+        kind: "FORFEITURE",
+        on: "2027-01-27",
+        seq: 3,
+        holderId: "C",
+        amount: 3_000_000n,
+        units: 30n * U,
+      },
+    ];
+    const before = pos(ev, "2027-01-27", "C", { untilSeq: 3 });
+    expect(before.unreturned).toBe(2_000_000n);
+    expect(before.unpaidReturn).toBeGreaterThan(0n);
+    const r = computePositions(ev, "2027-01-27", cfg);
+    const cc = r.holders.get("C");
+    expect(r.forfeitures[0]?.unreturnedDeducted).toBe(2_000_000n);
+    expect(r.forfeitures[0]?.extinguishedReturn).toBe(before.unpaidReturn);
+    expect(cc?.unreturned).toBe(0n);
+    expect(cc?.lots.map((l) => l.outstanding)).toEqual([0n]);
+    expect(cc?.unpaidReturn).toBe(0n);
+    expect(cc?.contributed).toBe(1_000_000n);
+    expect(cc?.forfeited).toBe(3_000_000n);
+    expect(cc?.preferredUnits).toBe(10n * U);
+  });
+
   it("FORFEIT_EXCEEDS_UNITS / FORFEIT_EXCEEDS_CAPITAL", () => {
     const base = c("D", "d1", "2026-11-30", 25_000, 1);
     const f = (amount: bigint, units: bigint): LedgerEvent => ({
@@ -338,7 +366,50 @@ describe("computePositions — transfer", () => {
     expect(N?.unreturned).toBe(4_000_000n);
     expect(N?.preferredUnits).toBe(40n * U);
     expect(N?.unpaidReturn).toBe(172_712n);
-    expect(N?.lots.map((l) => l.lotId)).toEqual(["a1>N@2027-06-01"]);
+    expect(N?.lots.map((l) => l.lotId)).toEqual(["a1>N@2027-06-01#2"]);
+  });
+
+  it("two same-day transfers then a return of capital", () => {
+    const two: LedgerEvent[] = [
+      c("A", "a1", "2026-11-16", 100_000, 1),
+      {
+        kind: "TRANSFER",
+        on: "2027-06-01",
+        seq: 2,
+        fromHolderId: "A",
+        toHolderId: "N",
+        units: 20n * U,
+      },
+      {
+        kind: "TRANSFER",
+        on: "2027-06-01",
+        seq: 3,
+        fromHolderId: "A",
+        toHolderId: "N",
+        units: 20n * U,
+      },
+      dist("2027-08-13", 4, [
+        { holderId: "A", tierD: 3_000_000n },
+        { holderId: "N", tierD: 2_000_000n },
+      ]),
+    ];
+    const r = computePositions(two, "2027-08-13", cfg);
+    const A = r.holders.get("A");
+    const N = r.holders.get("N");
+    expect(N?.lots.map((l) => l.lotId)).toEqual([
+      "a1>N@2027-06-01#2",
+      "a1>N@2027-06-01#3",
+    ]);
+    expect(N?.preferredUnits).toBe(40n * U);
+    expect(N?.contributed).toBe(4_000_000n);
+    expect(N?.unreturned).toBe(2_000_000n);
+    expect(N?.capitalReturned).toBe(2_000_000n);
+    expect(A?.unreturned).toBe(3_000_000n);
+    expect(r.totals.contributed).toBe(10_000_000n);
+    expect(r.totals.unreturned).toBe(5_000_000n);
+    expect(r.totals.preferredUnits).toBe(100n * U);
+    // Same total unpaid return as one 40-unit transfer (T-2): 591,781.
+    expect(r.totals.unpaidReturn).toBe(591_781n);
   });
 
   it("T-2", () => {
