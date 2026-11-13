@@ -1,7 +1,19 @@
 import { TRPCError } from "@trpc/server";
 import { UAParser } from "ua-parser-js";
+import {
+  admissionNoticeEmailJob,
+  type TAdmissionNoticeEmailJobInput,
+} from "@/jobs/admission-notice-email";
 import { filterSignerValues } from "@/lib/esign/filter-signer-values";
+import { logger } from "@/lib/logger";
 import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
+import { guardedUpdate } from "@/server/guarded-write";
+import {
+  encodeW9Token,
+  INVESTOR_ROLE,
+  investorSignedNotices,
+  lockTemplate,
+} from "@/server/llc/admission";
 import { EsignService } from "@/services/esign-service";
 import { withoutAuth } from "@/trpc/api/trpc";
 import { DecodeEmailToken } from "../../template-field-router/procedures/add-fields";
@@ -9,7 +21,7 @@ import { SignTemplateMutationSchema } from "../schema";
 
 export const signTemplateProcedure = withoutAuth
   .input(SignTemplateMutationSchema)
-  .mutation(async ({ ctx, input }) => {
+  .mutation(async ({ ctx, input }): Promise<{ w9Token?: string }> => {
     const { db, requestIp, userAgent } = ctx;
 
     // Public endpoint: the signing token (sent by email) is the credential.
@@ -29,8 +41,19 @@ export const signTemplateProcedure = withoutAuth
 
     const eSignService = new EsignService();
 
-    await db.$transaction(async (tx) => {
-      const template = await eSignService.getTemplate(token.id, tx);
+    // SUBSCRIPTION packets (F12, B23): set when the investor signed; the
+    // notices are emitted after the transaction commits.
+    const signed = await db.$transaction(async (tx) => {
+      let template = await eSignService.getTemplate(token.id, tx);
+      const isSubscription = template.workflow === "SUBSCRIPTION";
+
+      // A packet is signed, cancelled, prepared for countersigning and gets
+      // its W-9s under the template row lock, so signing never races any of
+      // them; the template (status and fields) is re-read under the lock.
+      if (isSubscription) {
+        await lockTemplate(tx, template.id);
+        template = await eSignService.getTemplate(token.id, tx);
+      }
 
       if (template.status !== "PENDING") {
         throw new TRPCError({
@@ -87,7 +110,24 @@ export const signTemplateProcedure = withoutAuth
         });
       }
 
-      await eSignService.updateRecipientStatus(recipient.id, "SIGNED", tx);
+      if (isSubscription) {
+        // Guarded on SENT: a double submit signs (and notifies) once.
+        const marked = await guardedUpdate(() =>
+          tx.esignRecipient.update({
+            where: { id: recipient.id, status: "SENT" },
+            data: { status: "SIGNED" },
+            select: { id: true },
+          }),
+        );
+        if (marked === null) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This signature request is not active.",
+          });
+        }
+      } else {
+        await eSignService.updateRecipientStatus(recipient.id, "SIGNED", tx);
+      }
 
       await eSignService.createSignedAuditLog(
         {
@@ -104,7 +144,8 @@ export const signTemplateProcedure = withoutAuth
         tx,
       );
 
-      if (!isMultiRecipient) {
+      // A packet always keeps its answers on the fields (F13 reads them).
+      if (!isMultiRecipient && !isSubscription) {
         await eSignService.completeDocument({
           companyId,
           templateName,
@@ -125,7 +166,7 @@ export const signTemplateProcedure = withoutAuth
         });
       }
 
-      if (isMultiRecipient) {
+      if (isMultiRecipient || isSubscription) {
         await eSignService.saveFieldValues(template.fields, values, tx);
 
         const allRecipients = await eSignService.getAllRecipients(
@@ -161,14 +202,47 @@ export const signTemplateProcedure = withoutAuth
         }
       }
 
-      if (isOrderedDelivery) {
+      // A packet never emails the next signer (B23): the Manager's link is
+      // activated from the confirmation screen after acceptance (F13).
+      if (isOrderedDelivery && !isSubscription) {
         await eSignService.handleOrderedDelivery(
           template,
           { sender, requestIp, userAgent },
           tx,
         );
       }
+
+      if (isSubscription && recipient.role === INVESTOR_ROLE) {
+        const notices: TAdmissionNoticeEmailJobInput[] =
+          await investorSignedNotices(tx, {
+            templateId: template.id,
+            investorRecipientId: recipient.id,
+          });
+        return { templateId: template.id, recipientId: recipient.id, notices };
+      }
+      return null;
     });
 
-    return {};
+    if (signed === null) return {};
+
+    // After commit (F12): the W-9 request to the investor and the review
+    // notice to the Manager; the browser goes on to the W-9 page. The
+    // signature is already recorded, so a failed emit is logged (without
+    // the token) and does not fail the request: the investor still gets the
+    // W-9 page.
+    const w9Token = await encodeW9Token({
+      templateId: signed.templateId,
+      recipientId: signed.recipientId,
+    });
+    for (const notice of signed.notices) {
+      try {
+        await admissionNoticeEmailJob.emit(notice);
+      } catch (error) {
+        logger.error(
+          { err: error, templateId: signed.templateId, kind: notice.kind },
+          "Failed to queue an admission notice",
+        );
+      }
+    }
+    return { w9Token };
   });

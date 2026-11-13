@@ -1,4 +1,5 @@
 import { queueManager } from "../lib/queue";
+import { admissionNoticeEmailWorker } from "./admission-notice-email";
 import { authVerificationEmailWorker } from "./auth-verification-email";
 import { eSignCompletePDFWorker } from "./esign-complete-pdf";
 import { eSignConfirmationEmailWorker } from "./esign-confirmation-email";
@@ -26,6 +27,7 @@ export async function registerJobs() {
   queueManager.register(eSignConfirmationEmailWorker);
   queueManager.register(eSignPdfWorker);
   queueManager.register(eSignCompletePDFWorker);
+  queueManager.register(admissionNoticeEmailWorker);
 
   // governance workers and schedules are registered below by G8, G9, G12, G13, G14
   queueManager.register(ballotEmailWorker);
