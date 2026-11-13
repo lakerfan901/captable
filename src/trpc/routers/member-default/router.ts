@@ -11,6 +11,7 @@ import {
   getOverdueUndeclared,
   listDefaults,
   previewDefaultPayment,
+  reconcileBeforeDeclare,
   recordDefaultFunding,
   recordDefaultPayment,
   voidDefault,
@@ -101,18 +102,31 @@ export const memberDefaultRouter = createTRPCRouter({
   declare: withLlcAccessControl
     .meta({ policies: { "capital-calls": { allow: ["create"] } } })
     .input(ZDeclareSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.db.$transaction(async (tx) =>
-        toWire(
-          await declareDefault(tx, {
+    .mutation(async ({ ctx, input }) => {
+      // Money already received is applied in its own transaction first, so
+      // the match stays even when the declaration below is refused (B2).
+      await ctx.db.$transaction(
+        (tx) =>
+          reconcileBeforeDeclare(tx, {
             company: ctx.company,
             actor: actorFrom(ctx),
             callNoticeLineId: input.callNoticeLineId,
-            expectedUnpaidCents: numberToCents(input.expectedUnpaidCents),
           }),
-        ),
-      ),
-    ),
+        LONG_TX,
+      );
+      return ctx.db.$transaction(
+        async (tx) =>
+          toWire(
+            await declareDefault(tx, {
+              company: ctx.company,
+              actor: actorFrom(ctx),
+              callNoticeLineId: input.callNoticeLineId,
+              expectedUnpaidCents: numberToCents(input.expectedUnpaidCents),
+            }),
+          ),
+        LONG_TX,
+      );
+    }),
 
   void: withLlcAccessControl
     .meta({ policies: { "capital-calls": { allow: ["delete"] } } })

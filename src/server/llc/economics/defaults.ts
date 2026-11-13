@@ -38,7 +38,11 @@ import {
 } from "@/server/llc/commitments";
 import { unitsToWire } from "@/server/llc/serialize";
 import { assertCompanyOwns } from "@/server/tenant-ownership";
-import { settleNotices } from "./call-notices";
+import {
+  getCommitmentStates,
+  reconcileCallNoticeLines,
+  settleNotices,
+} from "./call-notices";
 import {
   type ActiveCommitment,
   blockingDefaultSteps,
@@ -59,7 +63,13 @@ import {
   planDefaultPayment,
 } from "./defaults.logic";
 import { getPositions } from "./ledger";
-import { conflict, lockCompanyLedger, notFound, ruleViolation } from "./scope";
+import {
+  conflict,
+  lockCompanyLedger,
+  lockCompanyLedgerAndUnitClasses,
+  notFound,
+  ruleViolation,
+} from "./scope";
 import { assertLedgerDateOpen, getEconomicsContext } from "./term";
 
 /*
@@ -928,9 +938,13 @@ export async function getPendingDefaultSteps(
 
 type MutationInput = { company: Company; actor: LedgerActor };
 
-/** After the lock: re-reads the default and the economics context. */
+/**
+ * After the locks: re-reads the default and the economics context. The unit
+ * class locks are taken too (advisory lock first): the proposals read
+ * positions, and FOUNDATION's own receipt writes take only the class lock.
+ */
 async function lockedDefault(tx: Tx, company: Company, id: string) {
-  await lockCompanyLedger(tx, company.id);
+  await lockCompanyLedgerAndUnitClasses(tx, company.id);
   const ctx = await getEconomicsContext(tx, company);
   const record = await loadDefault(tx, company.id, id);
   return { ...ctx, record };
@@ -1021,12 +1035,36 @@ async function closeLineIfPaid(
   await settleNotices(tx, companyId, [record.callNoticeLine.callNoticeId]);
 }
 
+/**
+ * Before a line is judged overdue, applies the member's Balance money that a
+ * failed post-send match left unapplied (`reconcileCallNoticeLines`, under
+ * the advisory and Preferred class locks). The `declare` procedure runs this
+ * in its own transaction first, so a match that shows the member paid is
+ * kept even though the declaration that follows is refused; `declareDefault`
+ * runs it again inside its own transaction.
+ */
+export async function reconcileBeforeDeclare(
+  tx: Tx,
+  i: MutationInput & { callNoticeLineId: string },
+): Promise<void> {
+  const companyId = i.company.id;
+  await lockCompanyLedger(tx, companyId);
+  const line = await tx.callNoticeLine.findFirst({
+    where: { id: i.callNoticeLineId, companyId },
+    select: { commitmentId: true },
+  });
+  if (!line) notFound("Call Notice line");
+  await reconcileCallNoticeLines(tx, companyId, line.commitmentId, i.actor);
+}
+
 export async function declareDefault(
   tx: Tx,
   i: MutationInput & { callNoticeLineId: string; expectedUnpaidCents: Cents },
 ) {
   const companyId = i.company.id;
-  await lockCompanyLedger(tx, companyId);
+  // Prepaid money is applied first (B2): a member who has paid is never
+  // declared in default. Everything below is read after it.
+  await reconcileBeforeDeclare(tx, i);
   const { config, today } = await getEconomicsContext(tx, i.company);
   const line = await tx.callNoticeLine.findFirst({
     where: { id: i.callNoticeLineId, companyId },
@@ -1078,6 +1116,17 @@ export async function declareDefault(
     outstanding,
   });
   if (errors.length > 0 || dueOn === null) ruleViolation(errors.join(" "));
+  // Balance money recorded outside the Call Notice flow (FOUNDATION's
+  // Commitments page) is not matched to any line, so the line looks unpaid
+  // although the member paid. Refuse until it is applied to the line.
+  const [state] = await getCommitmentStates(tx, companyId, {
+    commitmentIds: [line.commitmentId],
+  });
+  if (state && state.prepaidUnallocated > 0n) {
+    ruleViolation(
+      `${state.name} has ${formatCents(state.prepaidUnallocated)} of Balance money recorded that is not applied to any Call Notice line, so this line may already be paid (Section 4.9). Void that receipt on the member's Commitments tab and record it again with "Record payment" on the Call Notice, so it is applied to the line, then review the default again.`,
+    );
+  }
   if (unpaidAtDue !== i.expectedUnpaidCents) {
     conflict(
       `The amount unpaid at the due date is now ${formatCents(unpaidAtDue)}, not ${formatCents(i.expectedUnpaidCents)}; review and confirm again.`,
@@ -1476,7 +1525,9 @@ export async function recordDefaultPayment(
       `The payment would now be applied ${formatCents(plan.toBalance)} to Balance, ${formatCents(plan.toInterest)} to interest and ${formatCents(plan.toCosts)} to costs; review and confirm again.`,
     );
   }
-  await assertLedgerDateOpen(tx, companyId, i.paidOn);
+  // Interest and costs are not ledger events and may be paid on a payment
+  // date; the Balance part is a receipt, refused there by the receipt guard.
+  await assertLedgerDateOpen(tx, companyId, i.paidOn, { allowSameDay: true });
 
   let capitalReceiptId: string | null = null;
   if (plan.toBalance > 0n) {

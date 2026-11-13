@@ -6,10 +6,10 @@ import type { LedgerActor } from "@/server/llc/commitments";
 
 /**
  * Serialises every economics ledger write of one company for the rest of the
- * transaction (Postgres transaction-scoped advisory lock).
- * NOT YET VERIFIED against a database: `$executeRaw` returns the row count and
- * does not read the `void` column. If the pg driver adapter rejects it, switch
- * to `$queryRaw\`SELECT pg_advisory_xact_lock(hashtext(${key}))::text AS locked\``.
+ * transaction (Postgres transaction-scoped advisory lock). Verified against
+ * Postgres through the pg driver adapter (defaults.integration.ts, "ledger
+ * lock"): a second transaction blocks here until the first commits, and a
+ * different company does not block.
  */
 export async function lockCompanyLedger(
   tx: PrismaTransactionalClient,
@@ -17,6 +17,37 @@ export async function lockCompanyLedger(
 ): Promise<void> {
   const key = `llc-economics:${companyId}`;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+}
+
+/**
+ * `lockCompanyLedger`, then the row lock FOUNDATION's services take on each
+ * unit class (`lockUnitClass` in commitments.ts: SELECT … FOR UPDATE),
+ * Preferred before Common. FOUNDATION's own writes (Commitments page
+ * receipts, voids, Common issuance) take only the class lock, so an
+ * economics step that reads positions must hold the class locks before it
+ * reads, or such a write can commit unseen in between. Order: advisory lock
+ * first, class locks second, as everywhere in economics.
+ */
+export async function lockCompanyLedgerAndUnitClasses(
+  tx: PrismaTransactionalClient,
+  companyId: string,
+): Promise<void> {
+  await lockCompanyLedger(tx, companyId);
+  const classes = await tx.unitClass.findMany({
+    where: { companyId },
+    select: { id: true, kind: true },
+    orderBy: { id: "asc" },
+  });
+  const ordered = [
+    ...classes.filter((c) => c.kind === "PREFERRED"),
+    ...classes.filter((c) => c.kind !== "PREFERRED"),
+  ];
+  for (const c of ordered) {
+    await tx.$queryRaw`
+      SELECT id FROM "UnitClass"
+      WHERE id = ${c.id} AND "companyId" = ${companyId}
+      FOR UPDATE`;
+  }
 }
 
 /** TRPCError NOT_FOUND: "<what> not found." */

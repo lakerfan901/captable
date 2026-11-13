@@ -60,7 +60,13 @@ import {
 } from "./financials";
 import { firstOfMonth, reserveLedgerError } from "./financials.logic";
 import { getPositions } from "./ledger";
-import { conflict, lockCompanyLedger, notFound, ruleViolation } from "./scope";
+import {
+  conflict,
+  lockCompanyLedger,
+  lockCompanyLedgerAndUnitClasses,
+  notFound,
+  ruleViolation,
+} from "./scope";
 import {
   closeBooksThrough,
   getEconomicsContext,
@@ -659,8 +665,11 @@ export async function finalizeDistribution(
 ) {
   const companyId = i.company.id;
   const by = createdBy(i.actor);
-  // 1. Lock, re-read, recompute.
-  await lockCompanyLedger(tx, companyId);
+  // 1. Lock, re-read, recompute. The unit-class locks keep FOUNDATION's own
+  // writes (Commitments page receipts and voids, Common issuance), which take
+  // only those locks, out until this commits: otherwise one could commit
+  // between the computation and the commit, unseen by both.
+  await lockCompanyLedgerAndUnitClasses(tx, companyId);
   const row = await tx.distribution.findFirst({
     where: { id: i.id, companyId },
   });
@@ -1037,7 +1046,7 @@ export async function reverseDistribution(
   }
 
   // Lock, re-read and check everything before writing anything.
-  await lockCompanyLedger(tx, companyId);
+  await lockCompanyLedgerAndUnitClasses(tx, companyId);
   const original = await tx.distribution.findFirst({
     where: { id: i.id, companyId },
     include: { lines: true },

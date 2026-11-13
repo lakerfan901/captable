@@ -18,37 +18,104 @@ import { ruleViolation } from "./scope";
 
 type Tx = PrismaTransactionalClient;
 
+/** Where a receipt comes from (`CapitalReceipt.sourceType` / `sourceId`). */
+export interface ReceiptSource {
+  sourceType?: string | null;
+  sourceId?: string | null;
+}
+
 /**
- * Same rule as `assertLedgerDateOpen` (term.ts), re-implemented here: rejects
- * a receipt applied before the payment date of a FINALIZED, non-reversal
- * distribution (the same day is allowed: E15 records offset receipts on the
- * payment date).
+ * The distribution that created an offset receipt (E15 finalize, step 4),
+ * when `source` names one of this company's distributions paid on
+ * `appliedOn`; the receipt then sorts immediately after it in the ledger
+ * (ledger.logic.ts `assignSeq`). The string is not trusted on its own: the
+ * row must exist in the company with that payment date. Any status: when a
+ * distribution is reversed its status changes before its receipts are voided.
+ */
+async function offsetSourceDistribution(
+  tx: Tx,
+  companyId: string,
+  appliedOn: Date,
+  source: ReceiptSource,
+): Promise<{ id: string; number: number } | null> {
+  if (source.sourceType !== "distribution" || !source.sourceId) return null;
+  const row = await tx.distribution.findFirst({
+    where: {
+      id: source.sourceId,
+      companyId,
+      isReversal: false,
+      paymentDate: appliedOn,
+    },
+    select: { id: true, number: true },
+  });
+  return row && row.number !== null ? { id: row.id, number: row.number } : null;
+}
+
+/**
+ * A FINALIZED, non-reversal distribution whose computation the receipt would
+ * be part of: paid after `appliedOn`, or paid on `appliedOn` and ordered
+ * after the receipt. On one date the ledger orders every ordinary entry
+ * (receipt, forfeiture, transfer) before the distributions, and each
+ * distribution's own offset receipts right after it, so an ordinary receipt
+ * sorts before every same-day distribution and an offset receipt only before
+ * the same-day distributions numbered after its own.
+ */
+function distributionDependingOn(
+  tx: Tx,
+  companyId: string,
+  appliedOn: Date,
+  own: { number: number } | null,
+) {
+  return tx.distribution.findFirst({
+    where: {
+      companyId,
+      status: "FINALIZED",
+      isReversal: false,
+      OR: [
+        { paymentDate: { gt: appliedOn } },
+        {
+          paymentDate: appliedOn,
+          ...(own ? { number: { gt: own.number } } : {}),
+        },
+      ],
+    },
+    orderBy: [{ paymentDate: "desc" }, { number: "desc" }],
+    select: { number: true, paymentDate: true },
+  });
+}
+
+/**
+ * Rejects a receipt applied on or before the payment date of a FINALIZED,
+ * non-reversal distribution (same rule as `assertLedgerDateOpen`, term.ts):
+ * the receipt would sort before that distribution and silently change the
+ * positions it was computed on. The only receipts allowed on a payment date
+ * are the offset receipts the distribution itself writes while it is being
+ * finalized (`sourceType: "distribution"`, `sourceId` = its id).
  */
 export async function assertLedgerDateOpenForReceipt(
   tx: Tx,
   companyId: string,
   appliedOn: IsoDate,
+  source: ReceiptSource = {},
 ): Promise<void> {
-  const later = await tx.distribution.findFirst({
-    where: {
-      companyId,
-      status: "FINALIZED",
-      isReversal: false,
-      paymentDate: { gt: fromDateOnly(appliedOn) },
-    },
-    orderBy: { paymentDate: "desc" },
-    select: { number: true, paymentDate: true },
-  });
+  const on = fromDateOnly(appliedOn);
+  const own = await offsetSourceDistribution(tx, companyId, on, source);
+  const later = await distributionDependingOn(tx, companyId, on, own);
   if (later) {
+    const paidOn = toDateOnly(later.paymentDate);
+    const no = later.number === null ? "" : `No. ${later.number} `;
     ruleViolation(
-      `Distribution ${later.number === null ? "" : `No. ${later.number} `}was paid on ${formatDateOnly(toDateOnly(later.paymentDate))}, after ${formatDateOnly(appliedOn)}. Reverse it before recording anything dated earlier.`,
+      paidOn === appliedOn
+        ? `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, the date this receipt takes effect; it would change the positions that distribution was computed on. Reverse it first, or record the receipt dated after ${formatDateOnly(paidOn)}.`
+        : `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, after ${formatDateOnly(appliedOn)}. Reverse it before recording anything dated on or before its payment date.`,
     );
   }
 }
 
 /**
  * Runs before FOUNDATION voids a receipt. Refuses when a finalized
- * distribution was paid on or after the receipt took effect, or when the
+ * distribution was computed on positions that include the receipt (paid
+ * after it took effect, or paid that day and ordered after it), or when the
  * receipt belongs to a default (funding, credit, forfeiture or a payment
  * that has not been reversed). Otherwise writes a negating
  * `CallNoticeAllocation` for every allocation of the receipt that is still
@@ -62,25 +129,33 @@ export async function beforeVoidReceipt(
 ): Promise<void> {
   const receipt = await tx.capitalReceipt.findFirst({
     where: { id: receiptId, companyId },
-    select: { id: true, appliedOn: true },
+    select: { id: true, appliedOn: true, sourceType: true, sourceId: true },
   });
   if (!receipt) return; // FOUNDATION has already loaded it under the lock.
 
-  // (a) A held receipt (appliedOn null) never reached a distribution.
+  // (a) Refuse while a finalized distribution was computed on positions that
+  // include this receipt (paid after it took effect, or paid that day and
+  // ordered after it). A distribution paid the same day but ordered before
+  // the receipt did not depend on it: in particular, reversing the latest of
+  // two same-day distributions voids its own offset receipts, which sort
+  // after the earlier one. A held receipt (appliedOn null) never reached a
+  // distribution.
   if (receipt.appliedOn !== null) {
-    const later = await tx.distribution.findFirst({
-      where: {
-        companyId,
-        status: "FINALIZED",
-        isReversal: false,
-        paymentDate: { gte: receipt.appliedOn },
-      },
-      orderBy: { paymentDate: "desc" },
-      select: { number: true, paymentDate: true },
-    });
+    const own = await offsetSourceDistribution(
+      tx,
+      companyId,
+      receipt.appliedOn,
+      receipt,
+    );
+    const later = await distributionDependingOn(
+      tx,
+      companyId,
+      receipt.appliedOn,
+      own,
+    );
     if (later) {
       ruleViolation(
-        `Reverse distribution No. ${later.number ?? ""} first: it was paid on ${formatDateOnly(toDateOnly(later.paymentDate))}, on or after ${formatDateOnly(toDateOnly(receipt.appliedOn))}, when this receipt took effect.`,
+        `Reverse distribution No. ${later.number ?? ""} first: it was paid on ${formatDateOnly(toDateOnly(later.paymentDate))} and computed on positions that include this receipt (effective ${formatDateOnly(toDateOnly(receipt.appliedOn))}).`,
       );
     }
   }
