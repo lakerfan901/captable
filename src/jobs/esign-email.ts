@@ -59,10 +59,22 @@ export const eSignNotificationEmailWorker = defineWorker(
 
     const baseUrl = env.NEXT_PUBLIC_BASE_URL;
 
+    // A resent or retried request can be processed after the recipient has
+    // signed. It must not put a signed recipient back to SENT (which would
+    // let them sign again), so the update is guarded and such a job is dropped.
+    const current = await db.esignRecipient.findUnique({
+      where: { id: job.data.recipient.id },
+      select: { status: true },
+    });
+    if (!current || current.status === "SIGNED") {
+      return;
+    }
+
     const templateId = await db.$transaction(async (tx) => {
       const recipient = await tx.esignRecipient.update({
         where: {
           id: job.data.recipient.id,
+          status: { in: ["PENDING", "SENT"] },
         },
         data: {
           status: "SENT",
