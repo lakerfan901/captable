@@ -152,7 +152,7 @@ Each rule: OA section → rule → default for any ambiguity (with the switch) �
 
 **R6 — Accrued and unpaid.** Per holder: `accrued(D) = roundDiv(Σ lot numerators, 365 × 10,000)` computed from the full ledger as of *D* and rounded once; `unpaid(D) = accrued(D) − tier (c) paid − extinguished (R34) − carried out + carried in (R39)`. Never negative (enforced by tier (c) cap). → `computePositions`.
 
-**R7 — Measurement date for tier (c).** §5.6(c) says "accrued and unpaid Preferred Return" without a date. Default: accrued through the distribution **payment date** (switch `prefAccrualCutoff: "PAYMENT_DATE" | "PERIOD_END"`, default `"PAYMENT_DATE"`). → distribution run (E14) chooses the as-of date passed to `computePositions`.
+**R7 — Measurement date for tier (c).** §5.6(c) says "accrued and unpaid Preferred Return" without a date. Default: accrued through the distribution **payment date** (switch `prefAccrualCutoff: "PAYMENT_DATE" | "PERIOD_END"`, default `"PAYMENT_DATE"`). → distribution run (E15) chooses the as-of date passed to `computePositions`.
 
 **R8 — Defaulting member's paid capital keeps accruing.** §4.9(iii) suspends votes and distributions, not accrual. Default: accrual continues (switch `accrueOnDefaulterCapital`, default `true`; when `false` the engine skips days inside each default window `(dueOn, curedOn]`). → `computePositions` (`accrualPauses` argument).
 
@@ -172,7 +172,7 @@ Each rule: OA section → rule → default for any ambiguity (with the switch) �
 
 ### Netting on a member's line
 
-**R15 — Statute limit.** §5.6(a): distributions are "Subject to the limitations of the Statute (including W.S. 17-29-405)". Not computed. The finalize step requires the Manager to tick "The LLC will be able to pay its debts as they come due and its assets will exceed its liabilities after this distribution (W.S. 17-29-405)"; the tick is stored. → E14 `finalize`.
+**R15 — Statute limit.** §5.6(a): distributions are "Subject to the limitations of the Statute (including W.S. 17-29-405)". Not computed. The finalize step requires the Manager to tick "The LLC will be able to pay its debts as they come due and its assets will exceed its liabilities after this distribution (W.S. 17-29-405)"; the tick is stored. → E15 `finalize`.
 
 **R16 — Tax paid for a member is an advance.** §9.2: "any tax paid on a Member's behalf is treated as an advance against, and reduces, the next distributions otherwise payable to that Member under Sections 5.6 and 11.4, and, if not recovered from distributions, shall be repaid by the Member on demand." The line's gross amount counts as distributed (tiers unchanged); cash paid is reduced by `min(remaining payable, outstanding advance)`. Default: no tax distributions exist. → `netDistributionLine`.
 
