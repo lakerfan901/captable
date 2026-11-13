@@ -332,10 +332,18 @@ async function recheckLedger(
         unitClassId: row.unitClassId,
       });
     } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      badRequest(
-        `Completing this transfer would leave another completed transfer without the units it moves (Section 7). ${error instanceof Error ? error.message : ""}`.trim(),
-      );
+      // Only the fold-in's own integrity error becomes a refusal; anything
+      // else (a database error) propagates as it is.
+      if (
+        error instanceof Error &&
+        !(error instanceof TRPCError) &&
+        error.message.includes("(ledger data integrity)")
+      ) {
+        badRequest(
+          `Completing this transfer would leave another completed transfer without the units it moves (Section 7). ${error.message}`,
+        );
+      }
+      throw error;
     }
     if (row.unitClassKind === "PREFERRED") {
       await getPositions(tx, companyId, asOf);

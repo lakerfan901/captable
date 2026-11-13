@@ -22,6 +22,14 @@
  * example T-1 (02-economics.md, effective 2027-06-01) is checked on a
  * COMPLETED row written directly, because no procedure can complete a
  * transfer effective in the future relative to a notice not yet received.
+ *
+ * Shelf life: the scenarios mix the real clock with fixed dates (October
+ * 2026 subscriptions and notices, a distribution paid 2027-05-14). Written
+ * for November 2026; from about 2027-05-01 the check "a finalized
+ * distribution refuses a new transfer" no longer refuses (the new transfer's
+ * effective date passes the payment date), and other dated checks drift.
+ * Move the fixed dates before relying on a failure here as a regression.
+ *
  * Companies are named `zz-g16b-…`, addresses are `@example.com`, and every
  * row is deleted at the end (harness.ts).
  */
@@ -382,8 +390,35 @@ async function mainFlow() {
     /^Carol Holder is in default on the Balance due 2026-10-30 \(Section 4\.9\)\. Cure or void the default/,
     "BAD_REQUEST",
   );
+  await db.memberDefault.update({
+    where: { id: fakeDefault.id },
+    data: { stakeholderId: dave.id, commitmentId: `zz-g16b-${randomUUID()}` },
+  });
+  await expectRefused(
+    "transferee with an open default",
+    () => caller.complete({ publicId }),
+    /^Dave Prospect is in default on the Balance due 2026-10-30 \(Section 4\.9\)/,
+    "BAD_REQUEST",
+  );
   await db.memberDefault.delete({ where: { id: fakeDefault.id } });
   await db.callNoticeLine.delete({ where: { id: fakeLine.id } });
+
+  const other = await createCompany("other");
+  const otherCaller = createCallerFactory(unitTransferRouter)(
+    (await createAdmin(other)).context,
+  );
+  await expectRefused(
+    "another company cannot complete",
+    () => otherCaller.complete({ publicId }),
+    /^Transfer not found\.$/,
+    "NOT_FOUND",
+  );
+  await expectRefused(
+    "another company cannot admit",
+    () => otherCaller.admit({ publicId, admittedOn: TODAY }),
+    /^Transfer not found\.$/,
+    "NOT_FOUND",
+  );
 
   const sentResolution = await db.resolution.create({
     data: {
