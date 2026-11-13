@@ -8,6 +8,7 @@ import {
   planDeadlineSync,
   ruleIncoming,
   SUPERSEDED_NOTE_PREFIX,
+  splitLedgerFeed,
 } from "@/lib/governance/compliance-core";
 import {
   addDays,
@@ -39,6 +40,13 @@ type Tx = PrismaTransactionalClient;
 export const COMPLIANCE_HORIZON_DAYS = 400;
 /** How far back ledger deadlines are read (overdue items stay visible). */
 export const COMPLIANCE_LOOKBACK_DAYS = 30;
+/**
+ * How far ahead the ledger feed is read, so a date-keyed item that moved past
+ * the horizon (e.g. a term extension moving the Target Sale Date) is seen as
+ * the replacement of its old row (`splitLedgerFeed`). About 50 years: the
+ * feed's only loop is over fiscal quarters (about 200 iterations).
+ */
+export const COMPLIANCE_REPLACEMENT_HORIZON_DAYS = 18_263;
 
 export { LEDGER_COMPLETION_NOTE };
 
@@ -121,16 +129,38 @@ export async function syncComplianceDeadlines(
   });
   const lookback = addDays(today, -COMPLIANCE_LOOKBACK_DAYS);
   const oldestOpenOn = oldestOpen ? utcDateToYmd(oldestOpen.dueOn) : null;
-  const ledgerRange = {
+  const horizonRange = {
     from:
       oldestOpenOn !== null && oldestOpenOn < lookback
         ? oldestOpenOn
         : lookback,
     to: addDays(today, COMPLIANCE_HORIZON_DAYS),
   };
-  const ledger = economicsIncoming(
-    await getComplianceDates(tx, companyId, ledgerRange),
-  );
+  // The ledger feed needs the Preferred unit class (getEconomicsContext
+  // refuses without it). A company that has none has no ledger yet: only
+  // the rule deadlines are synced, and no ledger row is judged against an
+  // empty feed (`ledgerRange` stays undefined).
+  const hasPreferredClass =
+    (await tx.unitClass.findFirst({
+      where: { companyId, kind: "PREFERRED" },
+      select: { id: true },
+    })) !== null;
+  let ledgerRange: { from: Ymd; to: Ymd } | undefined;
+  let ledger: IncomingDeadline[] = [];
+  let farReplacements: IncomingDeadline[] = [];
+  if (hasPreferredClass) {
+    ledgerRange = horizonRange;
+    const feed = economicsIncoming(
+      await getComplianceDates(tx, companyId, {
+        from: horizonRange.from,
+        to: addDays(today, COMPLIANCE_REPLACEMENT_HORIZON_DAYS),
+      }),
+    );
+    ({ inHorizon: ledger, farReplacements } = splitLedgerFeed(
+      feed,
+      horizonRange.to,
+    ));
+  }
   const incoming: IncomingDeadline[] = [...rules, ...ledger];
 
   const rows = await tx.complianceDeadline.findMany({
@@ -178,7 +208,12 @@ export async function syncComplianceDeadlines(
     return kept === undefined ? d : { ...d, dueOn: kept };
   });
 
-  const plan = planDeadlineSync(existing, effective, ledgerRange);
+  const plan = planDeadlineSync(
+    existing,
+    effective,
+    ledgerRange,
+    farReplacements,
+  );
 
   let created = 0;
   if (plan.create.length > 0) {

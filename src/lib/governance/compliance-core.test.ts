@@ -9,6 +9,7 @@ import {
   normalizeSection,
   planDeadlineSync,
   ruleIncoming,
+  splitLedgerFeed,
   supersededNote,
   templateDueOn,
 } from "./compliance-core";
@@ -492,5 +493,105 @@ describe("custom deadline templates", () => {
     expect(due("PO_TITLE_DOCUMENTS", "2026-11-17")).toBe("2026-12-02");
     expect(due("PO_FUNDS_REMIT", "2026-12-23")).toBe("2026-12-31");
     expect(due("FORM_1065", "2027-03-01")).toBeNull();
+  });
+});
+
+describe("date-keyed ledger items beyond the calendar horizon", () => {
+  // Today 2026-11-25; the calendar horizon ends 400 days later.
+  const HORIZON_END = "2027-12-30";
+  const RANGE_H = { from: "2026-10-26", to: HORIZON_END };
+
+  it("splits the feed: far date-keyed items are replacements only", () => {
+    const { inHorizon, farReplacements } = splitLedgerFeed(
+      [
+        econ("E:CALL_NOTICE_DUE:line1", "2027-01-20"),
+        econ("E:TARGET_SALE_DATE:2028-11-30", "2028-11-30"),
+        econ("E:MEMBER_LOAN_MATURITY:loan1", "2029-06-30"),
+        econ("E:DISTRIBUTION_DEADLINE:2028-03-31", "2028-05-15"),
+      ],
+      HORIZON_END,
+    );
+    expect(inHorizon.map((d) => d.dedupeKey)).toEqual([
+      "E:CALL_NOTICE_DUE:line1",
+    ]);
+    expect(farReplacements.map((d) => d.dedupeKey)).toEqual([
+      "E:TARGET_SALE_DATE:2028-11-30",
+    ]);
+  });
+
+  it("a Target Sale Date moved past the horizon supersedes the old row and creates nothing", () => {
+    const old = row({
+      dedupeKey: "E:TARGET_SALE_DATE:2027-11-30",
+      dueOn: "2027-11-30",
+    });
+    const existing = [old];
+    const feed = [econ("E:TARGET_SALE_DATE:2028-11-30", "2028-11-30")];
+    const { inHorizon, farReplacements } = splitLedgerFeed(feed, HORIZON_END);
+    const plan = planDeadlineSync(
+      existing,
+      inHorizon,
+      RANGE_H,
+      farReplacements,
+    );
+    expect(plan).toEqual({
+      ...EMPTY,
+      supersede: [
+        {
+          id: "id-E:TARGET_SALE_DATE:2027-11-30",
+          note: "Superseded: date changed to 2028-11-30",
+        },
+      ],
+    });
+
+    // Second run: the old row is now NOT_APPLICABLE (closed by the sync) and
+    // still absent from the feed, so nothing changes.
+    const rerun = planDeadlineSync(
+      [
+        {
+          ...old,
+          status: "NOT_APPLICABLE",
+          closedBySync: true,
+        },
+      ],
+      inHorizon,
+      RANGE_H,
+      farReplacements,
+    );
+    expect(rerun).toEqual(EMPTY);
+  });
+
+  it("without the far replacement the old row is completed (the earlier gap)", () => {
+    const plan = planDeadlineSync(
+      [
+        row({
+          dedupeKey: "E:TARGET_SALE_DATE:2027-11-30",
+          dueOn: "2027-11-30",
+        }),
+      ],
+      [],
+      RANGE_H,
+    );
+    expect(plan).toEqual({
+      ...EMPTY,
+      closeMissing: ["id-E:TARGET_SALE_DATE:2027-11-30"],
+    });
+  });
+
+  it("a far item of another kind is no replacement", () => {
+    const plan = planDeadlineSync(
+      [
+        row({
+          dedupeKey: "E:EXTENSION_REQUEST_DUE:2027-02-28",
+          dueOn: "2027-02-28",
+        }),
+      ],
+      [],
+      RANGE_H,
+      [econ("E:TARGET_SALE_DATE:2028-11-30", "2028-11-30")],
+    );
+    expect(plan.supersede).toEqual([]);
+    expect(plan.closeMissing).toEqual([
+      "id-E:EXTENSION_REQUEST_DUE:2027-02-28",
+    ]);
   });
 });
