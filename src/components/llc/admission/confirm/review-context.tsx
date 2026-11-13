@@ -79,6 +79,13 @@ export function ReviewProvider({
     startReload(() => router.refresh());
   }, [router]);
 
+  // Coming back from the signing page (browser Back) can restore a cached
+  // view; read the current one so the stage, signer status and ledger
+  // figures are fresh before the Manager prepares again.
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
   const applyView = useCallback(
     (next: PacketView) => {
       setView(sanitizeView(next, canReadDocuments));
