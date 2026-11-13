@@ -70,6 +70,10 @@ import type { AuditSchemaType } from "@/server/audit/schema";
 import type { PrismaTransactionalClient } from "@/server/db";
 import { economicsToday } from "@/server/llc/economics/clock";
 import {
+  assertLedgerDateOpenForReceipt,
+  beforeVoidReceipt,
+} from "@/server/llc/economics/receipt-guards";
+import {
   forfeitureUnits,
   planVoid,
   type SpecialReceiptKind,
@@ -1051,7 +1055,6 @@ export async function recordCapitalReceipt(
       startDate = null;
       summary = `${actor.name} recorded ${formatCents(input.amountCents)} received from ${stakeholder.name} on ${receivedOn} (${KIND_LABEL[kind]}); held until the commitment is decided`;
     } else {
-      // ECONOMICS E9 adds its ledger-date guard here (decided commitments).
       appliedCents = input.amountCents;
       unitsIssued = unitsFor(appliedCents, unitClass);
       appliedOn = appliedOnFor(commitment, receivedOn);
@@ -1118,6 +1121,12 @@ export async function recordCapitalReceipt(
           }`;
   }
 
+  if (appliedOn !== null)
+    await assertLedgerDateOpenForReceipt(
+      tx,
+      companyId,
+      dateToWire(appliedOn) as string,
+    );
   const receipt = await tx.capitalReceipt.create({
     data: {
       companyId,
@@ -1243,7 +1252,7 @@ export async function voidCapitalReceipt(
     memberUnitsAfter: unitsToWire(member._sum.unitsIssued),
   });
   throwIfErrors(plan.errors);
-  // ECONOMICS E9 adds its beforeVoidReceipt guard here.
+  await beforeVoidReceipt(tx, companyId, input.receiptId, actor.memberId);
   const voided = await tx.capitalReceipt.update({
     where: { id: receipt.id, companyId },
     data: {
