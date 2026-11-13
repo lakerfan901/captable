@@ -778,6 +778,26 @@ export async function decideCommitment(
     acceptedCents: accepted,
     keepCents: keep,
   });
+  // The held money becomes capital (and units) from its `appliedOn`: the same
+  // date guard as `recordCapitalReceipt` (finalized distributions, closed
+  // books, confirmed forfeitures and credits). Every guard is "on or before
+  // a date", so the earliest applied date decides.
+  const firstApplied = plan.rows
+    .filter((r) => r.appliedCents > 0n && r.appliedOn !== null)
+    .map((r) => r.appliedOn as string)
+    .sort()[0];
+  if (firstApplied !== undefined) {
+    await assertLedgerDateOpenForReceipt(
+      tx,
+      companyId,
+      firstApplied,
+      {},
+      {
+        stakeholderId: stakeholder.id,
+        unitClassId: unitClass.id,
+      },
+    );
+  }
   const issued: string[] = [];
   let balanceApplied = 0n;
   for (const row of plan.rows) {
@@ -1142,6 +1162,7 @@ export async function recordCapitalReceipt(
       companyId,
       dateToWire(appliedOn) as string,
       { sourceType: input.sourceType, sourceId: input.sourceId },
+      { stakeholderId: commitment.stakeholderId, unitClassId: unitClass.id },
     );
   const receipt = await tx.capitalReceipt.create({
     data: {
@@ -1336,6 +1357,26 @@ export async function setReceiptPrefReturnStart(
     );
   }
   const before = dateToWire(receipt.prefReturnStartDate);
+  // Accrual changes from the earlier of the two start dates: guarded like a
+  // receipt dated then (finalized distributions, closed books, a confirmed
+  // forfeiture of this holder). Units do not change.
+  const appliedOn = dateToWire(receipt.appliedOn);
+  const current = before ?? appliedOn;
+  const from =
+    current !== null && current < input.startDate ? current : input.startDate;
+  if (current !== input.startDate) {
+    await assertLedgerDateOpenForReceipt(
+      tx,
+      companyId,
+      from,
+      {},
+      {
+        stakeholderId: receipt.stakeholderId,
+        unitClassId: receipt.unitClassId,
+      },
+      { unitsChange: false },
+    );
+  }
   const updated = await tx.capitalReceipt.update({
     where: { id: receipt.id, companyId },
     data: { prefReturnStartDate: startDate },
@@ -1415,6 +1456,18 @@ export async function issueCommonUnits(
     );
   }
   const units = microUnitsToDecimalString(micro);
+  // Common Units share in tier (e) from their issue date: the same date guard
+  // as a receipt (finalized distributions, closed books).
+  await assertLedgerDateOpenForReceipt(
+    tx,
+    companyId,
+    input.issuedOn,
+    {},
+    {
+      stakeholderId: stakeholder.id,
+      unitClassId: unitClass.id,
+    },
+  );
 
   const commitment = await tx.commitment.create({
     data: {

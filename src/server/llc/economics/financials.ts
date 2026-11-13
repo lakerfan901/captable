@@ -7,6 +7,7 @@ import type {
   LlcTerm,
 } from "@prisma/client";
 import { formatDateOnly, fromDateOnly, toDateOnly } from "@/lib/date-only";
+import { todayInZone } from "@/lib/governance/dates";
 import {
   type AvailableCashResult,
   type CashLedger,
@@ -420,16 +421,100 @@ export function financialsAudit(
 const ORG_CAP_MESSAGE =
   "Exceeds the $40,000 cap in Section 6.21; a Preferred Supermajority approval is required.";
 
-/** R23: rejects a counted amount above the cap unless it carries a resolution. */
+/**
+ * A `resolutionId` given as the approval of a financial record must name a
+ * resolution of THIS company (looked up scoped by `companyId`; another
+ * company's id is "not found") that is EFFECTIVE and became effective on or
+ * before the record's date `on` (company time zone). Any type is accepted as
+ * a plain reference (e.g. a Manager-approved purchase order behind a
+ * pass-through payment). With `requireSupermajority` it must also carry a
+ * UNIT_VOTE requirement with basis PREFERRED_SUPERMAJORITY (Sections 4.6,
+ * 6.21). Throws BAD_REQUEST naming what is missing.
+ */
+export async function assertResolutionAuthorizes(
+  tx: Tx,
+  companyId: string,
+  resolutionId: string,
+  opts: {
+    on: IsoDate;
+    what: string;
+    section?: string;
+    requireSupermajority: boolean;
+  },
+): Promise<void> {
+  const r = await tx.resolution.findFirst({
+    where: { id: resolutionId, companyId },
+    select: {
+      status: true,
+      effectiveAt: true,
+      referenceCode: true,
+      title: true,
+      requirements: { select: { kind: true, basis: true } },
+    },
+  });
+  if (!r) {
+    ruleViolation(
+      `The resolution given as the approval of ${opts.what} was not found in this company.`,
+    );
+  }
+  const label = r.referenceCode ?? `"${r.title}"`;
+  const cite = opts.section ? ` (Section ${opts.section})` : "";
+  if (r.status !== "EFFECTIVE" || r.effectiveAt === null) {
+    ruleViolation(
+      `Resolution ${label} is not effective (${r.status.toLowerCase()}); only an effective resolution can approve ${opts.what}${cite}.`,
+    );
+  }
+  const company = await tx.company.findFirst({
+    where: { id: companyId },
+    select: { timezone: true },
+  });
+  if (!company) notFound("Company");
+  // The calendar date of the instant (not `economicsToday`, which is "now").
+  const effectiveOn = todayInZone(r.effectiveAt, company.timezone);
+  if (compareIso(effectiveOn, opts.on) > 0) {
+    ruleViolation(
+      `Resolution ${label} became effective on ${formatDateOnly(effectiveOn)}, after ${formatDateOnly(opts.on)}; it cannot approve ${opts.what} dated earlier${cite}.`,
+    );
+  }
+  if (
+    opts.requireSupermajority &&
+    !r.requirements.some(
+      (q) => q.kind === "UNIT_VOTE" && q.basis === "PREFERRED_SUPERMAJORITY",
+    )
+  ) {
+    ruleViolation(
+      `Resolution ${label} was not approved by a Preferred Supermajority, which${opts.section ? ` Section ${opts.section}` : " the Operating Agreement"} requires for ${opts.what}.`,
+    );
+  }
+}
+
+/**
+ * R23: rejects a counted amount above the cap unless it carries an effective
+ * Preferred Supermajority resolution of the company, effective on or before
+ * `on` (`assertResolutionAuthorizes`). Below the cap a given resolution is
+ * still verified as a reference (exists in the company, effective by `on`):
+ * a stored id always claims an approval.
+ */
 export async function assertOrgCapAllows(
   tx: Tx,
   companyId: string,
   adding: Cents,
   resolutionId: string | null,
+  on: IsoDate,
 ): Promise<void> {
   const status = await getOrgCapStatus(tx, companyId, adding);
   if (status.wouldExceed && resolutionId === null) {
     ruleViolation(ORG_CAP_MESSAGE);
+  }
+  if (resolutionId !== null) {
+    await assertResolutionAuthorizes(tx, companyId, resolutionId, {
+      on,
+      what: status.wouldExceed
+        ? "organizational and offering expenses above the $40,000 cap"
+        : "this payment",
+      section: status.wouldExceed ? "6.21" : undefined,
+      requireSupermajority: status.wouldExceed,
+    });
   }
 }
 
@@ -494,7 +579,19 @@ export async function insertExpense(
     );
   }
   if (countsTowardOrgCap) {
-    await assertOrgCapAllows(tx, companyId, e.amountCents, e.resolutionId);
+    await assertOrgCapAllows(
+      tx,
+      companyId,
+      e.amountCents,
+      e.resolutionId,
+      e.incurredOn,
+    );
+  } else if (e.resolutionId !== null) {
+    await assertResolutionAuthorizes(tx, companyId, e.resolutionId, {
+      on: e.incurredOn,
+      what: "this expense",
+      requireSupermajority: false,
+    });
   }
   if (fundingSource === "CAPITAL_CONTRIBUTIONS") {
     await assertUnusedCapitalCovers(

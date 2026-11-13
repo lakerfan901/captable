@@ -6,7 +6,7 @@ import { render } from "react-email";
 import { CallNoticeEmail } from "@/emails/llc/CallNoticeEmail";
 import { formatDateOnly, fromDateOnly, toDateOnly } from "@/lib/date-only";
 import type { LlcEconomicsConfig } from "@/lib/llc/config";
-import type { IsoDate } from "@/lib/llc/dates";
+import { type IsoDate, minIso } from "@/lib/llc/dates";
 import {
   callNoticeDueDate,
   forfeitureDate,
@@ -47,12 +47,14 @@ import {
   type NoticeTermsText,
   noticeAmounts,
   noticeTermsText,
+  type PrepaidMatch,
   type PrepaidReceipt,
   planBalancePayment,
   planPrepaidMatch,
   sendBlockedReason,
 } from "./call-notices.logic";
 import { economicsToday } from "./clock";
+import { receiptDateBlocker } from "./receipt-guards";
 import { conflict, lockCompanyLedger, notFound, ruleViolation } from "./scope";
 import { getEconomicsContext, requireOutsideDate } from "./term";
 
@@ -1111,6 +1113,63 @@ export async function cancelCallNoticeDraft(
 // ---------------------------------------------------------------------------
 // Prepaid matching (after an accepted send, outside-date notice, reconcile)
 
+/**
+ * Why matching `match` must not happen now, or null. A matched slice
+ * accrues Preferred Return from its slice start instead of the receipt's
+ * stored start, so accrual changes from the earlier of the two dates; that
+ * is refused, like a receipt dated then (`receiptDateBlocker`), when a
+ * finalized distribution was paid on or after it (its frozen unpaid return
+ * would no longer replay), the books are closed through it, or a confirmed
+ * forfeiture of the member is effective on or after it. Units do not
+ * change, so confirmed credits do not matter here.
+ */
+async function prepaidMatchBlocker(
+  tx: Tx,
+  companyId: string,
+  commitmentId: string,
+  match: PrepaidMatch,
+  receipts: readonly {
+    receiptId: string;
+    prefReturnStartDate: IsoDate | null;
+  }[],
+): Promise<string | null> {
+  const startOf = new Map(
+    receipts.map((r) => [r.receiptId, r.prefReturnStartDate]),
+  );
+  let from: IsoDate | null = null;
+  let movedTo: IsoDate | null = null;
+  for (const a of match.allocations) {
+    // No stored start: the class has no Preferred Return, nothing accrues.
+    const old = startOf.get(a.receiptId) ?? null;
+    if (old === null || old === a.prefReturnStartOn) continue;
+    const earlier = minIso(old, a.prefReturnStartOn);
+    if (from === null || earlier < from) {
+      from = earlier;
+      movedTo = a.prefReturnStartOn;
+    }
+  }
+  if (from === null || movedTo === null) return null;
+  const commitment = await tx.commitment.findFirst({
+    where: { id: commitmentId, companyId },
+    select: { stakeholderId: true, unitClassId: true },
+  });
+  if (!commitment) notFound("Commitment");
+  const blocked = await receiptDateBlocker(
+    tx,
+    companyId,
+    from,
+    {},
+    {
+      stakeholderId: commitment.stakeholderId,
+      unitClassId: commitment.unitClassId,
+    },
+    { unitsChange: false },
+  );
+  return blocked === null
+    ? null
+    : `Matching the ${formatCents(match.total)} of Balance money already received to this line would make its Preferred Return accrue from ${formatDateOnly(movedTo)} (it now accrues from a different date), which changes figures already frozen: ${blocked}`;
+}
+
 /** Allocates the member's prepaid Balance money to a sent line; returns the amount matched. */
 async function matchPrepaid(
   tx: Tx,
@@ -1131,6 +1190,15 @@ async function matchPrepaid(
     rule: i.rule,
     prepaidReceipts: receipts,
   });
+  // Callers that must not throw (a reconcile after a send) check first.
+  const blocked = await prepaidMatchBlocker(
+    tx,
+    i.companyId,
+    i.commitmentId,
+    match,
+    receipts,
+  );
+  if (blocked !== null) ruleViolation(blocked);
   for (const a of match.allocations) {
     await tx.callNoticeAllocation.create({
       data: {
@@ -1196,6 +1264,14 @@ async function lineOutstanding(
  * Matches prepaid money to one SENT or PAID line whose `prepaidMatchedAt` is
  * null, marks it PAID when covered, settles its notice and sets the marker.
  * The caller holds `lockLedgerAndPreferred`. Returns the line's status after.
+ *
+ * When the match would change frozen figures (`prepaidMatchBlocker`: a
+ * finalized distribution, closed books, a confirmed forfeiture) nothing is
+ * written, the marker stays null and `blocked` says why: this never throws
+ * away the caller's transaction. The money stays unapplied, so the member
+ * cannot be declared in default on this line (`declareDefault` refuses while
+ * paid Balance is unapplied) and `recordCallNoticePayment` refuses until the
+ * cause is removed (e.g. the distribution reversed) and the match runs.
  */
 async function reconcileLineLocked(
   tx: Tx,
@@ -1205,7 +1281,11 @@ async function reconcileLineLocked(
     lineId: string;
     rule: LlcEconomicsConfig["balanceReturnStartRule"];
   },
-): Promise<{ status: CallNoticeLineStatusEnum; matched: Cents }> {
+): Promise<{
+  status: CallNoticeLineStatusEnum;
+  matched: Cents;
+  blocked?: string;
+}> {
   const { companyId } = i;
   const line = await tx.callNoticeLine.findFirst({
     where: { id: i.lineId, companyId },
@@ -1221,6 +1301,37 @@ async function reconcileLineLocked(
   }
   const dueOn = toDateOnly(line.dueOn);
   const outstanding = await lineOutstanding(tx, companyId, line);
+  if (outstanding > 0n) {
+    const receipts = await loadPrepaidReceipts(
+      tx,
+      companyId,
+      line.commitmentId,
+    );
+    const plan = planPrepaidMatch({
+      lineAmount: outstanding,
+      dueOn,
+      rule: i.rule,
+      prepaidReceipts: receipts,
+    });
+    const blocked = await prepaidMatchBlocker(
+      tx,
+      companyId,
+      line.commitmentId,
+      plan,
+      receipts,
+    );
+    if (blocked !== null) {
+      logger.warn(
+        { companyId, lineId: line.id },
+        "Call Notice: prepaid matching skipped, it would change frozen figures",
+      );
+      return {
+        status: line.status,
+        matched: 0n,
+        blocked: `Call Notice No. ${line.callNotice.number}: ${blocked}`,
+      };
+    }
+  }
   const matched =
     outstanding > 0n
       ? await matchPrepaid(tx, {
@@ -1273,7 +1384,13 @@ export async function reconcileCallNoticeLines(
   commitmentId: string | undefined,
   actor: LedgerActor,
 ): Promise<
-  { lineId: string; matched: Cents; status: CallNoticeLineStatusEnum }[]
+  {
+    lineId: string;
+    matched: Cents;
+    status: CallNoticeLineStatusEnum;
+    /** Set when the match was skipped (see `reconcileLineLocked`). */
+    blocked?: string;
+  }[]
 > {
   const locked = await lockLedgerAndPreferred(tx, companyId);
   if (!locked) return [];
@@ -1295,6 +1412,7 @@ export async function reconcileCallNoticeLines(
     lineId: string;
     matched: Cents;
     status: CallNoticeLineStatusEnum;
+    blocked?: string;
   }[] = [];
   for (const l of lines) {
     const r = await reconcileLineLocked(tx, {
@@ -1488,16 +1606,31 @@ export async function sendCallNotice(
     for (const { line, state, to } of checked.sort((a, b) =>
       byName(a.state, b.state),
     )) {
+      const prepaid = await loadPrepaidReceipts(
+        tx,
+        companyId,
+        line.commitmentId,
+      );
       const match = planPrepaidMatch({
         lineAmount: line.amountCalledCents,
         dueOn,
         rule: config.balanceReturnStartRule,
-        prepaidReceipts: await loadPrepaidReceipts(
-          tx,
-          companyId,
-          line.commitmentId,
-        ),
+        prepaidReceipts: prepaid,
       });
+      // The notice is effective once the email leaves and the match runs
+      // after that, so a match that would change frozen figures is refused
+      // here, before anything is emailed. A later due date (day rollover,
+      // `finalDueOn`) only moves the slice start later, never earlier.
+      const blocked = await prepaidMatchBlocker(
+        tx,
+        companyId,
+        line.commitmentId,
+        match,
+        prepaid,
+      );
+      if (blocked !== null) {
+        ruleViolation(`${state.name}: ${blocked} Nothing was emailed.`);
+      }
       try {
         await tx.callNoticeLine.update({
           where: { id: line.id, companyId, status: { in: SENDABLE } },
@@ -1680,7 +1813,7 @@ export async function sendCallNotice(
     // (C2) Match prepaid money in its own locked transaction. On failure the
     // marker stays null and reconcileCallNoticeLines finishes it later.
     try {
-      const { status } = await db.$transaction(async (tx) => {
+      const { status, blocked } = await db.$transaction(async (tx) => {
         // Fail fast (and leave the marker null) rather than keep the send
         // request waiting behind a long-held ledger lock: Prisma's own
         // timeout does not cancel a statement blocked on a lock.
@@ -1696,11 +1829,16 @@ export async function sendCallNotice(
       }, MATCH_TX);
       results.push({
         lineId: item.lineId,
-        ok: true,
+        ok: blocked === undefined,
         emailSent: true,
         status,
         dueOn: due,
         emailLogId: sent.emailLogId,
+        ...(blocked !== undefined
+          ? {
+              error: `The email was sent and the line is recorded as sent, but the money already received was not matched to it. Do not resend. ${blocked}`,
+            }
+          : {}),
       });
     } catch (error) {
       logger.error(
@@ -1743,7 +1881,11 @@ export async function resolveCallNoticeSending(
     action: ResolveSendingAction;
     sentOn?: IsoDate;
   },
-): Promise<{ status: CallNoticeLineStatusEnum; matched: Cents }> {
+): Promise<{
+  status: CallNoticeLineStatusEnum;
+  matched: Cents;
+  blocked?: string;
+}> {
   const companyId = i.company.id;
   const locked = await lockLedgerAndPreferred(tx, companyId);
   if (!locked) ruleViolation("The company has no Preferred unit class.");
@@ -1993,8 +2135,21 @@ export async function recordCallNoticePayment(
     () => notFound("Commitment"),
   );
   // Prepaid money not yet matched to a sent line (the match after a send
-  // failed) is matched first, so this payment never goes ahead of it.
-  await reconcileCallNoticeLines(tx, companyId, i.commitmentId, i.actor);
+  // failed) is matched first, so this payment never goes ahead of it. A
+  // match that had to be skipped (it would change frozen figures) leaves
+  // that money unapplied: refuse rather than let this payment overtake it.
+  const reconciled = await reconcileCallNoticeLines(
+    tx,
+    companyId,
+    i.commitmentId,
+    i.actor,
+  );
+  const skipped = reconciled.find((r) => r.blocked !== undefined);
+  if (skipped?.blocked !== undefined) {
+    ruleViolation(
+      `Money this member paid earlier is not yet matched to a Call Notice, and this payment would go ahead of it. ${skipped.blocked}`,
+    );
+  }
   const { config, today } = await getEconomicsContext(tx, i.company);
   if (i.receivedOn > today) {
     ruleViolation("The date received cannot be in the future.");

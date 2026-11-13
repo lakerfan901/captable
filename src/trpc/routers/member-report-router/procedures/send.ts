@@ -19,7 +19,7 @@ import { emitAfterCommit } from "@/server/governance/emit";
 import { guardedWrite } from "@/server/governance/guarded";
 import { sha256Hex } from "@/server/governance/hash";
 import { closeBooksThrough } from "@/server/llc/economics";
-import { lockCompanyLedger } from "@/server/llc/economics/scope";
+import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportSendSchema } from "../schema";
 import { deriveAudience } from "./audience";
@@ -38,8 +38,10 @@ import {
 //
 // Irreversible, in ONE transaction with `now` taken once:
 // 0. Locks, in this order: ECONOMICS' company ledger lock FIRST (every
-//    economics mutation takes it first, and step 6 closes the books), then
-//    the report's row lock; the row is re-read after both and must be DRAFT.
+//    economics mutation takes it first, and step 6 closes the books) with
+//    the unit-class locks (so no admission commits between the audience's
+//    status and unit reads), then the report's row lock; the row is re-read
+//    after all of them and must be DRAFT.
 // 1. Content: commentary normalizes; the checklist (R23–R26) is complete.
 // 2. Recipients, derived on the server (R22, R22a; never from the client).
 // 3. One recipient row each (token expiry = now + 400 days).
@@ -69,9 +71,12 @@ export const sendProcedure = withLlcAccessControl
 
     const result = await ctx.db.$transaction(
       async (tx) => {
-        // 0. Ledger lock first, then the report lock, then re-read.
+        // 0. Ledger lock first (with the unit-class locks: the audience reads
+        //    member status and units in two statements, and an admission
+        //    holds only the unit-class lock), then the report lock, then
+        //    re-read.
         const ref = await findReportRef(tx, companyId, input.publicId);
-        await lockCompanyLedger(tx, companyId);
+        await lockCompanyLedgerAndUnitClasses(tx, companyId);
         await lockReport(tx, ref.id);
         const report = await tx.memberReport.findFirst({
           where: { id: ref.id, companyId },

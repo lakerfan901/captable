@@ -30,6 +30,10 @@ import {
 // releases the claim so the pg-boss retry can send. A crash between claim and
 // send leaves no email: `resolution.remind` re-queues an invite that was
 // claimed but never confirmed (`invitedAt` still null) under a fresh key.
+// The key carries the link version the job loaded, so a stale job's claim or
+// its release never touches the newer link's key; after claiming, the job
+// re-reads the ballot and, if the link changed meanwhile, releases its claim
+// and sends nothing (`sendOnce` `stillCurrent`).
 // The queue's `stately` policy additionally drops a duplicate emit while the
 // first job is still waiting.
 
@@ -155,6 +159,29 @@ export const ballotEmailWorker = defineWorker(config, async (job) => {
           relatedId: resolution.id,
         },
       ));
+    },
+    // After the claim: the link this job signed must still be the current
+    // one (replaceLink / revokeLink / a vote may have happened since the
+    // ballot was loaded). The newer link's job has its own key and sends.
+    async () => {
+      const now = await db.resolutionBallot.findUnique({
+        where: { id: ballotId },
+        select: {
+          tokenVersion: true,
+          tokenRevokedAt: true,
+          submittedAt: true,
+          email: true,
+          resolution: { select: { status: true } },
+        },
+      });
+      return (
+        now !== null &&
+        now.tokenVersion === ballot.tokenVersion &&
+        now.tokenRevokedAt === null &&
+        now.submittedAt === null &&
+        now.email === ballot.email &&
+        now.resolution.status === "SENT"
+      );
     },
   );
   if (outcome === "SKIPPED") return;

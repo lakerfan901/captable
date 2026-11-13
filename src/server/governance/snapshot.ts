@@ -9,6 +9,7 @@ import type {
   PrismaTransactionalClient,
   TPrismaOrTransaction,
 } from "@/server/db";
+import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import {
   loadUnitPositionsWithWarnings,
   type UndeclaredOverdueWarning,
@@ -64,7 +65,21 @@ export async function buildSnapshotDraft(
   return { recordDate, ...built, warnings };
 }
 
-/** Freezes the register (C3.1: insert only). Must run inside the caller's transaction. */
+/**
+ * Freezes the register (C3.1: insert only). Must run inside the caller's
+ * transaction.
+ *
+ * Member status and units are two reads (`buildSnapshotDraft`); an admission
+ * (FOUNDATION `decideCommitment` / `issueCommonUnits`: units and
+ * PROSPECT → MEMBER in one transaction, under the unit-class row lock)
+ * committing between them would freeze a holder with units but the status
+ * read before (a register whose issued and voting units disagree). So the
+ * company ledger lock and the unit-class locks are taken first
+ * (`lockCompanyLedgerAndUnitClasses`, the economics order); every admission
+ * then waits for this transaction. The caller should already hold them,
+ * taken before any other lock (resolution.send does); taking them again in
+ * the same transaction is a no-op.
+ */
 export async function takeRecordSnapshot(
   tx: PrismaTransactionalClient,
   input: {
@@ -78,6 +93,7 @@ export async function takeRecordSnapshot(
   entries: SnapshotEntryDraft[];
   warnings: UndeclaredOverdueWarning[];
 }> {
+  await lockCompanyLedgerAndUnitClasses(tx, input.companyId);
   const draft = await buildSnapshotDraft(tx, input.companyId, input.recordDate);
   const snapshot = await tx.recordSnapshot.create({
     data: {

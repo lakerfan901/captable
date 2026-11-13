@@ -4,6 +4,7 @@ import { formatCents } from "@/lib/money";
 import { economicsToday } from "@/server/llc/economics/clock";
 import {
   assertNotFuture,
+  assertResolutionAuthorizes,
   financialsAudit,
   getLoanStates,
 } from "@/server/llc/economics/financials";
@@ -80,6 +81,17 @@ export const loanRouter = createTRPCRouter({
           stakeholderIds: [input.lenderStakeholderId],
           documentIds: [input.noteDocumentId],
         });
+        // Sections 4.6, 6.16(d): a member loan needs a Preferred
+        // Supermajority; a resolution given as that approval must be an
+        // effective one of this company, effective by the loan date.
+        if (input.resolutionId !== null) {
+          await assertResolutionAuthorizes(tx, companyId, input.resolutionId, {
+            on: input.madeOn,
+            what: "this member loan",
+            section: "4.6",
+            requireSupermajority: true,
+          });
+        }
         const principal = BigInt(input.principalCents);
         const row = await tx.memberLoan.create({
           data: {

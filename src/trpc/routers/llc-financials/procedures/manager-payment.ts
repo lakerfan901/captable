@@ -3,6 +3,7 @@ import { formatCents } from "@/lib/money";
 import {
   assertNotFuture,
   assertOrgCapAllows,
+  assertResolutionAuthorizes,
   financialsAudit,
   getOrgCapStatus,
   insertExpense,
@@ -97,6 +98,16 @@ export const managerPaymentRouter = createTRPCRouter({
         });
         const amount = BigInt(input.amountCents);
         const resolutionId = input.resolutionId ?? null;
+        // A stored resolution id claims an approval: it must be an effective
+        // resolution of this company, effective by the payment date (the cap
+        // path below also requires a Preferred Supermajority when exceeded).
+        if (resolutionId !== null) {
+          await assertResolutionAuthorizes(tx, companyId, resolutionId, {
+            on: input.paidOn,
+            what: "this Manager payment",
+            requireSupermajority: false,
+          });
+        }
         let countsTowardOrgCap = false;
 
         switch (input.category) {
@@ -139,7 +150,13 @@ export const managerPaymentRouter = createTRPCRouter({
             break;
           case "OTHER":
             if (input.expense === null && input.countsTowardOrgCap) {
-              await assertOrgCapAllows(tx, companyId, amount, resolutionId);
+              await assertOrgCapAllows(
+                tx,
+                companyId,
+                amount,
+                resolutionId,
+                input.paidOn,
+              );
               countsTowardOrgCap = true;
             }
             break;

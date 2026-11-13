@@ -19,9 +19,10 @@ import { boundRequestMeta } from "../../ballot-router/access";
 // change or a delete racing `send` waits for it and then sees SENT. The
 // writes themselves are single-row guarded writes (never a guarded
 // `updateMany` / `deleteMany`, see server/governance/guarded.ts).
-// Lock order: `send` takes ECONOMICS' `lockCompanyLedger` BEFORE the report
-// lock (it closes the books); no procedure here takes the ledger lock after
-// the report lock.
+// Lock order: `send` takes ECONOMICS' `lockCompanyLedgerAndUnitClasses` (the
+// ledger lock, then the unit-class locks) BEFORE the report lock (it closes
+// the books and reads the register); no procedure here takes the ledger or
+// a unit-class lock after the report lock.
 
 /** Audit context with the client-controlled IP and user agent bounded (M3). */
 export function auditContext(ctx: { requestIp: string; userAgent: string }): {

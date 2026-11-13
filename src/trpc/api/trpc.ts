@@ -17,6 +17,7 @@ import * as Sentry from "@sentry/nextjs";
 import { getIp, getUserAgent } from "@/lib/headers";
 import { type addPolicyOption, RBAC } from "@/lib/rbac";
 import { getPermissions } from "@/lib/rbac/access-control";
+import { redactSensitive } from "@/lib/sensitive-redaction";
 import { getServerAuthSession } from "@/server/auth";
 import { db } from "@/server/db";
 
@@ -163,9 +164,20 @@ export const createTRPCRouter = t.router;
  */
 export const createCallerFactory = t.createCallerFactory;
 
-const sentryMiddleware = t.middleware(
-  Sentry.trpcMiddleware({
-    attachRpcInput: true,
+const sentryTrpcMiddleware = Sentry.trpcMiddleware({
+  attachRpcInput: true,
+});
+
+// Sentry attaches the procedure input to every event of the request. It gets
+// a redacted copy (`redactSensitive`: bank account and routing numbers,
+// passwords, secrets, tokens), never the raw input; the procedure itself
+// still reads the real input through tRPC.
+const sentryMiddleware = t.middleware((opts) =>
+  sentryTrpcMiddleware({
+    path: opts.path,
+    type: opts.type,
+    next: opts.next,
+    getRawInput: async () => redactSensitive(await opts.getRawInput()),
   }),
 );
 

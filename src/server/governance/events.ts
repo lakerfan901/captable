@@ -112,14 +112,30 @@ export async function recordEventOnce(
  * A crash between 1 and 2 leaves a claim with no email: at most once, never
  * twice. `resolution.remind` (invites) and `resolution.resendNotice` (result
  * notices, PO copies) are the recovery paths; both use a fresh key.
+ *
+ * `stillCurrent` (optional) runs AFTER the claim and before the send: when it
+ * returns false (e.g. the ballot link was replaced or revoked after the job
+ * loaded it), the claim is deleted and nothing is sent ("SKIPPED"), so a
+ * stale job neither mails a dead link nor leaves a claim that reads as an
+ * email sent. The job of the newer link uses its own key.
  */
 export async function sendOnce(
   claim: RecordEventInput & { dedupeKey: string },
   send: () => Promise<void>,
+  stillCurrent?: () => Promise<boolean>,
 ): Promise<"SENT" | "SKIPPED"> {
   const claimed = await recordEventOnce(db, claim);
   if (!claimed) return "SKIPPED";
   try {
+    if (stillCurrent && !(await stillCurrent())) {
+      await db.resolutionEvent.deleteMany({
+        where: {
+          resolutionId: claim.resolutionId,
+          dedupeKey: claim.dedupeKey,
+        },
+      });
+      return "SKIPPED";
+    }
     await send();
   } catch (error) {
     await db.resolutionEvent.deleteMany({

@@ -38,6 +38,18 @@ export const LOCAL_DATABASE_URL =
   "postgres://captable:password@localhost:54321/captable";
 export const MAIL_CATCHER_URL = "smtp://localhost:1025";
 export const COMPANY_PREFIX = "zz-harden-";
+let companyPrefix: string = COMPANY_PREFIX;
+
+/**
+ * Names this script's companies `<prefix>…` (and sweeps and counts only that
+ * prefix). Call before creating anything; the default is `zz-harden-`.
+ */
+export function setCompanyPrefix(prefix: string): void {
+  if (!/^zz-[a-z0-9-]+-$/.test(prefix)) {
+    throw new Error(`Test company prefix must look like "zz-…-": ${prefix}`);
+  }
+  companyPrefix = prefix;
+}
 
 export const actor: LedgerActor = {
   userId: "harden-integration",
@@ -260,7 +272,7 @@ export async function createCompany(
   label: string,
   opts: { balanceOutsideDate?: string } = {},
 ): Promise<TestCompany> {
-  const name = `${COMPANY_PREFIX}${label}-${randomUUID().slice(0, 8)}`;
+  const name = `${companyPrefix}${label}-${randomUUID().slice(0, 8)}`;
   const company = await db.company.create({
     data: {
       name,
@@ -624,7 +636,7 @@ export async function sweepLeftovers(): Promise<void> {
   // (another session) keeps its own companies.
   const rows = await db.company.findMany({
     where: {
-      name: { startsWith: COMPANY_PREFIX },
+      name: { startsWith: companyPrefix },
       createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) },
     },
     select: { id: true },
@@ -632,7 +644,7 @@ export async function sweepLeftovers(): Promise<void> {
   const left = await deleteCompanies(rows.map((r) => r.id));
   if (rows.length > 0) {
     console.log(
-      `swept ${rows.length} leftover ${COMPANY_PREFIX} compan${rows.length === 1 ? "y" : "ies"} (${left} rows left)`,
+      `swept ${rows.length} leftover ${companyPrefix} compan${rows.length === 1 ? "y" : "ies"} (${left} rows left)`,
     );
   }
 }
@@ -644,10 +656,10 @@ export async function cleanup(): Promise<number> {
   }
   const users = await db.user.count({ where: { id: { in: createdUserIds } } });
   const stray = await db.company.count({
-    where: { name: { startsWith: COMPANY_PREFIX } },
+    where: { name: { startsWith: companyPrefix } },
   });
   console.log(
-    `cleanup: ${left} rows and ${users} users left for this run's ${createdCompanyIds.length} test companies; ${stray} ${COMPANY_PREFIX} companies in the database (other runs included)`,
+    `cleanup: ${left} rows and ${users} users left for this run's ${createdCompanyIds.length} test companies; ${stray} ${companyPrefix} companies in the database (other runs included)`,
   );
   return left + users;
 }

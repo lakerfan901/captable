@@ -39,6 +39,7 @@ import {
   lockResolution,
   type TransitionResult,
 } from "@/server/governance/tally";
+import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { boundRequestMeta } from "../../ballot-router/access";
 import { ZResolutionSendSchema } from "../schema";
@@ -53,6 +54,12 @@ import { requirementLabel } from "./get";
 // (ballot invites, finalize) are emitted only after that transaction commits.
 //
 // Concurrency:
+// - Lock order: the company ledger lock and the unit-class locks first
+//   (`lockCompanyLedgerAndUnitClasses`, as every economics write), then the
+//   resolution row lock, then the reference-code lock. No path takes a
+//   resolution lock and then a ledger or unit-class lock. Admissions
+//   (FOUNDATION) hold the unit-class lock, so the register cannot change
+//   between the snapshot's status and unit reads.
 // - Two sends of the same draft: both take `lockResolution`; the second waits
 //   until the first commits, then re-reads the row (READ COMMITTED: a new
 //   statement sees the committed SENT status) and is rejected by the DRAFT
@@ -133,6 +140,12 @@ export const sendProcedure = withLlcAccessControl
     try {
       result = await ctx.db.$transaction(
         async (tx) => {
+          // 0. The company ledger lock, then the unit-class locks, BEFORE the
+          //    resolution's row lock (the economics order: company first).
+          //    The register snapshot (step 6) reads member status and units
+          //    in two statements; admissions take the unit-class lock, so
+          //    none can commit between those reads.
+          await lockCompanyLedgerAndUnitClasses(tx, companyId);
           // 1. Load, lock, re-read under the lock, require DRAFT.
           const found = await tx.resolution.findFirst({
             where: { publicId: input.publicId, companyId },
