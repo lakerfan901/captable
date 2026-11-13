@@ -99,6 +99,9 @@ export const AuditSchema = z.object({
     "admission.countersign-ready",
     "admission.cancelled",
     "admission.w9-received",
+    "admission.manager-reassigned",
+    "admission.resent",
+    "admission.master-archived",
     "emailLog.bounce-marked",
 
     "resolution.created",

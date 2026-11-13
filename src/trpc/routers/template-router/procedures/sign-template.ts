@@ -13,9 +13,12 @@ import {
   INVESTOR_ROLE,
   investorSignedNotices,
   lockTemplate,
+  MANAGER_ROLE,
 } from "@/server/llc/admission";
+import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { EsignService } from "@/services/esign-service";
 import { withoutAuth } from "@/trpc/api/trpc";
+import { assertCountersignFiguresCurrent } from "@/trpc/routers/admission-router/countersign";
 import { DecodeEmailToken } from "../../template-field-router/procedures/add-fields";
 import { SignTemplateMutationSchema } from "../schema";
 
@@ -51,6 +54,23 @@ export const signTemplateProcedure = withoutAuth
       // its W-9s under the template row lock, so signing never races any of
       // them; the template (status and fields) is re-read under the lock.
       if (isSubscription) {
+        // F13: the Manager's countersignature re-checks the ledger figures,
+        // so it takes the company ledger and unit-class locks first (the lock
+        // order everywhere: ledger, classes, then the template). The role is
+        // read before any lock; a link to a replaced recipient row is dead.
+        const signer = await tx.esignRecipient.findFirst({
+          where: { id: token.rec, templateId: template.id },
+          select: { role: true },
+        });
+        if (!signer) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This signature request is not active.",
+          });
+        }
+        if (signer.role === MANAGER_ROLE) {
+          await lockCompanyLedgerAndUnitClasses(tx, template.companyId);
+        }
         await lockTemplate(tx, template.id);
         template = await eSignService.getTemplate(token.id, tx);
       }
@@ -92,6 +112,16 @@ export const signTemplateProcedure = withoutAuth
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "This signature request is not active.",
+        });
+      }
+
+      // F13: the Exhibit B the Manager signs shows what the ledger says now.
+      if (isSubscription && recipient.role === MANAGER_ROLE) {
+        await assertCountersignFiguresCurrent(tx, {
+          companyId,
+          commitmentId: template.commitmentId,
+          managerRecipientId: recipient.id,
+          fields: template.fields,
         });
       }
 

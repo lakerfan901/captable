@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { eSignNotificationEmailJob } from "@/jobs/esign-email";
+import { Audit } from "@/server/audit";
 import {
   INVESTOR_ROLE,
   investorSigningEmail,
@@ -81,6 +82,18 @@ export const resendProcedure = withLlcAccessControl
     await eSignNotificationEmailJob.emit(mail, {
       singletonKey: `esign-notify-${packet.id}-${investor.id}-${minute}`,
     });
+
+    await Audit.create(
+      {
+        action: "admission.resent",
+        companyId,
+        actor: { type: "user", id: user.id },
+        context: { requestIp: ctx.requestIp, userAgent: ctx.userAgent },
+        target: [{ type: "template", id: packet.id }],
+        summary: `${user.name ?? "A team member"} resent the signing request for "${packet.name}" to ${investor.email}`,
+      },
+      ctx.db,
+    );
 
     return { ok: true as const };
   });

@@ -51,7 +51,10 @@ import {
 } from "@/trpc/routers/admission-router/procedures/confirm-details";
 import { admissionRouter } from "@/trpc/routers/admission-router/router";
 import { commitmentRouter } from "@/trpc/routers/commitment-router/router";
-import { EncodeEmailToken } from "@/trpc/routers/template-field-router/procedures/add-fields";
+import {
+  DecodeEmailToken,
+  EncodeEmailToken,
+} from "@/trpc/routers/template-field-router/procedures/add-fields";
 import { templateRouter } from "@/trpc/routers/template-router/router";
 import {
   actor,
@@ -419,7 +422,8 @@ let masterPublicId: string;
 let janePacket: string;
 let janeId: string;
 let bobPacket: string;
-let bobFirstToken: string;
+/** Every countersign link issued for Bob's packet, oldest first. */
+const bobTokens: string[] = [];
 
 async function setup() {
   section("Setup: company, two team members, a ready master");
@@ -962,7 +966,6 @@ async function reducedAcceptance() {
     expectedUnits: "75",
   });
   bobPacket = publicId;
-  bobFirstToken = firstPrepare.token;
   const ids = await packetIds(A, publicId);
   eq(
     "reduced: ledger line",
@@ -970,15 +973,87 @@ async function reducedAcceptance() {
       ?.prefilledValue,
     "$75,000.00",
   );
-  // A second prepare by the signer is idempotent (same link).
-  const again = await errorOf(() =>
-    admission.prepareCountersign({
-      publicId,
-      expectedReceivedCents: 7_500_000,
-      expectedUnits: "75.000000",
+  // Preparing again is allowed before signing; it issues a new link and the
+  // earlier one of the same signer dies.
+  const again = await admission.prepareCountersign({
+    publicId,
+    expectedReceivedCents: 7_500_000,
+    expectedUnits: "75.000000",
+  });
+  bobTokens.push(firstPrepare.token, again.token);
+  check("reduced: a new link per prepare", again.token !== firstPrepare.token);
+  await expectRefused(
+    "reduced: the signer's earlier link dies when a newer one is issued",
+    () => signAttempt(firstPrepare.token),
+    /This signature request is not active/,
+  );
+  const live = await errorOf(() => signAttempt(again.token));
+  check(
+    "reduced: the newest link is live (fails only on the missing signature)",
+    live?.message.startsWith("Please complete") ?? false,
+    live?.message,
+  );
+  eq(
+    "reduced: exactly one Manager recipient",
+    await db.esignRecipient.count({
+      where: { templateId: ids.templateId, role: "manager" },
+    }),
+    1,
+  );
+  const oldRec = (await DecodeEmailToken(firstPrepare.token)).rec;
+  const newRec = (await DecodeEmailToken(again.token)).rec;
+  const after = await packetIds(A, publicId);
+  eq(
+    "reduced: the old Manager row is gone",
+    await db.esignRecipient.count({ where: { id: oldRec } }),
+    0,
+  );
+  eq(
+    "reduced: all four Manager fields moved to the new row",
+    after.fields.filter((f) => f.recipientId === newRec).length,
+    4,
+  );
+  eq(
+    "reduced: no field left on the old row",
+    after.fields.filter((f) => f.recipientId === oldRec).length,
+    0,
+  );
+  eq(
+    "reduced: new row keeps signing order 2",
+    (await db.esignRecipient.findFirstOrThrow({ where: { id: newRec } }))
+      .signingOrder,
+    2,
+  );
+}
+
+/**
+ * template.sign with the recipient the token names. `data` omitted: a live
+ * link fails on the missing signature, a dead one before; nothing is signed.
+ */
+async function signAttempt(token: string, data: Record<string, string> = {}) {
+  const { id, rec } = await DecodeEmailToken(token);
+  return callers(admin).template.sign({
+    token,
+    templateId: id,
+    recipientId: rec,
+    data,
+  });
+}
+
+/** Manager signs with the token's recipient: signature and date filled. */
+async function managerSigns(token: string) {
+  const { id, rec } = await DecodeEmailToken(token);
+  const fields = await db.templateField.findMany({
+    where: { templateId: id, recipientId: rec },
+    select: { id: true, semanticKey: true, recipientId: true },
+  });
+  return signAttempt(
+    token,
+    dataFor(fields, rec, {
+      manager_signature: PNG,
+      manager_sign_date: "2026-11-13",
     }),
   );
-  eq("reduced: preparing again is allowed before signing", again, null);
 }
 
 async function rejection() {
@@ -1211,25 +1286,19 @@ async function cancelledAndForeign() {
   );
 
   // Reassigning while the link is active (Bob: accepted, prepared, SENT).
-  const bob = await packetIds(A, bobPacket);
-  const signAttempt = (token: string) =>
-    callers(admin).template.sign({
-      token,
-      templateId: bob.templateId,
-      recipientId: bob.managerId,
-      // No signature: a live link fails on the required field, a dead one
-      // on the recipient status; nothing is signed either way.
-      data: {},
-    });
+  const bobCommitment = (
+    await db.template.findFirstOrThrow({ where: { publicId: bobPacket } })
+  ).commitmentId as string;
   await admission.reassignManager({
     publicId: bobPacket,
     managerMemberId: memberIdOf(second),
   });
+  const bob = await packetIds(A, bobPacket);
   const bobManager = await db.esignRecipient.findFirstOrThrow({
     where: { id: bob.managerId },
   });
   eq(
-    "reassign while SENT: recipient back to PENDING",
+    "reassign while SENT: a new PENDING Manager row",
     bobManager.status,
     "PENDING",
   );
@@ -1239,11 +1308,20 @@ async function cancelledAndForeign() {
     memberIdOf(second),
   );
   eq("reassign while SENT: new signer name", bobManager.name, "Second Signer");
-  await expectRefused(
-    "reassign while SENT: the earlier link is refused",
-    () => signAttempt(bobFirstToken),
-    /This signature request is not active/,
+  eq(
+    "reassign while SENT: exactly one Manager recipient",
+    await db.esignRecipient.count({
+      where: { templateId: bob.templateId, role: "manager" },
+    }),
+    1,
   );
+  for (const [i, token] of bobTokens.entries()) {
+    await expectRefused(
+      `reassign while SENT: earlier link ${i + 1} is refused`,
+      () => signAttempt(token),
+      /This signature request is not active/,
+    );
+  }
   await expectRefused(
     "reassign while SENT: the previous signer can no longer prepare",
     () =>
@@ -1254,25 +1332,88 @@ async function cancelledAndForeign() {
       }),
     /^Only Second Signer can countersign this packet\. Reassign the signer first\.$/,
   );
-  const secondPrepare = await callers(second).admission.prepareCountersign({
+  const secondAdmission = callers(second).admission;
+  const t3 = await secondAdmission.prepareCountersign({
     publicId: bobPacket,
     expectedReceivedCents: 7_500_000,
     expectedUnits: "75",
   });
-  check(
-    "reassign while SENT: the new signer can prepare",
-    !!secondPrepare.token,
+  for (const [i, token] of bobTokens.entries()) {
+    await expectRefused(
+      `after the new signer prepared: earlier link ${i + 1} stays dead`,
+      () => signAttempt(token),
+      /This signature request is not active/,
+    );
+  }
+
+  // The ledger changes between prepare and sign: refused, then re-prepared.
+  const { commitment } = callers(admin);
+  const balance = await commitment.recordReceipt({
+    commitmentId: bobCommitment,
+    receivedOn: "2026-11-13",
+    amountCents: 1_000_000,
+    reference: "BALANCE-1",
+  });
+  await expectRefused(
+    "a receipt recorded after prepare: signing is refused",
+    () => managerSigns(t3.token),
+    /^The ledger changed since this document was prepared\. Go back to the subscription and prepare the countersignature again\.$/,
+    "CONFLICT",
   );
-  // Known gap (reported): a signing token names the recipient row, not the
-  // team member, so the earlier signer's link is live again once the new
-  // signer has prepared. Observed, not asserted as desired behaviour.
-  const old = await errorOf(() => signAttempt(bobFirstToken));
-  console.log(
-    `  note the earlier signer's link after re-prepare: ${
-      old?.message.startsWith("Please complete")
-        ? "ACCEPTED (live again)"
-        : `refused (${old?.message})`
-    }`,
+  eq(
+    "refused signing left the Manager unsigned",
+    (
+      await db.esignRecipient.findFirstOrThrow({
+        where: { id: (await DecodeEmailToken(t3.token)).rec },
+      })
+    ).status,
+    "SENT",
+  );
+  const t4 = await secondAdmission.prepareCountersign({
+    publicId: bobPacket,
+    expectedReceivedCents: 8_500_000,
+    expectedUnits: "85",
+  });
+  await commitment.voidReceipt({
+    receiptId: balance.id,
+    reason: "entered on the wrong member",
+  });
+  await expectRefused(
+    "a receipt voided after prepare: signing is refused",
+    () => managerSigns(t4.token),
+    /The ledger changed since this document was prepared/,
+    "CONFLICT",
+  );
+  const t5 = await secondAdmission.prepareCountersign({
+    publicId: bobPacket,
+    expectedReceivedCents: 7_500_000,
+    expectedUnits: "75",
+  });
+  const signedOk = await errorOf(() => managerSigns(t5.token));
+  eq("after re-preparing, the Manager signs", signedOk, null);
+  const bobSigned = await packetIds(A, bobPacket);
+  eq(
+    "signed figures match the ledger",
+    bobSigned.fields.find((f) => f.semanticKey === "contribution_received")
+      ?.prefilledValue,
+    "$75,000.00",
+  );
+  eq("Bob's packet: completion jobs ran", await runCompletionJobs(), 2);
+  eq(
+    "Bob's packet: complete",
+    (await admission.get({ publicId: bobPacket })).packet.stage,
+    "COMPLETE",
+  );
+  eq(
+    "audit admission.manager-reassigned for Bob",
+    await db.audit.count({
+      where: {
+        companyId: A.id,
+        action: "admission.manager-reassigned",
+        summary: { contains: "the earlier countersign link no longer works" },
+      },
+    }),
+    1,
   );
 
   // Jane is a Member now; a second subscription does not touch her record
@@ -1432,6 +1573,50 @@ async function concurrency() {
   );
 }
 
+async function resendAndArchiveAudits() {
+  section("Audit rows for reassign, resend and archive");
+  const { admission } = callers(admin);
+  const publicId = await sendPacket(admin, masterPublicId, {
+    name: "Kim Resend",
+    email: `kim.${randomUUID().slice(0, 8)}@example.com`,
+  });
+  await admission.resend({ publicId });
+  take("esign-notify");
+  const t = await db.template.findFirstOrThrow({ where: { publicId } });
+  eq(
+    "audit admission.resent",
+    await db.audit.count({
+      where: { companyId: A.id, action: "admission.resent" },
+    }),
+    1,
+  );
+  check(
+    "admission.resent targets the packet",
+    JSON.stringify(
+      (
+        await db.audit.findFirstOrThrow({
+          where: { companyId: A.id, action: "admission.resent" },
+        })
+      ).target,
+    ).includes(t.id),
+  );
+  await admission.archiveMaster({ publicId: masterPublicId });
+  eq(
+    "audit admission.master-archived",
+    await db.audit.count({
+      where: { companyId: A.id, action: "admission.master-archived" },
+    }),
+    1,
+  );
+  eq(
+    "audit admission.manager-reassigned (Bob and Jane's second packet)",
+    await db.audit.count({
+      where: { companyId: A.id, action: "admission.manager-reassigned" },
+    }),
+    2,
+  );
+}
+
 async function removeBucketsAndObjects() {
   section(
     "Buckets, recipients, fields and stored objects of the test companies",
@@ -1496,5 +1681,6 @@ await runScenarios([
   ["rule refusals", ruleRefusals],
   ["cancelled, foreign, existing member", cancelledAndForeign],
   ["concurrency", concurrency],
+  ["resend and archive audits", resendAndArchiveAudits],
   ["remove buckets and objects", removeBucketsAndObjects],
 ]);

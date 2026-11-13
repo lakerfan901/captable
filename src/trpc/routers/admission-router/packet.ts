@@ -15,12 +15,12 @@ import {
 } from "@/server/llc/admission";
 import { economicsToday } from "@/server/llc/economics/clock";
 import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
-import { sumUnits } from "@/server/llc/receipt-rules";
 import { dateToWire, unitsToWire } from "@/server/llc/serialize";
 import { type CommitmentDTO, toCommitmentDTO } from "../commitment-router/dto";
 import type { MemberDTO } from "../stakeholder-router/member-schema";
 import { toMemberDTO } from "../stakeholder-router/procedures/get-member";
 import type { UnitClassDTO } from "../unit-class-router/schema";
+import { ledgerFigures } from "./countersign";
 
 // Shared by the F13 procedures (01-foundation.md F13): loading a packet,
 // locking it for a change, and the confirmation screen's view of it.
@@ -61,6 +61,7 @@ const lockedPacketSelect = {
       memberId: true,
       name: true,
       email: true,
+      signingOrder: true,
     },
   },
 } as const;
@@ -110,22 +111,6 @@ export function wrongStage(action: string, stage: PacketStage): TRPCError {
     code: "BAD_REQUEST",
     message: `${action} This subscription is ${STAGE_LABEL[stage]}.`,
   });
-}
-
-/** Contribution received and units issued on the commitment, from the ledger. */
-export async function ledgerFigures(
-  db: TPrismaOrTransaction,
-  companyId: string,
-  commitmentId: string,
-): Promise<{ receivedCents: bigint; units: string }> {
-  const receipts = await db.capitalReceipt.findMany({
-    where: { companyId, commitmentId, voidedAt: null },
-    select: { appliedCents: true, unitsIssued: true },
-  });
-  return {
-    receivedCents: receipts.reduce((sum, r) => sum + r.appliedCents, 0n),
-    units: sumUnits(receipts.map((r) => unitsToWire(r.unitsIssued))),
-  };
 }
 
 // ---------------------------------------------------------------------------
