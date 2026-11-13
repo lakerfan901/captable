@@ -3,13 +3,17 @@ import type { z } from "zod";
 import { formatCents } from "@/lib/money";
 import { Audit } from "@/server/audit";
 import type { PrismaTransactionalClient } from "@/server/db";
-import { guardedUpdate } from "@/server/guarded-write";
 import type { LedgerActor } from "@/server/llc/commitments";
 import { actorFrom } from "@/server/llc/economics/scope";
 import { dateToWire, trimUnits } from "@/server/llc/serialize";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { EncodeEmailToken } from "@/trpc/routers/template-field-router/procedures/add-fields";
-import { ledgerFigures, lockPacket, wrongStage } from "../packet";
+import {
+  ledgerFigures,
+  ledgerLineValues,
+  replaceManagerRecipient,
+} from "../countersign";
+import { lockPacket, wrongStage } from "../packet";
 import { ZodPrepareCountersignSchema } from "../schema";
 
 const LEDGER_KEYS = ["contribution_received", "units_issued"] as const;
@@ -83,10 +87,24 @@ export async function preparePacketCountersign(
     });
   }
 
+  // Every prepare gives the Manager a new recipient row (new id, SENT, the
+  // Manager's fields moved to it): only the newest link works, and a link
+  // from before a reassignment never comes back.
+  const recipient = await replaceManagerRecipient(tx, {
+    templateId: packet.id,
+    old: manager,
+    next: {
+      memberId: manager.memberId,
+      name: manager.name ?? "",
+      email: manager.email,
+      status: "SENT",
+    },
+  });
+
   const fields = await tx.templateField.findMany({
     where: {
       templateId: packet.id,
-      recipientId: manager.id,
+      recipientId: recipient.id,
       semanticKey: { in: [...LEDGER_KEYS, "manager_sign_date"] },
     },
     select: { id: true, semanticKey: true },
@@ -101,8 +119,7 @@ export async function preparePacketCountersign(
   }
   const acceptedOn = dateToWire(commitment.acceptedOn);
   const valueFor: Record<string, string | null> = {
-    contribution_received: formatCents(receivedCents),
-    units_issued: trimUnits(units),
+    ...ledgerLineValues({ receivedCents, units }),
     manager_sign_date: acceptedOn,
   };
   for (const field of fields) {
@@ -114,17 +131,6 @@ export async function preparePacketCountersign(
         ...(key === "manager_sign_date" ? {} : { readOnly: true }),
       },
     });
-  }
-
-  const activated = await guardedUpdate(() =>
-    tx.esignRecipient.update({
-      where: { id: manager.id, status: { in: ["PENDING", "SENT"] } },
-      data: { status: "SENT" },
-      select: { id: true },
-    }),
-  );
-  if (activated === null) {
-    throw wrongStage("The Manager has already countersigned.", "FINALISING");
   }
 
   await Audit.create(
@@ -143,7 +149,7 @@ export async function preparePacketCountersign(
     },
     tx,
   );
-  return { templateId: packet.id, recipientId: manager.id };
+  return { templateId: packet.id, recipientId: recipient.id };
 }
 
 export const prepareCountersignProcedure = withLlcAccessControl

@@ -48,7 +48,7 @@ export const archiveMasterProcedure = withLlcAccessControl
 
       await Audit.create(
         {
-          action: "template.updated",
+          action: "admission.master-archived",
           companyId,
           actor: { type: "user", id: user.id },
           context: { requestIp: ctx.requestIp, userAgent: ctx.userAgent },
