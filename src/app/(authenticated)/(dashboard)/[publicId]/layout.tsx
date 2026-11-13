@@ -58,7 +58,7 @@ const DashboardLayout = async (props: DashboardLayoutProps) => {
               entityType={entity.entityType}
             />
           </aside>
-          <div className="flex h-full grow flex-col">
+          <div className="flex h-full min-w-0 grow flex-col">
             <NavBar
               companies={companies}
               publicId={publicId}

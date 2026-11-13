@@ -79,7 +79,7 @@ export default async function MemberPage(props: {
       </div>
 
       <Tabs defaultValue="profile">
-        <TabsList>
+        <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="commitments">Commitments</TabsTrigger>
           <TabsTrigger value="economics">Economics</TabsTrigger>
