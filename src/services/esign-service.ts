@@ -11,6 +11,18 @@ import type { TPrismaOrTransaction } from "@/server/db";
 import { type EsignGetTemplateType, getEsignTemplate } from "@/server/esign";
 import { EncodeEmailToken } from "@/trpc/routers/template-field-router/procedures/add-fields";
 
+/**
+ * The one order of a template's recipients (A3.9): the signing order entered
+ * on creation, then creation time, then id, so ordered delivery always picks
+ * the same next signer. Templates created before `signingOrder` existed fall
+ * back to creation time and id.
+ */
+export const RECIPIENT_ORDER = [
+  { signingOrder: { sort: "asc", nulls: "last" } },
+  { createdAt: "asc" },
+  { id: "asc" },
+] as const;
+
 export class EsignService {
   getTemplate(templateId: string, tx: TPrismaOrTransaction) {
     return getEsignTemplate({
@@ -56,6 +68,7 @@ export class EsignService {
         templateId: template.id,
         status: "PENDING",
       },
+      orderBy: [...RECIPIENT_ORDER],
       select: {
         id: true,
         email: true,
@@ -135,6 +148,7 @@ export class EsignService {
       where: {
         templateId,
       },
+      orderBy: [...RECIPIENT_ORDER],
       select: {
         email: true,
         name: true,

@@ -54,8 +54,8 @@ export const eSignCompletePDFWorker = defineWorker(config, async (job) => {
     bucketData,
   } = job.data;
 
-  await db.$transaction(async (tx) => {
-    await completeEsignDocuments({
+  const { created } = await db.$transaction(async (tx) => {
+    return await completeEsignDocuments({
       bucketData: bucketData,
       companyId,
       db: tx,
@@ -65,6 +65,9 @@ export const eSignCompletePDFWorker = defineWorker(config, async (job) => {
       userAgent,
     });
   });
+
+  // A retried job finds the template already completed: no second emails.
+  if (!created) return;
 
   const file = await getPresignedGetUrl(bucketData.key);
 

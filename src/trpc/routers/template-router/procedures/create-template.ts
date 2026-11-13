@@ -63,10 +63,13 @@ export async function createTemplateHandler({
     db,
   );
 
+  // `createMany` gives every row the same `createdAt`: the entered order is
+  // kept in `signingOrder` (A3.9).
   await db.esignRecipient.createMany({
-    data: recipients.map((recipient) => ({
+    data: recipients.map((recipient, index) => ({
       ...recipient,
       templateId: template.id,
+      signingOrder: index + 1,
     })),
   });
 

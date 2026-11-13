@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { UAParser } from "ua-parser-js";
+import { filterSignerValues } from "@/lib/esign/filter-signer-values";
 import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
 import { EsignService } from "@/services/esign-service";
 import { withoutAuth } from "@/trpc/api/trpc";
@@ -71,6 +72,21 @@ export const signTemplateProcedure = withoutAuth
         });
       }
 
+      // Signer isolation (A3.8): only this recipient's own, writable fields
+      // are taken from the request; required fields are checked here.
+      const { values, missingRequired } = filterSignerValues(
+        template.fields,
+        recipient.id,
+        input.data,
+      );
+
+      if (missingRequired.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Please complete: ${missingRequired.join(", ")}`,
+        });
+      }
+
       await eSignService.updateRecipientStatus(recipient.id, "SIGNED", tx);
 
       await eSignService.createSignedAuditLog(
@@ -93,7 +109,7 @@ export const signTemplateProcedure = withoutAuth
           companyId,
           templateName,
           fields: template.fields,
-          data: input.data,
+          data: values,
           templateId: template.id,
           requestIp,
           userAgent,
@@ -110,7 +126,7 @@ export const signTemplateProcedure = withoutAuth
       }
 
       if (isMultiRecipient) {
-        await eSignService.saveFieldValues(template.fields, input.data, tx);
+        await eSignService.saveFieldValues(template.fields, values, tx);
 
         const allRecipients = await eSignService.getAllRecipients(
           template.id,
