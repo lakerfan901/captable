@@ -32,6 +32,40 @@ export async function getMemberPositions(
   companyId: string,
   opts?: { asOf?: string; unitClassId?: string },
 ): Promise<MemberPosition[]> {
+  return await foldedPositions(db, companyId, opts);
+}
+
+/**
+ * What each COMPLETED transfer moves (units, capital, cash applied), folded
+ * through the latest effective date; [] without completed transfers. Throws
+ * `TransferIntegrityError` when a transfer no longer finds its units.
+ */
+export async function getTransferMoves(
+  db: TPrismaOrTransaction,
+  companyId: string,
+): Promise<TransferMove[]> {
+  const latest = await db.unitTransfer.findFirst({
+    where: { companyId, status: "COMPLETED", effectiveOn: { not: null } },
+    orderBy: { effectiveOn: "desc" },
+    select: { effectiveOn: true },
+  });
+  if (latest?.effectiveOn == null) return [];
+  const moves: TransferMove[] = [];
+  await foldedPositions(
+    db,
+    companyId,
+    { asOf: toDateOnly(latest.effectiveOn) },
+    (m) => moves.push(m),
+  );
+  return moves;
+}
+
+async function foldedPositions(
+  db: TPrismaOrTransaction,
+  companyId: string,
+  opts?: { asOf?: string; unitClassId?: string },
+  onMove?: (move: TransferMove) => void,
+): Promise<MemberPosition[]> {
   const positions = await receiptPositions(db, companyId, opts);
   const transfers = await loadFoldTransfers(db, companyId, opts);
   // No completed transfer in scope: the receipt positions, untouched.
@@ -67,6 +101,7 @@ export async function getMemberPositions(
     transfers,
     (t) => before.get(t.id) ?? [],
     throughOn,
+    onMove,
   );
 }
 
@@ -168,6 +203,27 @@ export interface FoldTransfer {
   completedAt: Date;
 }
 
+/** What one transfer moved (units are `transfer.units`). */
+export interface TransferMove {
+  transfer: FoldTransfer;
+  capitalCents: bigint;
+  cashAppliedCents: bigint;
+}
+
+/**
+ * A completed transfer no longer finds the units it moves (or leaves a
+ * holder negative). `transfer` is null for the negative-holder case.
+ */
+export class TransferIntegrityError extends Error {
+  constructor(
+    message: string,
+    readonly transfer: FoldTransfer | null,
+  ) {
+    super(message);
+    this.name = "TransferIntegrityError";
+  }
+}
+
 /** COMPLETED transfers in scope (class filter; `effectiveOn <= asOf`). */
 async function loadFoldTransfers(
   db: TPrismaOrTransaction,
@@ -253,6 +309,7 @@ export function foldTransfers(
   transfers: FoldTransfer[],
   before: (t: FoldTransfer) => MemberPosition[],
   throughOn: string,
+  onMove?: (move: TransferMove) => void,
 ): MemberPosition[] {
   const ordered = transfers
     .filter((t) => t.effectiveOn <= throughOn)
@@ -293,8 +350,9 @@ export function foldTransfers(
       (base ? microUnitsFromDecimal(base.units) : 0n) + (prior?.units ?? 0n);
     const n = microUnitsFromDecimal(t.units);
     if (kind === undefined || held <= 0n || n <= 0n || n > held) {
-      throw new Error(
+      throw new TransferIntegrityError(
         `Unit transfer ${t.id} moves ${microUnitsToDecimalString(n)} units effective ${t.effectiveOn}, but the transferor holds ${microUnitsToDecimalString(held)} then (ledger data integrity).`,
+        t,
       );
     }
     const capital = (base?.capitalCents ?? 0n) + (prior?.capitalCents ?? 0n);
@@ -310,6 +368,11 @@ export function foldTransfers(
     to.units += n;
     to.capitalCents += movedCapital;
     to.cashAppliedCents += movedCash;
+    onMove?.({
+      transfer: t,
+      capitalCents: movedCapital,
+      cashAppliedCents: movedCash,
+    });
   }
 
   const rows = new Map(
@@ -331,8 +394,9 @@ export function foldTransfers(
     };
     const units = microUnitsFromDecimal(row.units) + d.units;
     if (units < 0n) {
-      throw new Error(
+      throw new TransferIntegrityError(
         `Unit transfers leave stakeholder ${d.stakeholderId} with negative units (ledger data integrity).`,
+        null,
       );
     }
     rows.set(key, {

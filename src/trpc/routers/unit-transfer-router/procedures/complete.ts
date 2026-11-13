@@ -13,7 +13,10 @@ import { guardedWrite } from "@/server/governance/guarded";
 import { applyUnitTransfer, getPositions } from "@/server/llc/economics";
 import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { getSuspendedUnits } from "@/server/llc/economics/suspension";
-import { getMemberPositions } from "@/server/llc/positions";
+import {
+  getMemberPositions,
+  TransferIntegrityError,
+} from "@/server/llc/positions";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZUnitTransferCompleteSchema } from "../schema";
 import {
@@ -334,13 +337,16 @@ async function recheckLedger(
     } catch (error) {
       // Only the fold-in's own integrity error becomes a refusal; anything
       // else (a database error) propagates as it is.
-      if (
-        error instanceof Error &&
-        !(error instanceof TRPCError) &&
-        error.message.includes("(ledger data integrity)")
-      ) {
+      if (error instanceof TransferIntegrityError) {
+        const other = error.transfer;
+        const names = await stakeholderNames(tx, companyId, [
+          other?.fromStakeholderId ?? null,
+          other?.toStakeholderId ?? null,
+        ]);
         badRequest(
-          `Completing this transfer would leave another completed transfer without the units it moves (Section 7). ${error.message}`,
+          other
+            ? `Completing this transfer would leave ${names.get(other.fromStakeholderId) ?? "the transferor"} without the ${displayUnits(other.units)} units already transferred to ${names.get(other.toStakeholderId) ?? "another holder"} effective ${other.effectiveOn} (Section 7.9.1).`
+            : "Completing this transfer would leave a holder with fewer units than its completed transfers moved (Section 7.9.1).",
         );
       }
       throw error;

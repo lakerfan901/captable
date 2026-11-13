@@ -74,6 +74,7 @@ import {
   assertLedgerDateOpenForReceipt,
   beforeVoidReceipt,
 } from "@/server/llc/economics/receipt-guards";
+import { guardCompletedTransfers } from "@/server/llc/economics/transfers";
 import {
   forfeitureUnits,
   planVoid,
@@ -953,10 +954,12 @@ export async function reduceAcceptedCommitment(
     );
   }
   const after = commitment.acceptedCents - input.reduceByCents;
+  const transferGuard = await guardCompletedTransfers(tx, companyId);
   await tx.commitment.update({
     where: { id: commitment.id, companyId },
     data: { acceptedCents: after },
   });
+  await transferGuard?.check();
   await writeAudit(
     tx,
     actor,
@@ -1049,6 +1052,7 @@ export async function recordCapitalReceipt(
     companyId,
     input.commitmentId,
   );
+  const transferGuard = await guardCompletedTransfers(tx, companyId);
   const receivedOnDate = dbDate(input.receivedOn, "The date received");
   const receivedOn = input.receivedOn;
   const dueDate = input.dueDate ?? null;
@@ -1200,6 +1204,7 @@ export async function recordCapitalReceipt(
     ],
     `${summary}.`,
   );
+  await transferGuard?.check();
   return receipt;
 }
 
@@ -1244,6 +1249,7 @@ export async function voidCapitalReceipt(
   if (receipt.voidedAt !== null) {
     throw badRequest("This receipt has already been voided.");
   }
+  const transferGuard = await guardCompletedTransfers(tx, companyId);
   const units = unitsToWire(receipt.unitsIssued);
   const ledgerRow = (r: {
     kind: ReceiptKind;
@@ -1330,6 +1336,7 @@ export async function voidCapitalReceipt(
         : ""
     }.`,
   );
+  await transferGuard?.check();
   return voided;
 }
 

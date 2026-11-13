@@ -43,6 +43,8 @@ import {
   createCommitment,
   decideCommitment,
   recordCapitalReceipt,
+  reduceAcceptedCommitment,
+  voidCapitalReceipt,
 } from "@/server/llc/commitments";
 import {
   computeDistribution,
@@ -982,7 +984,7 @@ async function chainedFlow() {
   await expectRefused(
     "Erin → Gina effective 2026-11-01 would leave Erin → Frank without units",
     () => caller.complete({ publicId: z2 }),
-    /^Completing this transfer would leave another completed transfer without the units it moves \(Section 7\)\./,
+    /^Completing this transfer would leave Erin Prospect without the 15 units already transferred to Frank Prospect effective \d{4}-\d{2}-01 \(Section 7\.9\.1\)\.$/,
     "BAD_REQUEST",
   );
   eq(
@@ -1119,9 +1121,163 @@ async function receiptsAroundTransfers() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// 5. Ledger writes after a completion cannot strand it (guardCompletedTransfers)
+
+async function strandingGuard() {
+  const c = await createCompany("strand");
+  const carol = await newMember(c, "Carol Holder");
+  const bob = await newMember(c, "Bob Holder");
+  const dave = await newMember(c, "Dave Prospect");
+  const carolCommitment = await subscribeOn(
+    c,
+    carol.id,
+    usd(200_000),
+    usd(100_000),
+  );
+  const bobCommitment = await subscribeOn(c, bob.id, usd(100_000), usd(50_000));
+  setToday(TODAY);
+  const receipt = (commitmentId: string, on: string, cents: bigint) =>
+    inTx((tx) =>
+      recordCapitalReceipt(
+        tx,
+        { companyId: c.id, commitmentId, receivedOn: on, amountCents: cents },
+        actor,
+      ),
+    );
+  const carolBalance = await receipt(
+    carolCommitment,
+    "2026-11-11",
+    usd(50_000),
+  );
+  const bobBalance = await receipt(bobCommitment, "2026-11-11", usd(10_000));
+  const admin = await createAdmin(c);
+  const caller = createCallerFactory(unitTransferRouter)(admin.context);
+  const { publicId } = await caller.create({
+    kind: "DEATH_INCAPACITY",
+    fromStakeholderId: carol.id,
+    toStakeholderId: dave.id,
+    unitClassId: c.preferredId,
+    units: "120",
+    noticeReceivedOn: "2026-10-16",
+  });
+  await caller.update({ publicId, transferNoticeOn: TODAY });
+  const { effectiveOn } = await caller.complete({ publicId });
+  section(`120 of Carol's 150 units to Dave, effective ${effectiveOn}`);
+  const stranded = new RegExp(
+    `^This would leave Carol Holder without the 120 units transferred to Dave Prospect effective ${effectiveOn} \\(Section 7\\.9\\.1\\)\\.`,
+  );
+
+  await expectRefused(
+    "void of Carol's $50,000 Balance receipt (dated before effectiveOn)",
+    () =>
+      inTx((tx) =>
+        voidCapitalReceipt(
+          tx,
+          {
+            companyId: c.id,
+            receiptId: carolBalance.id,
+            reason: "Wire was returned",
+          },
+          actor,
+        ),
+      ),
+    stranded,
+    "BAD_REQUEST",
+  );
+  const kept = await db.capitalReceipt.findFirstOrThrow({
+    where: { id: carolBalance.id },
+  });
+  eq("refused void left the receipt in place", kept.voidedAt, null);
+
+  await expectRefused(
+    "forfeiture of $50,000 of Carol's capital dated before effectiveOn",
+    () =>
+      inTx((tx) =>
+        recordCapitalReceipt(
+          tx,
+          {
+            companyId: c.id,
+            commitmentId: carolCommitment,
+            receivedOn: TODAY,
+            amountCents: 0n,
+            sourceType: "memberDefault",
+            sourceId: "zz-g16b-default",
+            special: { kind: "FORFEITURE", appliedCents: -usd(50_000) },
+          },
+          actor,
+        ),
+      ),
+    stranded,
+    "BAD_REQUEST",
+  );
+  eq(
+    "no forfeiture receipt left behind",
+    await db.capitalReceipt.count({
+      where: { companyId: c.id, kind: "FORFEITURE" },
+    }),
+    0,
+  );
+
+  await inTx((tx) =>
+    reduceAcceptedCommitment(
+      tx,
+      {
+        companyId: c.id,
+        commitmentId: carolCommitment,
+        reduceByCents: usd(20_000),
+        reason: "Section 4.9(ii) replacement funding (integration)",
+      },
+      actor,
+    ),
+  );
+  const afterReduce = row(
+    await positionsOf(c, effectiveOn),
+    carol.id,
+    c.preferredId,
+  );
+  eq(
+    "4.9(ii) reduction allowed: Carol committed $180,000.00",
+    afterReduce?.committedCents,
+    usd(180_000),
+  );
+  eq("reduction leaves Carol's units", afterReduce?.units, "30.000000");
+
+  await inTx((tx) =>
+    voidCapitalReceipt(
+      tx,
+      {
+        companyId: c.id,
+        receiptId: bobBalance.id,
+        reason: "Wire was returned",
+      },
+      actor,
+    ),
+  );
+  check("a void that touches no transfer is allowed", true);
+  await receipt(carolCommitment, TODAY, usd(10_000));
+  eq(
+    "a further Balance payment by Carol before effectiveOn is allowed",
+    row(await positionsOf(c, effectiveOn), carol.id, c.preferredId)?.units,
+    "40.000000",
+  );
+  const e = await econ(c, effectiveOn);
+  eq(
+    "ECONOMICS reads: Dave 120 units",
+    e.holders.get(dave.id)?.preferredUnits,
+    120_000_000n,
+  );
+  eq(
+    "ECONOMICS reads: Dave contributed $120,000.00",
+    e.holders.get(dave.id)?.contributed,
+    usd(120_000),
+  );
+}
+
 await runScenarios([
   ["T-1 worked example", workedExampleT1],
   ["complete and admit", mainFlow],
   ["chained and edge cases", chainedFlow],
   ["receipts around transfers", receiptsAroundTransfers],
+  ["ledger writes cannot strand a transfer", strandingGuard],
 ]);
