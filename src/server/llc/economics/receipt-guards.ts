@@ -1,5 +1,6 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
 import { formatDateOnly, fromDateOnly, toDateOnly } from "@/lib/date-only";
 import type { IsoDate } from "@/lib/llc/dates";
 import type { PrismaTransactionalClient } from "@/server/db";
@@ -153,21 +154,24 @@ export async function beforeVoidReceipt(
     });
   }
 
+  // Raw guarded UPDATEs: Prisma's `updateMany` selects ids first and does
+  // not re-check its `where` at write time.
   const lineIds = [...new Set(inForce.map((r) => r.callNoticeLineId))];
-  await tx.callNoticeLine.updateMany({
-    where: { companyId, id: { in: lineIds }, status: "PAID" },
-    data: { status: "SENT", paidInFullOn: null },
-  });
+  const now = new Date();
+  await tx.$executeRaw`
+    UPDATE "CallNoticeLine"
+    SET "status" = 'SENT', "paidInFullOn" = NULL, "updatedAt" = ${now}
+    WHERE "companyId" = ${companyId} AND "id" IN (${Prisma.join(lineIds)})
+      AND "status" = 'PAID'`;
   const lines = await tx.callNoticeLine.findMany({
     where: { companyId, id: { in: lineIds } },
     select: { callNoticeId: true },
   });
-  await tx.callNotice.updateMany({
-    where: {
-      companyId,
-      id: { in: [...new Set(lines.map((l) => l.callNoticeId))] },
-      status: "SETTLED",
-    },
-    data: { status: "SENT" },
-  });
+  const noticeIds = [...new Set(lines.map((l) => l.callNoticeId))];
+  if (noticeIds.length === 0) return;
+  await tx.$executeRaw`
+    UPDATE "CallNotice"
+    SET "status" = 'SENT', "updatedAt" = ${now}
+    WHERE "companyId" = ${companyId} AND "id" IN (${Prisma.join(noticeIds)})
+      AND "status" = 'SETTLED'`;
 }

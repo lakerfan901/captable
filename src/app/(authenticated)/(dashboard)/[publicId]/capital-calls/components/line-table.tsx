@@ -27,7 +27,12 @@ import { RecordPaymentDialog } from "./record-payment-dialog";
 
 type Line = RouterOutputs["callNotice"]["get"]["lines"][number];
 
-type BadgeVariant = "secondary" | "info" | "success" | "destructive";
+type BadgeVariant =
+  | "secondary"
+  | "info"
+  | "success"
+  | "warning"
+  | "destructive";
 
 export function lineBadge(l: {
   status: Line["status"];
@@ -43,6 +48,8 @@ export function lineBadge(l: {
       return { label: "Unsent", variant: "secondary" };
     case "SENT":
       return { label: "Sent", variant: "info" };
+    case "SENDING":
+      return { label: "Sending", variant: "warning" };
     case "SEND_FAILED":
       return { label: "Send failed", variant: "destructive" };
     case "PAID":

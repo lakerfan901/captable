@@ -42,6 +42,18 @@ export interface CallNoticeEmailProps {
   managerName: string;
   managerEmail: string;
   isOutsideDate: boolean;
+  /** The notice period of the LLC term, e.g. "three business days" (callNoticeBusinessDays). */
+  noticePeriod: string;
+  /** When the Preferred Return on the amount starts (balanceReturnStartRule), e.g. "the later of the due date and the date of receipt". */
+  returnStart: string;
+  /** The default interest rate, e.g. "12%" (defaultInterestBps). */
+  defaultInterestRate: string;
+  /** The cure period before forfeiture, e.g. "five business days" (forfeitureCureBusinessDays). */
+  curePeriod: string;
+  /** The forfeiture percentage, e.g. "50%" (forfeitureBps). */
+  forfeiturePercent: string;
+  /** The price of one Preferred Unit, e.g. "$1,000" (pricePerUnitCents). */
+  pricePerUnit: string;
 }
 
 const text = "text-[14px] leading-[24px] text-black";
@@ -97,6 +109,12 @@ export const CallNoticeEmail = ({
   managerName,
   managerEmail,
   isOutsideDate,
+  noticePeriod,
+  returnStart,
+  defaultInterestRate,
+  curePeriod,
+  forfeiturePercent,
+  pricePerUnit,
 }: CallNoticeEmailProps) => {
   const previewText = `Call Notice No. ${noticeNumber}: ${amountDue} due ${dueOnLong}`;
 
@@ -152,8 +170,8 @@ export const CallNoticeEmail = ({
               </Text>
             ) : (
               <Text className={text}>
-                <strong>Payment is due by {dueOnLong}</strong> (three business
-                days after this notice, and in any event not later than{" "}
+                <strong>Payment is due by {dueOnLong}</strong>
+                {` (${noticePeriod} after this notice, and in any event not later than`}{" "}
                 {outsideDateLong}).
               </Text>
             )}
@@ -188,17 +206,10 @@ export const CallNoticeEmail = ({
               </strong>
             </Text>
             <Text className={text}>
-              Preferred Units are issued at one Unit per $1,000 when your
-              payment is received. The Preferred Return on this amount accrues
-              from the later of the due date and the date of receipt.
+              {`Preferred Units are issued at one Unit per ${pricePerUnit} when your payment is received. The Preferred Return on this amount accrues from ${returnStart}.`}
             </Text>
             <Text className={text}>
-              If the amount due is not received in full by the due date, Section
-              4.9 of the Operating Agreement applies, including interest at 12%
-              per annum from the due date, suspension of voting rights and
-              distributions while the default continues, and, if not cured
-              within five business days after the due date, forfeiture of 50% of
-              the unpaid Balance (up to the amount you have paid).
+              {`If the amount due is not received in full by the due date, Section 4.9 of the Operating Agreement applies, including interest at ${defaultInterestRate} per annum from the due date, suspension of voting rights and distributions while the default continues, and, if not cured within ${curePeriod} after the due date, forfeiture of ${forfeiturePercent} of the unpaid Balance (up to the amount you have paid).`}
             </Text>
             <Text className={text}>
               Questions: {managerName}, {managerEmail}.
@@ -242,6 +253,12 @@ CallNoticeEmail.PreviewProps = {
   managerName: "Karl Example",
   managerEmail: "manager@example.com",
   isOutsideDate: false,
+  noticePeriod: "three business days",
+  returnStart: "the later of the due date and the date of receipt",
+  defaultInterestRate: "12%",
+  curePeriod: "five business days",
+  forfeiturePercent: "50%",
+  pricePerUnit: "$1,000",
 } as CallNoticeEmailProps;
 
 export default CallNoticeEmail;

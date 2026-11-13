@@ -26,22 +26,33 @@ function dateOrNull(d: Date | null): IsoDate | null {
   return d === null ? null : toDateOnly(d);
 }
 
-/** The company's single LlcTerm row, created on first use with the column defaults. */
+/**
+ * The company's single LlcTerm row, created on first use with the column
+ * defaults. Safe when two first uses race: `upsert` can raise P2002 for the
+ * loser, and inside an interactive transaction a failed statement aborts the
+ * whole transaction, so the row is inserted with ON CONFLICT DO NOTHING
+ * (`createMany({ skipDuplicates })`, which waits for a concurrent insert of
+ * the same key) and then read.
+ */
 export async function getOrCreateLlcTerm(
   tx: Tx,
   companyId: string,
 ): Promise<LlcTerm> {
-  return await tx.llcTerm.upsert({
-    where: { companyId },
-    create: {
-      companyId,
-      replacementFunderOutsideDate: fromDateOnly(
-        OA_DEFAULTS.replacementFunderOutsideDate,
-      ),
-      extraHolidays: [],
-    },
-    update: {},
+  const existing = await tx.llcTerm.findUnique({ where: { companyId } });
+  if (existing) return existing;
+  await tx.llcTerm.createMany({
+    data: [
+      {
+        companyId,
+        replacementFunderOutsideDate: fromDateOnly(
+          OA_DEFAULTS.replacementFunderOutsideDate,
+        ),
+        extraHolidays: [],
+      },
+    ],
+    skipDuplicates: true,
   });
+  return await tx.llcTerm.findUniqueOrThrow({ where: { companyId } });
 }
 
 type TermConfig = Omit<
@@ -211,8 +222,10 @@ export async function countTermExtensions(
 
 /**
  * True once the economics have history (any FINALIZED distribution, any
- * MemberDefault or any SENT Call Notice line): the interpretation switches
- * and default parameters are then frozen (E7 `llcTerm.update`).
+ * MemberDefault or any Call Notice line that is being sent, was sent or was
+ * paid — SENDING, SENT or PAID): the interpretation switches and default
+ * parameters are then frozen (E7 `llcTerm.update`). A line paid in full stays
+ * a sent notice, so PAID lines keep the lock.
  */
 export async function isEconomicsLocked(
   tx: Tx,
@@ -229,7 +242,7 @@ export async function isEconomicsLocked(
   });
   if (memberDefault) return true;
   const line = await tx.callNoticeLine.findFirst({
-    where: { companyId, status: "SENT" },
+    where: { companyId, status: { in: ["SENDING", "SENT", "PAID"] } },
     select: { id: true },
   });
   return line !== null;

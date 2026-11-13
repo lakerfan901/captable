@@ -1568,6 +1568,7 @@ enum CallNoticeLineStatusEnum {
   SENT
   SEND_FAILED
   PAID
+  SENDING /// reserved under the ledger lock before its email is sent; never flipped automatically
 }
 
 model CallNotice {
@@ -1606,13 +1607,14 @@ model CallNoticeLine {
   commitmentId      String
   amountCalledCents BigInt
 
-  status       CallNoticeLineStatusEnum @default(UNSENT)
-  sentAt       DateTime? /// instant the email was accepted by the mail server (13.6)
-  sentOn       DateTime?                @db.Date /// calendar date of sentAt in Company.timezone
-  sentToEmail  String?
-  emailLogId   String?
-  dueOn        DateTime?                @db.Date /// set once at send (R26); for OUTSIDE_DATE = balanceOutsideDate
-  paidInFullOn DateTime?                @db.Date
+  status           CallNoticeLineStatusEnum @default(UNSENT)
+  sentAt           DateTime? /// instant the email was accepted by the mail server (13.6)
+  sentOn           DateTime?                @db.Date /// calendar date of sentAt in Company.timezone
+  sentToEmail      String?
+  emailLogId       String?
+  dueOn            DateTime?                @db.Date /// set once at send (R26); for OUTSIDE_DATE = balanceOutsideDate
+  paidInFullOn     DateTime?                @db.Date
+  prepaidMatchedAt DateTime? /// set when prepaid Balance money (R28) was matched to the sent line; null = still to reconcile
 
   allocations   CallNoticeAllocation[]
   memberDefault MemberDefault?

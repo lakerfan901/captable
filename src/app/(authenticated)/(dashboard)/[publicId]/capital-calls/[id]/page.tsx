@@ -9,6 +9,7 @@ import { api } from "@/trpc/server";
 import { LineTable } from "../components/line-table";
 import { KIND_LABEL, NoticeStatusBadge } from "../components/notice-table";
 import { CancelDraftButton, SendDialog } from "../components/send-dialog";
+import { SendResolution } from "../components/send-resolution";
 
 export const metadata: Metadata = { title: "Call Notice" };
 
@@ -28,14 +29,18 @@ export default async function CallNoticePage({
   const eligible = await api.callNotice.eligible();
   const canCreate = allow(true, ["capital-calls", "create"], false);
   const canDelete = allow(true, ["capital-calls", "delete"], false);
+  const canUpdate = allow(true, ["capital-calls", "update"], false);
   const mailCatcher = allow(true, ["emails", "read"], false)
     ? (await api.emailLog.deliveryStatus()).mailCatcher
     : false;
   const base = `/${entity.publicId}/capital-calls`;
   const { notice, wire, lines } = data;
   const isCall = notice.kind === "CALL";
+  // A failed line whose email the log shows as accepted is resolved, not resent.
   const sendable = lines.filter(
-    (l) => l.status === "UNSENT" || l.status === "SEND_FAILED",
+    (l) =>
+      l.status === "UNSENT" ||
+      (l.status === "SEND_FAILED" && l.sentEmailLog === null),
   );
   // Kept mounted after the last line is sent so the dialog can show the
   // per-line results; it renders nothing when closed with no recipients.
@@ -80,6 +85,7 @@ export default async function CallNoticePage({
               proposedDueOn={eligible.proposedDueOn}
               sendBlockedReason={eligible.sendBlockedReason}
               mailCatcher={mailCatcher}
+              noticeTerms={eligible.noticeTerms}
               recipients={sendable
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name))
@@ -94,6 +100,8 @@ export default async function CallNoticePage({
           ) : null}
         </div>
       </div>
+
+      <SendResolution lines={lines} canUpdate={canUpdate} />
 
       <LineTable
         noticeId={notice.id}
