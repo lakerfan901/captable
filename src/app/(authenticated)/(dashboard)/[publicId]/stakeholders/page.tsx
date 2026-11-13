@@ -69,7 +69,7 @@ const MembersPage = async () => {
         <div>{addMember}</div>
       </div>
 
-      <Card className="mx-auto mt-3 w-md sm:w-152 md:w-full">
+      <Card className="mt-3 w-full">
         <MemberTable stakeholders={members} />
       </Card>
     </div>
@@ -123,7 +123,7 @@ const StakeholdersPage = async () => {
         <div>{stakeholderDropdown}</div>
       </div>
 
-      <Card className="mx-auto mt-3 w-md sm:w-152 md:w-full">
+      <Card className="mt-3 w-full">
         <StakeholderTable stakeholders={stakeholders} />
       </Card>
     </div>

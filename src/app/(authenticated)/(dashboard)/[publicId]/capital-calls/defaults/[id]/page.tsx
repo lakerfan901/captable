@@ -153,7 +153,7 @@ export default async function DefaultPage({
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <Card>
           <CardHeader>
             <CardTitle>Timeline</CardTitle>
@@ -162,7 +162,7 @@ export default async function DefaultPage({
             <DefaultTimeline view={view} today={today} />
           </CardContent>
         </Card>
-        <div className="grid gap-4">
+        <div className="grid min-w-0 grid-cols-1 gap-4">
           {view.forfeiture.recorded ? (
             <Card>
               <CardHeader>

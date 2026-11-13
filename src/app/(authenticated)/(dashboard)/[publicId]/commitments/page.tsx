@@ -86,7 +86,7 @@ export default async function CommitmentsPage() {
             Subscriptions, capital received and units issued
           </p>
         </div>
-        <div className="flex gap-2">{newCommitment}</div>
+        <div className="flex flex-wrap gap-2">{newCommitment}</div>
       </div>
 
       <Tabs defaultValue="commitments">
@@ -95,7 +95,7 @@ export default async function CommitmentsPage() {
           <TabsTrigger value="receipts">Receipts</TabsTrigger>
         </TabsList>
         <TabsContent value="commitments">
-          <Card className="mx-auto mt-3 w-md sm:w-152 md:w-full">
+          <Card className="mt-3 w-full">
             <CommitmentTable
               commitments={commitments}
               unitClass={preferred}
@@ -104,7 +104,7 @@ export default async function CommitmentsPage() {
           </Card>
         </TabsContent>
         <TabsContent value="receipts">
-          <Card className="mx-auto mt-3 w-md sm:w-152 md:w-full">
+          <Card className="mt-3 w-full">
             <ReceiptTable receipts={receipts} />
           </Card>
         </TabsContent>

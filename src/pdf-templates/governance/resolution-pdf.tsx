@@ -83,8 +83,10 @@ const styles = StyleSheet.create({
     paddingTop: MARGIN,
     paddingBottom: MARGIN + 18,
     paddingHorizontal: MARGIN,
-    lineHeight: 1.35,
   },
+  // lineHeight lives on the content View, not the Page: inherited by the
+  // fixed render-prop footer it makes react-pdf 4.9 drop that footer.
+  content: { lineHeight: 1.35 },
   company: {
     fontFamily: "Helvetica-Bold",
     fontSize: 13,
@@ -193,106 +195,108 @@ export function ResolutionPdf({ data }: { data: ResolutionPdfData }) {
   return (
     <Document title={`${data.referenceCode} ${data.title}`}>
       <Page size="LETTER" style={styles.page}>
-        {/* 1. Header */}
-        <Text style={styles.company}>{data.companyName}</Text>
-        <Text style={styles.kind}>{data.kindLabel}</Text>
-        <Text style={styles.title}>{data.title}</Text>
-        <View style={styles.facts}>
-          <Fact label="Reference" value={data.facts.reference} />
-          <Fact label="Record date" value={data.facts.recordDate} />
-          <Fact label="Sent" value={data.facts.sent} />
-          <Fact label="Effective" value={data.facts.effective} />
-        </View>
-
-        {/* 2. Body */}
-        <RichDocPdf doc={data.doc} />
-        {data.lockedClauses.length > 0 ? (
-          <View style={{ marginTop: 8 }}>
-            {data.lockedClauses.map((clause, i) => (
-              <View key={clause} style={styles.clause} wrap={false}>
-                <Text style={styles.clauseNo}>{`${i + 1}.`}</Text>
-                <Text style={styles.clauseText}>{clause}</Text>
-              </View>
-            ))}
+        <View style={styles.content}>
+          {/* 1. Header */}
+          <Text style={styles.company}>{data.companyName}</Text>
+          <Text style={styles.kind}>{data.kindLabel}</Text>
+          <Text style={styles.title}>{data.title}</Text>
+          <View style={styles.facts}>
+            <Fact label="Reference" value={data.facts.reference} />
+            <Fact label="Record date" value={data.facts.recordDate} />
+            <Fact label="Sent" value={data.facts.sent} />
+            <Fact label="Effective" value={data.facts.effective} />
           </View>
-        ) : null}
 
-        {/* 3. Signatures */}
-        <Text style={styles.section}>Signatures</Text>
-        {data.approvals.map((a) => (
-          <View
-            key={`${a.role}-${a.approverName}-${a.signedAt}`}
-            style={styles.signature}
-            wrap={false}
-          >
-            <Text style={styles.bold}>{a.role}</Text>
-            <Text>{`${a.approverName}, ${a.approverCapacity}`}</Text>
-            <Text>{`Signed at ${a.signedAt}. Signed electronically.`}</Text>
-          </View>
-        ))}
-        {data.hasBallots === "yes" ? (
-          <View style={{ marginTop: 6 }}>
-            <BallotRow head cells={BALLOT_COLS.map((c) => c.label)} />
-            {data.memberSignatures.map((s) => (
-              <BallotRow
-                key={`${s.member}-${s.signedAt}`}
-                cells={[
-                  s.member,
-                  s.signerCapacity
-                    ? `${s.signedName}, ${s.signerCapacity}`
-                    : s.signedName,
-                  s.preferredUnits,
-                  s.signedAt,
-                ]}
-              />
-            ))}
-            {(data.emailChanges ?? []).map((line) => (
-              <Text key={line} style={{ marginTop: 4 }}>
-                {line}
-              </Text>
-            ))}
-          </View>
-        ) : null}
+          {/* 2. Body */}
+          <RichDocPdf doc={data.doc} />
+          {data.lockedClauses.length > 0 ? (
+            <View style={{ marginTop: 8 }}>
+              {data.lockedClauses.map((clause, i) => (
+                <View key={clause} style={styles.clause} wrap={false}>
+                  <Text style={styles.clauseNo}>{`${i + 1}.`}</Text>
+                  <Text style={styles.clauseText}>{clause}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
-        {/* 4. Tally */}
-        {data.tallies.length > 0 ? (
-          <View>
-            <Text style={styles.section}>Tally</Text>
-            {data.tallies.map((t) => (
-              <View
-                key={`${t.basisLabel}-${t.section}`}
-                style={styles.tally}
-                wrap={false}
-              >
-                <Text style={styles.tallyHead}>
-                  {`${t.basisLabel} (Section ${t.section})`}
+          {/* 3. Signatures */}
+          <Text style={styles.section}>Signatures</Text>
+          {data.approvals.map((a) => (
+            <View
+              key={`${a.role}-${a.approverName}-${a.signedAt}`}
+              style={styles.signature}
+              wrap={false}
+            >
+              <Text style={styles.bold}>{a.role}</Text>
+              <Text>{`${a.approverName}, ${a.approverCapacity}`}</Text>
+              <Text>{`Signed at ${a.signedAt}. Signed electronically.`}</Text>
+            </View>
+          ))}
+          {data.hasBallots === "yes" ? (
+            <View style={{ marginTop: 6 }}>
+              <BallotRow head cells={BALLOT_COLS.map((c) => c.label)} />
+              {data.memberSignatures.map((s) => (
+                <BallotRow
+                  key={`${s.member}-${s.signedAt}`}
+                  cells={[
+                    s.member,
+                    s.signerCapacity
+                      ? `${s.signedName}, ${s.signerCapacity}`
+                      : s.signedName,
+                    s.preferredUnits,
+                    s.signedAt,
+                  ]}
+                />
+              ))}
+              {(data.emailChanges ?? []).map((line) => (
+                <Text key={line} style={{ marginTop: 4 }}>
+                  {line}
                 </Text>
-                <TallyLine
-                  label="Outstanding units entitled to vote"
-                  value={t.outstanding}
-                />
-                <TallyLine
-                  label="Required"
-                  value={`${t.requiredUnits} units (${t.requiredWording})`}
-                />
-                <TallyLine
-                  label="For"
-                  value={`${t.forUnits} units (${t.forPercent}%)`}
-                />
-                <TallyLine label="Against" value={t.against} />
-                <TallyLine label="Abstain" value={t.abstain} />
-                <TallyLine label="No response" value={t.noResponse} />
-                {t.deemedAgainst !== "" ? (
+              ))}
+            </View>
+          ) : null}
+
+          {/* 4. Tally */}
+          {data.tallies.length > 0 ? (
+            <View>
+              <Text style={styles.section}>Tally</Text>
+              {data.tallies.map((t) => (
+                <View
+                  key={`${t.basisLabel}-${t.section}`}
+                  style={styles.tally}
+                  wrap={false}
+                >
+                  <Text style={styles.tallyHead}>
+                    {`${t.basisLabel} (Section ${t.section})`}
+                  </Text>
                   <TallyLine
-                    label="Deemed against (Section 2.5)"
-                    value={t.deemedAgainst}
+                    label="Outstanding units entitled to vote"
+                    value={t.outstanding}
                   />
-                ) : null}
-                <TallyLine label="Result" value={t.result} />
-              </View>
-            ))}
-          </View>
-        ) : null}
+                  <TallyLine
+                    label="Required"
+                    value={`${t.requiredUnits} units (${t.requiredWording})`}
+                  />
+                  <TallyLine
+                    label="For"
+                    value={`${t.forUnits} units (${t.forPercent}%)`}
+                  />
+                  <TallyLine label="Against" value={t.against} />
+                  <TallyLine label="Abstain" value={t.abstain} />
+                  <TallyLine label="No response" value={t.noResponse} />
+                  {t.deemedAgainst !== "" ? (
+                    <TallyLine
+                      label="Deemed against (Section 2.5)"
+                      value={t.deemedAgainst}
+                    />
+                  ) : null}
+                  <TallyLine label="Result" value={t.result} />
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
 
         {/* 5. Footer on every page */}
         <View style={styles.footer} fixed>

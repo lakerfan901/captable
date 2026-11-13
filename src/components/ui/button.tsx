@@ -1,3 +1,4 @@
+import { Slot } from "@radix-ui/react-slot";
 import { RiLoader5Fill } from "@remixicon/react";
 
 import { cva, type VariantProps } from "class-variance-authority";
@@ -53,12 +54,25 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       disabled,
       loading,
       loadingText,
+      asChild,
       ...props
     },
     ref,
   ) => {
     const isLoading = loading === true;
     const isDisabled = disabled ?? isLoading;
+
+    if (asChild) {
+      return (
+        <Slot
+          className={cn(buttonVariants({ variant, size, className }))}
+          ref={ref}
+          {...props}
+        >
+          {children}
+        </Slot>
+      );
+    }
 
     return (
       <button

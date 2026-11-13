@@ -28,7 +28,7 @@ const UpdatesPage = async (props: {
         subtitle="Please click the button below to send an update to your stakeholders."
       >
         <Link href={`/${publicId}/updates/new`} passHref>
-          <Button asChild>
+          <Button>
             <RiAddFill className="mr-2 h-5 w-5" />
             Create an update
           </Button>
@@ -49,7 +49,7 @@ const UpdatesPage = async (props: {
 
         <div>
           <Link href={`/${publicId}/updates/new`} passHref>
-            <Button asChild>
+            <Button>
               <RiAddFill className="mr-2 h-5 w-5" />
               Draft an update
             </Button>

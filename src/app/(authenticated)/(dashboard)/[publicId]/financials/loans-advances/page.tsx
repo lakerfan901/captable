@@ -87,7 +87,7 @@ export default async function LoansAdvancesPage({
             </p>
           </div>
           {canCreate ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <AdvanceDialog
                 mode="advance"
                 today={today}

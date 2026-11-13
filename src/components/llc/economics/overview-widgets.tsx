@@ -43,7 +43,7 @@ function Widgets({ o, base }: { o: Overview; base: string }) {
     o.returns.distributedToDate.tierD === 0 &&
     o.returns.distributedToDate.tierE === 0;
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <WidgetCard
         title="Capital"
         href={`${base}/capital-calls`}
@@ -105,7 +105,9 @@ function Widgets({ o, base }: { o: Overview; base: string }) {
         </WidgetLine>
         {o.cash.minimumMet ? null : (
           <Badge variant="destructive" className="w-fit">
-            Below the <Money cents={o.cash.minimumReserve} /> minimum
+            <span>
+              Below the <Money cents={o.cash.minimumReserve} /> minimum
+            </span>
           </Badge>
         )}
       </WidgetCard>
