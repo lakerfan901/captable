@@ -8,16 +8,22 @@ import { bankAccountsRouter } from "../routers/bank-accounts/router";
 import { billingRouter } from "../routers/billing-router/router";
 import { booksRouter } from "../routers/books-router/router";
 import { bucketRouter } from "../routers/bucket-router/router";
+import { callNoticeRouter } from "../routers/call-notice/router";
 import { commitmentRouter } from "../routers/commitment-router/router";
 import { commonRouter } from "../routers/common/router";
 import { companyRouter } from "../routers/company-router/router";
 import { complianceRouter } from "../routers/compliance-router/router";
 import { dataRoomRouter } from "../routers/data-room-router/router";
+import { distributionRouter } from "../routers/distribution/router";
 import { documentRouter } from "../routers/document-router/router";
 import { documentShareRouter } from "../routers/document-share-router/router";
 import { emailLogRouter } from "../routers/email-log-router/router";
 import { equityPlanRouter } from "../routers/equity-plan/router";
 import { governanceRouter } from "../routers/governance-router/router";
+import { llcEconomicsRouter } from "../routers/llc-economics/router";
+import { llcFinancialsRouter } from "../routers/llc-financials/router";
+import { llcTermRouter } from "../routers/llc-term/router";
+import { memberDefaultRouter } from "../routers/member-default/router";
 import { memberReportRouter } from "../routers/member-report-router/router";
 import { memberReportViewRouter } from "../routers/member-report-view-router/router";
 import { memberRouter } from "../routers/member-router/router";
@@ -80,6 +86,12 @@ export const appRouter = createTRPCRouter({
   unitTransfer: unitTransferRouter,
   books: booksRouter,
   governance: governanceRouter,
+  llcTerm: llcTermRouter,
+  callNotice: callNoticeRouter,
+  memberDefault: memberDefaultRouter,
+  llcFinancials: llcFinancialsRouter,
+  distribution: distributionRouter,
+  llcEconomics: llcEconomicsRouter,
 });
 
 // export type definition of API
