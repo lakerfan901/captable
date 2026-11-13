@@ -27,6 +27,7 @@ import { ZDistributionInputsSchema } from "@/trpc/routers/distribution/schema";
 import { getLineStates, settleNotices } from "./call-notices";
 import { economicsToday } from "./clock";
 import {
+  assertConfirmedForfeituresReplay,
   getDefaultsOwed,
   getOverdueUndeclared,
   getPendingDefaultSteps,
@@ -245,6 +246,42 @@ async function loadDefaultRecords(
   return out;
 }
 
+/**
+ * Blocker messages for Call Notice lines whose prepaid match has not run: a
+ * line being sent (the match follows the email) or sent with
+ * `prepaidMatchedAt` still null. The match may move Preferred Return accrual
+ * to dates before this payment date, and once this distribution is final it
+ * would be refused (call-notices.ts `prepaidMatchBlocker`), so it has to run
+ * first.
+ */
+async function loadUnmatchedCallLines(
+  tx: Reader,
+  companyId: string,
+  holders: ReadonlyMap<string, { name: string }>,
+): Promise<string[]> {
+  const lines = await tx.callNoticeLine.findMany({
+    where: {
+      companyId,
+      OR: [
+        { status: "SENDING" },
+        { status: { in: ["SENT", "PAID"] }, prepaidMatchedAt: null },
+      ],
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      status: true,
+      stakeholderId: true,
+      callNotice: { select: { number: true } },
+    },
+  });
+  return lines.map((l) => {
+    const who = holders.get(l.stakeholderId)?.name ?? "a member";
+    return l.status === "SENDING"
+      ? `Call Notice No. ${l.callNotice.number} to ${who} is still shown as 'Sending'; resolve it on the notice page first.`
+      : `Money ${who} already paid has not yet been matched to Call Notice No. ${l.callNotice.number}; use 'Re-match prepaid money' first.`;
+  });
+}
+
 interface ComputedDraft {
   computation: DistributionComputation;
   config: LlcEconomicsConfig;
@@ -277,6 +314,11 @@ async function computeFor(
   const loanStates = await getLoanStates(tx, companyId, paymentDate);
   const pending = await getPendingDefaultSteps(tx, companyId, paymentDate);
   const overdue = await getOverdueUndeclared(tx, companyId, today);
+  const unmatchedCallLines = await loadUnmatchedCallLines(
+    tx,
+    companyId,
+    ledger.holders,
+  );
   const ocd = dateOrNull(term.operationsCommencementDate);
   const savedMonths = cashLedger.months.map((m) => m.month).sort();
   const computation = math(() =>
@@ -301,6 +343,7 @@ async function computeFor(
       taxAdvances,
       loanStates,
       pendingDefaultSteps: pending.map((p) => p.message),
+      unmatchedCallLines,
       overdueUndeclared: overdue.length,
       lastLedgerEventOn: ledger.lastEventOn,
       booksClosedThrough: dateOrNull(term.booksClosedThrough),
@@ -1078,6 +1121,49 @@ export async function reverseDistribution(
       `Only the latest finalized distribution can be reversed; reverse distribution No. ${latest?.number ?? ""} first.`,
     );
   }
+  // Closed books: a member report (or a later close) that covered the
+  // payment date showed figures including this distribution. The reversal
+  // rows keep the original dates, so they would land in the closed period.
+  // The distribution's own close (through its period end) does not count.
+  // Reopening the books (Term clock settings, audited) is the deliberate way
+  // through.
+  const paymentDate = toDateOnly(original.paymentDate);
+  // A sent quarterly or annual member report whose period reaches the date
+  // the distribution counts from (the cash ledger dates an OPERATING / SALE
+  // distribution at its period end, a return of capital at its payment date;
+  // positions at the payment date) and that was sent after it was finalized
+  // shows figures that include it. A sent report cannot change, so the
+  // reversal is refused outright.
+  const countsFrom =
+    original.type === "RETURN_OF_UNUSED_CAPITAL"
+      ? original.paymentDate
+      : original.periodEnd;
+  const report = await tx.memberReport.findFirst({
+    where: {
+      companyId,
+      status: "SENT",
+      type: { in: ["QUARTERLY", "ANNUAL"] },
+      periodEnd: { gte: countsFrom },
+      sentAt: { gt: finalizedAt },
+    },
+    orderBy: { sentAt: "asc" },
+    select: { title: true, periodEnd: true },
+  });
+  if (report) {
+    ruleViolation(
+      `The member report "${report.title}"${report.periodEnd ? ` (period ending ${toDateOnly(report.periodEnd)})` : ""} was sent after distribution No. ${number} was finalized and shows figures that include it; a sent report cannot be changed, so this distribution can no longer be reversed. Correct it in a later period.`,
+    );
+  }
+  const { term } = await getEconomicsContext(tx, i.company);
+  const closed = dateOrNull(term.booksClosedThrough);
+  const closedByItself =
+    original.type !== "RETURN_OF_UNUSED_CAPITAL" &&
+    closed === toDateOnly(original.periodEnd);
+  if (closed !== null && closed >= paymentDate && !closedByItself) {
+    ruleViolation(
+      `Books are closed through ${closed}, which covers the payment date ${paymentDate} of distribution No. ${number}; a member report or a later close may already show it. Reopen the books to a date before ${paymentDate} on the Term clock settings page first.`,
+    );
+  }
   const totals = totalsFromDb(original);
   const lineRows = original.lines.map(lineRowFromDb);
   math(() => assertLineRows(lineRows, totals));
@@ -1485,6 +1571,19 @@ export async function reverseDistribution(
   ) {
     ledgerDisagrees("reversed distribution still in the ledger");
   }
+  // Every confirmed forfeiture effective after the payment date was computed
+  // on positions that include this distribution (its tier (c) and (d)
+  // amounts, its offset receipts); replayed without it, its stored figures
+  // must not change. Otherwise the whole reversal rolls back. (Confirmed
+  // credits depend on units only, which only the offset receipts change;
+  // voiding those is refused by `beforeVoidReceipt` when a confirmed credit's
+  // due date or a confirmed forfeiture is on or after the payment date.)
+  await assertConfirmedForfeituresReplay(
+    tx,
+    i.company,
+    paymentDate,
+    `Reversing distribution No. ${number}`,
+  );
 
   await audit(
     tx,

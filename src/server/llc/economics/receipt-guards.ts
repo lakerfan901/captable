@@ -88,32 +88,154 @@ function distributionDependingOn(
   });
 }
 
+async function memberName(
+  tx: Tx,
+  companyId: string,
+  stakeholderId: string,
+): Promise<string> {
+  const s = await tx.stakeholder.findFirst({
+    where: { id: stakeholderId, companyId },
+    select: { name: true },
+  });
+  return s?.name ?? "a member";
+}
+
+/** The receipt (or capital lot) a dated change belongs to. */
+export interface ReceiptRef {
+  stakeholderId: string;
+  unitClassId: string;
+}
+
 /**
- * Rejects a receipt applied on or before the payment date of a FINALIZED,
- * non-reversal distribution (same rule as `assertLedgerDateOpen`, term.ts):
- * the receipt would sort before that distribution and silently change the
- * positions it was computed on. The only receipts allowed on a payment date
- * are the offset receipts the distribution itself writes while it is being
- * finalized (`sourceType: "distribution"`, `sourceId` = its id).
+ * Why a change to the ledger effective on `on` (a receipt applied, voided,
+ * or a lot's Preferred Return start moved) would alter figures that were
+ * already frozen, other than by a finalized distribution; null when nothing
+ * stands in the way:
+ * - the books are closed through `on` or later (a member report or a
+ *   distribution closed them, `closeBooksThrough`), unless the change is a
+ *   distribution's own offset receipt (`ownOffset`): it is part of the
+ *   distribution that closes them;
+ * - Preferred class only: a confirmed forfeiture of the same holder effective
+ *   on or after `on` (its capital deduction, extinguished return and units
+ *   were computed from that holder's position on the Forfeiture Date). A
+ *   distribution's own offset receipt sorts after every ordinary entry of its
+ *   date, so for it only a later Forfeiture Date counts;
+ * - Preferred class only, when units change (`unitsChange`): a confirmed
+ *   credit whose due date is on or after `on` (its clause (B) shares were
+ *   allocated on the Preferred Units held on that due date).
  */
-export async function assertLedgerDateOpenForReceipt(
+export async function frozenFiguresBlocker(
+  tx: Tx,
+  companyId: string,
+  on: IsoDate,
+  opts: { ownOffset: boolean; ref?: ReceiptRef; unitsChange: boolean },
+): Promise<string | null> {
+  if (!opts.ownOffset) {
+    const term = await tx.llcTerm.findUnique({
+      where: { companyId },
+      select: { booksClosedThrough: true },
+    });
+    const closed =
+      term?.booksClosedThrough != null
+        ? toDateOnly(term.booksClosedThrough)
+        : null;
+    if (closed !== null && on <= closed) {
+      return `Books are closed through ${formatDateOnly(closed)}, so nothing can be recorded effective ${formatDateOnly(on)}. Reopen them on the Term clock settings page first.`;
+    }
+  }
+  if (!opts.ref) return null;
+  const unitClass = await tx.unitClass.findFirst({
+    where: { id: opts.ref.unitClassId, companyId },
+    select: { kind: true },
+  });
+  if (unitClass?.kind !== "PREFERRED") return null;
+  const date = fromDateOnly(on);
+  const forfeiture = await tx.memberDefault.findFirst({
+    where: {
+      companyId,
+      stakeholderId: opts.ref.stakeholderId,
+      status: { not: "VOIDED" },
+      forfeitureConfirmedAt: { not: null },
+      forfeitedOn: opts.ownOffset ? { gt: date } : { gte: date },
+    },
+    orderBy: { forfeitedOn: "desc" },
+    select: { forfeitedOn: true, stakeholderId: true },
+  });
+  if (forfeiture?.forfeitedOn) {
+    return `The forfeiture of ${await memberName(tx, companyId, forfeiture.stakeholderId)}'s default was confirmed effective ${formatDateOnly(toDateOnly(forfeiture.forfeitedOn))}, computed on that member's position on that date; an entry effective ${formatDateOnly(on)} would change it (Section 4.9(iv)). Date it after ${formatDateOnly(toDateOnly(forfeiture.forfeitedOn))}.`;
+  }
+  if (!opts.unitsChange) return null;
+  const credit = await tx.memberDefault.findFirst({
+    where: {
+      companyId,
+      status: { not: "VOIDED" },
+      creditConfirmedAt: { not: null },
+      dueOn: { gte: date },
+    },
+    orderBy: { dueOn: "desc" },
+    select: { dueOn: true, stakeholderId: true },
+  });
+  if (credit) {
+    return `The Section 4.9(iv) credit of ${await memberName(tx, companyId, credit.stakeholderId)}'s default was allocated on the Preferred Units held on its due date ${formatDateOnly(toDateOnly(credit.dueOn))}; an entry effective ${formatDateOnly(on)} would change them. Date it after ${formatDateOnly(toDateOnly(credit.dueOn))}.`;
+  }
+  return null;
+}
+
+/**
+ * Why a receipt applied on `appliedOn` cannot be recorded, or null:
+ * a FINALIZED, non-reversal distribution paid on or after that date (same
+ * rule as `assertLedgerDateOpen`, term.ts: the receipt would sort before that
+ * distribution and silently change the positions it was computed on; the
+ * only receipts allowed on a payment date are the offset receipts the
+ * distribution itself writes while it is being finalized, `sourceType:
+ * "distribution"`, `sourceId` = its id), then `frozenFiguresBlocker`.
+ */
+export async function receiptDateBlocker(
   tx: Tx,
   companyId: string,
   appliedOn: IsoDate,
   source: ReceiptSource = {},
-): Promise<void> {
+  ref?: ReceiptRef,
+  opts: { unitsChange?: boolean } = {},
+): Promise<string | null> {
   const on = fromDateOnly(appliedOn);
   const own = await offsetSourceDistribution(tx, companyId, on, source, true);
   const later = await distributionDependingOn(tx, companyId, on, own);
   if (later) {
     const paidOn = toDateOnly(later.paymentDate);
     const no = later.number === null ? "" : `No. ${later.number} `;
-    ruleViolation(
-      paidOn === appliedOn
-        ? `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, the date this receipt takes effect; it would change the positions that distribution was computed on. Reverse it first, or record the receipt dated after ${formatDateOnly(paidOn)}.`
-        : `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, after ${formatDateOnly(appliedOn)}. Reverse it before recording anything dated on or before its payment date.`,
-    );
+    return paidOn === appliedOn
+      ? `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, the date this receipt takes effect; it would change the positions that distribution was computed on. Reverse it first, or record the receipt dated after ${formatDateOnly(paidOn)}.`
+      : `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, after ${formatDateOnly(appliedOn)}. Reverse it before recording anything dated on or before its payment date.`;
   }
+  return frozenFiguresBlocker(tx, companyId, appliedOn, {
+    ownOffset: own !== null,
+    ref,
+    unitsChange: opts.unitsChange ?? true,
+  });
+}
+
+/**
+ * Rejects a receipt (or Common issuance, or acceptance applying held money)
+ * effective on `appliedOn` when `receiptDateBlocker` names a reason.
+ */
+export async function assertLedgerDateOpenForReceipt(
+  tx: Tx,
+  companyId: string,
+  appliedOn: IsoDate,
+  source: ReceiptSource = {},
+  ref?: ReceiptRef,
+  opts: { unitsChange?: boolean } = {},
+): Promise<void> {
+  const blocked = await receiptDateBlocker(
+    tx,
+    companyId,
+    appliedOn,
+    source,
+    ref,
+    opts,
+  );
+  if (blocked !== null) ruleViolation(blocked);
 }
 
 /**
@@ -133,7 +255,14 @@ export async function beforeVoidReceipt(
 ): Promise<void> {
   const receipt = await tx.capitalReceipt.findFirst({
     where: { id: receiptId, companyId },
-    select: { id: true, appliedOn: true, sourceType: true, sourceId: true },
+    select: {
+      id: true,
+      appliedOn: true,
+      sourceType: true,
+      sourceId: true,
+      stakeholderId: true,
+      unitClassId: true,
+    },
   });
   if (!receipt) return; // FOUNDATION has already loaded it under the lock.
 
@@ -163,6 +292,22 @@ export async function beforeVoidReceipt(
         `Reverse distribution No. ${later.number ?? ""} first: it was paid on ${formatDateOnly(toDateOnly(later.paymentDate))} and computed on positions that include this receipt (effective ${formatDateOnly(toDateOnly(receipt.appliedOn))}).`,
       );
     }
+    // Closed books, and a confirmed forfeiture or credit computed on
+    // positions that include this receipt.
+    const frozen = await frozenFiguresBlocker(
+      tx,
+      companyId,
+      toDateOnly(receipt.appliedOn),
+      {
+        ownOffset: own !== null,
+        ref: {
+          stakeholderId: receipt.stakeholderId,
+          unitClassId: receipt.unitClassId,
+        },
+        unitsChange: true,
+      },
+    );
+    if (frozen !== null) ruleViolation(frozen);
   }
 
   // (b) Receipts that belong to the default workflow are corrected there.

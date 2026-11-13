@@ -18,20 +18,30 @@ import { governanceZone, longDate } from "./governance-resolution-notice";
 // `governance.report-email` (03-governance.md G12): one member-report email
 // per job.
 //
-// DELIVERY — data `{ recipientId, seq }`. EXACTLY ONE email per
-// (recipient, seq), whatever the number of concurrent or repeated runs:
+// DELIVERY — data `{ recipientId, seq }`. AT MOST ONE email per
+// (recipient, seq), whatever the number of concurrent or repeated runs, and
+// a queued request is never lost to an older job's failure:
 // 1. CLAIM: one guarded UPDATE in its own committed statement (outside any
-//    transaction) moves `sendCount` from `seq` to `seq + 1`, and only while
+//    transaction) sets `sendCount` to `seq + 1` while `sendCount <= seq`,
 //    the link version is the one loaded (and signed below) and the link is
 //    not revoked. Postgres re-checks that WHERE at write time, so of two
-//    concurrent runs exactly one matches; every other run (and every re-run
-//    after success) returns without sending. The version guard stops a job
-//    that loaded the row before `replaceLink` from mailing the dead link (or
-//    the old address) under a seq the new-link job then could not claim.
+//    concurrent runs of one seq exactly one matches; every other run (and
+//    every re-run after success, `sendCount > seq`) returns without sending.
+//    `<=`, not `=`: a request queued at seq S (by `resend` or `replaceLink`,
+//    which read `sendCount` while an older job's claim was in flight) stays
+//    claimable even after that older job's failed send released the counter
+//    below S. The version guard stops a job that loaded the row before
+//    `replaceLink` from mailing the dead link (or the old address).
 // 2. SEND with the token signed from the loaded row.
 // 3. A failed send RELEASES the claim (`sendCount` back to `seq`, guarded by
-//    `sendCount = seq + 1`) and rethrows, so pg-boss retries and the retry
-//    can claim again.
+//    `sendCount = seq + 1` AND the link version it claimed with) and
+//    rethrows, so pg-boss retries and the retry can claim again. A STALE job
+//    (the link was replaced after its claim) never releases: `replaceLink`
+//    read `sendCount = seq + 1` and queued the new link under that seq; the
+//    stale retry then finds `sendCount > seq` and sends nothing, and the
+//    new-link job claims with the new version and sends whatever the stale
+//    job did. (A stale job between its claim and SMTP can still deliver the
+//    old link once; that link opens the REPLACED page only.)
 // A crash between claim and send leaves no email (at most once);
 // `memberReport.resend` is the recovery path: it always emits with
 // `seq = sendCount`, which is claimable again. `sentAt` is set the first
@@ -124,8 +134,8 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
   const { report } = recipient;
   if (report.status !== "SENT") return;
   if (recipient.tokenRevokedAt !== null) return;
-  // Already sent for this seq (or a stale seq): nothing to do.
-  if (recipient.sendCount !== seq) return;
+  // Already sent for this seq (or superseded by a later one): nothing to do.
+  if (recipient.sendCount > seq) return;
 
   const company = await loadLlcCompany(db, report.companyId);
   const zone = governanceZone(company.timezone);
@@ -150,7 +160,7 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
     UPDATE "MemberReportRecipient"
     SET "sendCount" = ${seq + 1}, "updatedAt" = now()
     WHERE "id" = ${recipient.id}
-      AND "sendCount" = ${seq}
+      AND "sendCount" <= ${seq}
       AND "tokenVersion" = ${recipient.tokenVersion}
       AND "tokenRevokedAt" IS NULL`;
   if (claimed !== 1) return;
@@ -174,10 +184,16 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
       },
     ));
   } catch (error) {
+    // Released only while the link is still the version this job claimed
+    // with. After `replaceLink` (new version) the counter it read and the
+    // new-link job emitted with are already `seq + 1`: putting it back to
+    // `seq` would make that job skip, and the new link would never be sent.
     await db.$executeRaw`
       UPDATE "MemberReportRecipient"
       SET "sendCount" = ${seq}, "updatedAt" = now()
-      WHERE "id" = ${recipient.id} AND "sendCount" = ${seq + 1}`;
+      WHERE "id" = ${recipient.id}
+        AND "sendCount" = ${seq + 1}
+        AND "tokenVersion" = ${recipient.tokenVersion}`;
     throw error;
   }
 

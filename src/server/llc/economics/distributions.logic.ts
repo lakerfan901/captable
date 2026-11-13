@@ -210,6 +210,12 @@ export interface BuildComputationInput {
   loanStates: readonly LoanStateInput[];
   /** E11 getPendingDefaultSteps messages */
   pendingDefaultSteps: readonly string[];
+  /**
+   * Call Notice lines being sent, or sent but not yet matched to prepaid
+   * money (the match may still move Preferred Return accrual): one message
+   * each.
+   */
+  unmatchedCallLines?: readonly string[];
   overdueUndeclared: number;
   lastLedgerEventOn: IsoDate | null;
   booksClosedThrough: IsoDate | null;
@@ -653,6 +659,9 @@ export function buildComputation(
   }
   for (const message of i.pendingDefaultSteps) {
     block("PENDING_DEFAULT_STEP", message);
+  }
+  for (const message of i.unmatchedCallLines ?? []) {
+    block("UNMATCHED_PREPAID", message);
   }
   if (
     type === "RETURN_OF_UNUSED_CAPITAL" &&

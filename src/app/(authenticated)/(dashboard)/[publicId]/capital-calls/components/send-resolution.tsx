@@ -120,9 +120,16 @@ function RematchButton() {
         onClick={async () => {
           try {
             const r = await mutation.mutateAsync({});
-            toast.success(
-              `Prepaid money matched for ${r.lines.length} line(s).`,
-            );
+            const blocked = r.lines.filter((l) => l.blocked !== undefined);
+            if (blocked.length > 0) {
+              toast.error(
+                `${blocked.length} line(s) were not matched. ${blocked[0]?.blocked ?? ""}`,
+              );
+            } else {
+              toast.success(
+                `Prepaid money matched for ${r.lines.length} line(s).`,
+              );
+            }
             router.refresh();
           } catch (e) {
             toast.error(e instanceof Error ? e.message : String(e));

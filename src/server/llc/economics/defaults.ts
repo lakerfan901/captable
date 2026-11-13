@@ -2034,3 +2034,112 @@ export async function confirmCure(
   );
   return { id: record.id, curedOn, method };
 }
+
+// ---------------------------------------------------------------------------
+// Replay of confirmed forfeitures
+
+/**
+ * Every confirmed forfeiture effective after `after` must still replay to the
+ * figures stored when it was confirmed: run inside a transaction that has
+ * changed the ledger (e.g. `reverseDistribution`, after its writes), it
+ * recomputes each forfeiture from the member's position on the Forfeiture
+ * Date just before the forfeiture event (with the stored unpaid Balance) and
+ * refuses, rolling the caller's transaction back, when the capital paid, the
+ * Forfeited Amount, the Unreturned Capital Contributions deducted, the
+ * extinguished Preferred Return or the units differ. A confirmed forfeiture
+ * is irreversible (Section 4.9(iv)): it is never recomputed.
+ */
+export async function assertConfirmedForfeituresReplay(
+  tx: Reader,
+  company: Company,
+  after: IsoDate,
+  change: string,
+): Promise<void> {
+  const companyId = company.id;
+  const rows = await tx.memberDefault.findMany({
+    where: {
+      companyId,
+      status: { not: "VOIDED" },
+      forfeitureConfirmedAt: { not: null },
+      forfeitedOn: { gt: fromDateOnly(after) },
+    },
+    orderBy: [{ forfeitedOn: "asc" }, { id: "asc" }],
+  });
+  if (rows.length === 0) return;
+  const { config } = await getEconomicsContext(tx, company);
+  const names = await stakeholderNames(
+    tx,
+    companyId,
+    rows.map((r) => r.stakeholderId),
+  );
+  const problems: string[] = [];
+  for (const r of rows) {
+    if (
+      r.forfeitedOn === null ||
+      r.unpaidAtForfeitureCents === null ||
+      r.forfeitedAmountCents === null
+    ) {
+      throw new Error(
+        `Default ${r.id}: forfeiture confirmed without its figures.`,
+      );
+    }
+    const fd = toDateOnly(r.forfeitedOn);
+    const who = names.get(r.stakeholderId) ?? "a member";
+    let untilSeq: number | undefined;
+    if (r.forfeitedAmountCents > 0n) {
+      const { ledger } = await getPositions(tx, companyId, fd);
+      const event = ledger.events.find(
+        (e) =>
+          e.kind === "FORFEITURE" &&
+          e.holderId === r.stakeholderId &&
+          e.on === fd &&
+          e.amount === r.forfeitedAmountCents,
+      );
+      if (!event) {
+        problems.push(
+          `the forfeiture of ${who} effective ${fd} is no longer in the ledger`,
+        );
+        continue;
+      }
+      untilSeq = event.seq;
+    }
+    const { positions } = await getPositions(
+      tx,
+      companyId,
+      fd,
+      untilSeq === undefined ? undefined : { untilSeq },
+    );
+    const again = math(() =>
+      computeForfeiture(
+        {
+          unpaidAtDue: r.unpaidAtForfeitureCents ?? 0n,
+          reductions: [],
+          forfeitureDate: fd,
+          position: positions.holders.get(r.stakeholderId) ?? ZERO_POSITION,
+        },
+        config,
+      ),
+    );
+    const units = (v: Parameters<typeof unitsToWire>[0]) =>
+      v === null ? null : microUnitsFromDecimal(unitsToWire(v));
+    const same = <T>(stored: T | null, now: T) =>
+      stored === null || stored === now;
+    if (
+      again.forfeited !== r.forfeitedAmountCents ||
+      !same(r.capitalPaidAtForfeitureCents, again.capitalPaid) ||
+      !same(r.unreturnedDeductedCents, again.unreturnedDeducted) ||
+      !same(r.extinguishedReturnCents, again.extinguishedReturn) ||
+      !same(units(r.unitsBefore), again.unitsBefore) ||
+      !same(units(r.unitsAfter), again.unitsAfter)
+    ) {
+      problems.push(
+        `the forfeiture of ${who} effective ${fd} was confirmed with ${formatCents(r.unreturnedDeductedCents ?? 0n)} of Unreturned Capital Contributions deducted and ${formatCents(r.extinguishedReturnCents ?? 0n)} of Preferred Return extinguished; without this change the holdings it was computed on give ${formatCents(again.unreturnedDeducted)} and ${formatCents(again.extinguishedReturn)}`,
+      );
+    }
+  }
+  if (problems.length > 0) {
+    ruleViolation(
+      `${change} would change a confirmed forfeiture, which is irreversible (Section 4.9(iv)): ${problems.join("; ")}.`,
+    );
+  }
+}

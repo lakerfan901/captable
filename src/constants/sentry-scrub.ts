@@ -1,3 +1,7 @@
+import {
+  redactSensitive,
+  redactSensitiveText,
+} from "../lib/sensitive-redaction";
 import { redactDeep, redactTokens } from "../lib/token-redaction";
 
 // Sentry hooks that keep emailed-link credentials out of every event (M4),
@@ -20,16 +24,26 @@ type BeforeSend = NonNullable<InitOptions["beforeSend"]>;
 type BeforeBreadcrumb = NonNullable<InitOptions["beforeBreadcrumb"]>;
 type BeforeSendSpan = NonNullable<InitOptions["beforeSendSpan"]>;
 
-export const scrubEvent: BeforeSend = (event) => redactDeep(event);
+//
+// Defence in depth for sensitive FIELDS (src/lib/sensitive-redaction.ts):
+// the tRPC input is redacted before it is attached (src/trpc/api/trpc.ts),
+// and every event, breadcrumb and span attribute is redacted again here, so
+// a bank account or routing number, a password, a secret or a token under a
+// key of that name never leaves, wherever it was attached.
+
+export const scrubEvent: BeforeSend = (event) =>
+  redactSensitive(redactDeep(event));
 
 export const scrubBreadcrumb: BeforeBreadcrumb = (breadcrumb) =>
-  redactDeep(breadcrumb);
+  redactSensitive(redactDeep(breadcrumb));
 
 export const scrubSpan = ((span: Parameters<BeforeSendSpan>[0]) => {
   const s = span as unknown as { name?: unknown; attributes?: unknown };
-  if (typeof s.name === "string") s.name = redactTokens(s.name);
+  if (typeof s.name === "string") {
+    s.name = redactSensitiveText(redactTokens(s.name));
+  }
   if (s.attributes && typeof s.attributes === "object") {
-    s.attributes = redactDeep(s.attributes);
+    s.attributes = redactSensitive(redactDeep(s.attributes));
   }
   return span;
 }) as BeforeSendSpan;
