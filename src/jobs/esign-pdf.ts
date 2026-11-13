@@ -48,6 +48,14 @@ export const eSignPdfWorker = defineWorker(config, async (job) => {
     company,
   } = job.data;
 
+  const template = await db.template.findUnique({
+    where: { id: templateId },
+    select: { status: true, workflow: true },
+  });
+
+  // Already completed (a retried job): nothing to stamp, upload or audit.
+  if (!template || template.status === "COMPLETE") return;
+
   await EsignAudit.create(
     {
       action: "document.complete",
@@ -71,6 +79,8 @@ export const eSignPdfWorker = defineWorker(config, async (job) => {
     fields,
     audits,
     templateName,
+    // Subscription packets are US documents (A3.13).
+    dateFormat: template.workflow === "SUBSCRIPTION" ? "MM/DD/YYYY" : undefined,
   });
   const { fileUrl: _fileUrl, ...bucketData } = await uploadEsignDocuments({
     buffer: Buffer.from(modifiedPdfBytes),

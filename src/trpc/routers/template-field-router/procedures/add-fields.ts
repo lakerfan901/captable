@@ -7,6 +7,7 @@ import {
 import { decode, encode } from "@/lib/jwt";
 import { Audit } from "@/server/audit";
 import { checkMembership } from "@/server/auth";
+import { RECIPIENT_ORDER } from "@/services/esign-service";
 import { withAuth } from "@/trpc/api/trpc";
 import { ZodAddFieldMutationSchema } from "../schema";
 
@@ -36,6 +37,12 @@ export function EncodeEmailToken({
 
 export async function DecodeEmailToken(jwt: string) {
   const { payload } = await decode(jwt);
+  // Purpose-specific tokens (W-9 upload, ballots, reports) carry a `p` claim
+  // and are never signing tokens (A3.15). Checked before the parse, which
+  // would strip the unknown key.
+  if (Object.hasOwn(payload, "p")) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Invalid token" });
+  }
   return emailTokenPayloadSchema.parse(payload);
 }
 
@@ -102,6 +109,8 @@ export const addFieldProcedure = withAuth
               in: recipientIdList,
             },
           },
+          // Ordered delivery emails the first recipient of this list.
+          orderBy: [...RECIPIENT_ORDER],
           select: {
             id: true,
             name: true,
