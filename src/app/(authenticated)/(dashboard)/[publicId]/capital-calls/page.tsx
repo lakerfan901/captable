@@ -99,7 +99,10 @@ export default async function CapitalCallsPage() {
             <CardDescription>
               Lines not paid in full by their due date. Nothing happens
               automatically: review each one and decide whether to declare a
-              default.
+              default.{" "}
+              <Link className="underline" href={`${base}/defaults`}>
+                Open the default workflow
+              </Link>
             </CardDescription>
           </CardHeader>
           <CardContent>

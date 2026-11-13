@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useState } from "react";
 import { IsoDateText, Money } from "@/components/llc/money";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +73,7 @@ export function LineTable({
   canRecordPayment: boolean;
 }) {
   const [preview, setPreview] = useState<Line | null>(null);
+  const { publicId } = useParams<{ publicId: string }>();
   return (
     <Card>
       <Table>
@@ -117,7 +120,15 @@ export function LineTable({
                   <IsoDateText date={l.dueOn} />
                 </TableCell>
                 <TableCell>
-                  <Badge variant={b.variant}>{b.label}</Badge>
+                  {l.memberDefaultId && b.label === "In default" ? (
+                    <Link
+                      href={`/${publicId}/capital-calls/defaults/${l.memberDefaultId}`}
+                    >
+                      <Badge variant={b.variant}>{b.label}</Badge>
+                    </Link>
+                  ) : (
+                    <Badge variant={b.variant}>{b.label}</Badge>
+                  )}
                 </TableCell>
                 <TableCell className="flex justify-end gap-2">
                   {canPreview && sendable ? (

@@ -146,8 +146,14 @@ export function OverdueTable({
               <Money cents={l.outstanding} />
             </TableCell>
             <TableCell className="text-right">
-              {/* The default pages arrive with E12; until then, the notice detail. */}
-              <Link className="underline" href={`${base}/${l.callNoticeId}`}>
+              <Link
+                className="underline"
+                href={
+                  l.memberDefaultId
+                    ? `${base}/defaults/${l.memberDefaultId}`
+                    : `${base}/defaults`
+                }
+              >
                 Review default
               </Link>
             </TableCell>
