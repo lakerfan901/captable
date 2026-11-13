@@ -4,6 +4,8 @@ import { CallNoticeEmail } from "../../../emails/llc/CallNoticeEmail";
 import { OA_DEFAULTS } from "../../../lib/llc/config";
 import { callNoticeDueDate } from "../../../lib/llc/default";
 import {
+  bpsPercentText,
+  businessDaysText,
   calendarDate,
   callNoticeReference,
   callNoticeSubject,
@@ -14,8 +16,10 @@ import {
   MAIL_CATCHER_BLOCKED,
   maskedAccountNumber,
   noticeAmounts,
+  noticeTermsText,
   planBalancePayment,
   planPrepaidMatch,
+  priceText,
   sendBlockedReason,
 } from "./call-notices.logic";
 
@@ -405,5 +409,35 @@ describe("CallNoticeEmail", () => {
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(text).not.toContain("Powered by");
+  });
+});
+
+describe("noticeTermsText", () => {
+  it("reads as the original text under the Operating Agreement defaults", () => {
+    expect(noticeTermsText(OA_DEFAULTS)).toEqual({
+      noticePeriod: "three business days",
+      returnStart: "the later of the due date and the date of receipt",
+      defaultInterestRate: "12%",
+      curePeriod: "five business days",
+      forfeiturePercent: "50%",
+      pricePerUnit: "$1,000",
+    });
+  });
+  it("follows RECEIPT_DATE and other settings", () => {
+    const t = noticeTermsText({
+      ...OA_DEFAULTS,
+      balanceReturnStartRule: "RECEIPT_DATE",
+      callNoticeBusinessDays: 10,
+    });
+    expect(t.returnStart).toBe("the date of receipt");
+    expect(t.noticePeriod).toBe("ten business days");
+  });
+  it("formats days, rates and prices", () => {
+    expect(businessDaysText(1)).toBe("one business day");
+    expect(businessDaysText(25)).toBe("25 business days");
+    expect(bpsPercentText(1250)).toBe("12.5%");
+    expect(bpsPercentText(1205)).toBe("12.05%");
+    expect(bpsPercentText(1234)).toBe("12.34%");
+    expect(priceText(100_050n)).toBe("$1,000.50");
   });
 });

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { CallNoticeLineStatusEnum } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 import { render } from "react-email";
 import { CallNoticeEmail } from "@/emails/llc/CallNoticeEmail";
 import { formatDateOnly, fromDateOnly, toDateOnly } from "@/lib/date-only";
@@ -12,6 +13,7 @@ import {
   type OpenLine,
 } from "@/lib/llc/default";
 import { type Cents, LlcMathError } from "@/lib/llc/money";
+import { logger } from "@/lib/logger";
 import { formatCents } from "@/lib/money";
 import { Audit } from "@/server/audit";
 import type { AuditSchemaType } from "@/server/audit/schema";
@@ -26,6 +28,7 @@ import type {
 } from "@/server/db";
 import {
   type LedgerActor,
+  lockUnitClass,
   recordCapitalReceipt,
   setReceiptPrefReturnStart,
 } from "@/server/llc/commitments";
@@ -41,7 +44,9 @@ import {
   lineFigures,
   longDate,
   maskedAccountNumber,
+  type NoticeTermsText,
   noticeAmounts,
+  noticeTermsText,
   type PrepaidReceipt,
   planBalancePayment,
   planPrepaidMatch,
@@ -55,14 +60,75 @@ import { getEconomicsContext, requireOutsideDate } from "./term";
  * Call Notices (R26–R29, §4.9). A Call Notice is effective when its email is
  * accepted by the mail server: the due date printed in the email is stored
  * on the line, and Balance money already received is matched to the line
- * when it is sent. Allocations are immutable (corrections are negating rows,
+ * after it is sent. Allocations are immutable (corrections are negating rows,
  * written by `beforeVoidReceipt` in receipt-guards.ts).
+ *
+ * Send path (reserve → send → finalise → reconcile):
+ * A. One locked transaction moves the target lines UNSENT/SEND_FAILED →
+ *    SENDING after every check (the uncalled Balance counts SENDING, SENT and
+ *    PAID lines of every notice). Nothing is emailed for a line that is not
+ *    SENDING, so two concurrent sends cannot both email it.
+ * B. Each email is rendered just before it is sent (the due date is computed
+ *    from that day). A failed send moves SENDING → SEND_FAILED.
+ * C. An accepted email is recorded by a small write SENDING → SENT that takes
+ *    no lock and re-checks nothing; then a separate locked transaction
+ *    matches prepaid money and sets `prepaidMatchedAt`. If that fails, the
+ *    marker stays null and `reconcileCallNoticeLines` finishes it later (at
+ *    the next payment of the member, or "Re-match prepaid money").
+ * A line left in SENDING (crash between B and C) is never flipped
+ * automatically: `resolveCallNoticeSending` lets the Manager resolve it.
+ *
+ * Locks: `lockCompanyLedger` (advisory) first, then FOUNDATION's unit-class
+ * row lock on the Preferred class, the same order FOUNDATION's receipt
+ * services use inside economics flows; `voidCapitalReceipt` takes only the
+ * unit-class lock, so prepaid matching and a void are serialised.
  */
 
 type Tx = PrismaTransactionalClient;
 type Reader = TPrismaOrTransaction;
 
 const SENDABLE: CallNoticeLineStatusEnum[] = ["UNSENT", "SEND_FAILED"];
+/** Lines whose amount counts as called (whatever the notice status). */
+const CALLED: CallNoticeLineStatusEnum[] = ["SENDING", "SENT", "PAID"];
+/** A SENDING line can be resolved by the Manager only after this long. */
+export const SENDING_RESOLVE_AFTER_MS = 2 * 60 * 1000;
+const SEND_TX = { maxWait: 10_000, timeout: 20_000 };
+const MATCH_TX = { maxWait: 5_000, timeout: 10_000 };
+
+const SEND_FAILED_TEXT =
+  "The email could not be sent; nothing was delivered. The line is marked 'Send failed' and can be retried.";
+const PREPARE_FAILED_TEXT =
+  "The email could not be prepared, so it was not sent. The line is marked 'Send failed' and can be retried.";
+const RECORD_FAILED_TEXT =
+  "The email was sent, but recording it failed. Do not resend: the line is shown as 'Sending'; resolve it on the notice page.";
+const MATCH_FAILED_TEXT =
+  "The email was sent and the line is recorded as sent, but matching money already received to it failed. Do not resend; use 'Re-match prepaid money' on the notice page.";
+
+function isRecordNotFound(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "P2025";
+}
+
+/**
+ * The advisory ledger lock, then FOUNDATION's row lock on the Preferred unit
+ * class (`lockUnitClass`). Returns the class's Balance return start rule.
+ */
+async function lockLedgerAndPreferred(
+  tx: Tx,
+  companyId: string,
+): Promise<{ rule: LlcEconomicsConfig["balanceReturnStartRule"] } | null> {
+  await lockCompanyLedger(tx, companyId);
+  const preferred = await tx.unitClass.findFirst({
+    where: { companyId, kind: "PREFERRED" },
+    select: { id: true },
+  });
+  if (!preferred) return null;
+  await lockUnitClass(tx, companyId, preferred.id);
+  const fresh = await tx.unitClass.findFirst({
+    where: { id: preferred.id, companyId },
+    select: { balanceReturnStartRule: true },
+  });
+  return fresh ? { rule: fresh.balanceReturnStartRule } : null;
+}
 
 function dateOrNull(d: Date | null): IsoDate | null {
   return d === null ? null : toDateOnly(d);
@@ -97,6 +163,26 @@ async function audit(
   );
 }
 
+/**
+ * The due date of a notice accepted on `acceptedOn` whose email printed
+ * `printed`: never earlier than the printed date nor than the date the notice
+ * period gives from the day it was accepted, so a send crossing midnight
+ * cannot shorten the notice period.
+ */
+function finalDueOn(
+  printed: IsoDate,
+  acceptedOn: IsoDate,
+  config: LlcEconomicsConfig,
+): IsoDate {
+  try {
+    const fromAccepted = callNoticeDueDate(acceptedOn, config);
+    return fromAccepted > printed ? fromAccepted : printed;
+  } catch (error) {
+    if (error instanceof LlcMathError) return printed;
+    throw error;
+  }
+}
+
 /** callNoticeDueDate with a BAD_REQUEST instead of a library error after the outside date. */
 function dueDateFor(today: IsoDate, config: LlcEconomicsConfig): IsoDate {
   try {
@@ -126,7 +212,7 @@ export interface CommitmentState {
   commitmentId: string;
   stakeholderId: string;
   name: string;
-  /** The address a Call Notice goes to: Stakeholder.noticeEmail ?? email (null when blank). */
+  /** The address a Call Notice goes to: Stakeholder.noticeEmail, or email when that is empty (null when both are blank). */
   noticeEmail: string | null;
   /** Commitment.acceptedOn: a payment received on or before it is an Initial Installment. */
   acceptedOn: IsoDate | null;
@@ -138,7 +224,7 @@ export interface CommitmentState {
   initialPaid: Cents;
   /** acceptedCents − initialPaid. */
   balance: Cents;
-  /** Σ amountCalled of lines actually sent (line SENT or PAID on a SENT/SETTLED notice). */
+  /** Σ amountCalled of lines being sent, sent or paid (SENDING, SENT, PAID), whatever the notice status. */
   calledTotal: Cents;
   /** uncalledBalance({ acceptedCommitment: acceptedCents + replacementFunded, initialPaid, calledTotal }). */
   uncalled: Cents;
@@ -203,12 +289,13 @@ export async function getCommitmentStates(
     allocated.map((a) => [a.capitalReceiptId, a._sum.amountCents ?? 0n]),
   );
 
+  // Every line that is being sent, was sent or was paid calls its amount,
+  // whatever its notice's status: an emailed demand stays called.
   const sentLines = await tx.callNoticeLine.findMany({
     where: {
       companyId,
       commitmentId: { in: ids },
-      status: { in: ["SENT", "PAID"] },
-      callNotice: { status: { in: ["SENT", "SETTLED"] } },
+      status: { in: CALLED },
     },
     select: { commitmentId: true, amountCalledCents: true },
   });
@@ -242,7 +329,8 @@ export async function getCommitmentStates(
     const replacementFunded = fundings
       .filter((f) => commitmentOfDefault.get(f.memberDefaultId) === c.id)
       .reduce((s, f) => s + f.amountCents, 0n);
-    const address = (c.stakeholder.noticeEmail ?? c.stakeholder.email).trim();
+    const address =
+      c.stakeholder.noticeEmail?.trim() || c.stakeholder.email.trim();
     return {
       commitmentId: c.id,
       stakeholderId: c.stakeholderId,
@@ -422,7 +510,7 @@ export async function settleNotices(
     if (!notice || notice.lines.length === 0) continue;
     if (notice.lines.every((l) => l.status === "PAID")) {
       await tx.callNotice.update({
-        where: { id: notice.id, companyId },
+        where: { id: notice.id, companyId, status: "SENT" },
         data: { status: "SETTLED" },
       });
     }
@@ -525,16 +613,26 @@ export async function getCallNotice(
       lines: {
         select: {
           id: true,
+          status: true,
           sentAt: true,
           sentOn: true,
           sentToEmail: true,
           emailLogId: true,
           paidInFullOn: true,
+          prepaidMatchedAt: true,
+          updatedAt: true,
         },
       },
     },
   });
   if (!notice) notFound("Call Notice");
+  // For a line left in SENDING (or SEND_FAILED), the email log says whether
+  // its email was in fact accepted ("Resolve" finalises it from that row).
+  const unresolved = notice.lines
+    .filter((l) => l.status === "SENDING" || l.status === "SEND_FAILED")
+    .map((l) => l.id);
+  const sentLogs = await sentEmailLogs(tx, companyId, unresolved);
+  const now = Date.now();
   const states = await getLineStates(tx, companyId, today, {
     callNoticeId: notice.id,
   });
@@ -567,9 +665,60 @@ export async function getCallNotice(
         sentToEmail: e?.sentToEmail ?? null,
         emailLogId: e?.emailLogId ?? null,
         paidInFullOn: dateOrNull(e?.paidInFullOn ?? null),
+        /** False for a sent or paid line whose prepaid money is still to be matched ("Re-match prepaid money"). */
+        prepaidMatched:
+          !(s.status === "SENT" || s.status === "PAID") ||
+          (e?.prepaidMatchedAt ?? null) !== null,
+        /** A SENDING line older than two minutes: the Manager must resolve it. */
+        sendingStale:
+          s.status === "SENDING" &&
+          e !== undefined &&
+          now - e.updatedAt.getTime() >= SENDING_RESOLVE_AFTER_MS,
+        sendingSince: s.status === "SENDING" ? (e?.updatedAt ?? null) : null,
+        /** The accepted email of a SENDING / SEND_FAILED line, from the email log. */
+        sentEmailLog: sentLogs.get(s.lineId) ?? null,
       };
     }),
   };
+}
+
+/** The latest SENT EmailLog row of each Call Notice line (accepted by the mail server). */
+async function sentEmailLogs(
+  tx: Reader,
+  companyId: string,
+  lineIds: readonly string[],
+): Promise<Map<string, { id: string; sentAt: Date; toAddress: string }>> {
+  if (lineIds.length === 0) return new Map();
+  const logs = await tx.emailLog.findMany({
+    where: {
+      companyId,
+      kind: "llc.call-notice",
+      relatedType: "callNoticeLine",
+      relatedId: { in: [...lineIds] },
+      status: "SENT",
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      relatedId: true,
+      sentAt: true,
+      createdAt: true,
+      toAddress: true,
+    },
+  });
+  const out = new Map<
+    string,
+    { id: string; sentAt: Date; toAddress: string }
+  >();
+  for (const l of logs) {
+    if (l.relatedId === null || out.has(l.relatedId)) continue;
+    out.set(l.relatedId, {
+      id: l.id,
+      sentAt: l.sentAt ?? l.createdAt,
+      toAddress: l.toAddress,
+    });
+  }
+  return out;
 }
 
 export async function getEligible(
@@ -603,6 +752,8 @@ export async function getEligible(
       nodeEnv: process.env.NODE_ENV,
       mailCatcher: isMailCatcherConfigured(),
     }),
+    /** The settings-dependent wording of the notice (the send dialog repeats it). */
+    noticeTerms: noticeTermsText(config),
   };
 }
 
@@ -643,6 +794,8 @@ interface NoticeEmailInput {
   wire: WireInstructions;
   manager: { name: string; email: string };
   isOutsideDate: boolean;
+  /** The settings-dependent wording (noticeTermsText of the config). */
+  terms: NoticeTermsText;
 }
 
 async function renderNoticeEmail(
@@ -685,6 +838,7 @@ async function renderNoticeEmail(
       managerName: i.manager.name,
       managerEmail: i.manager.email,
       isOutsideDate: i.isOutsideDate,
+      ...i.terms,
     }),
   );
   return {
@@ -717,6 +871,9 @@ export async function previewCallNotice(
     where: { companyId, callNoticeId: notice.id, commitmentId: i.commitmentId },
   });
   if (!line) notFound("Call Notice line");
+  if (line.status === "SENDING") {
+    ruleViolation("This line is being sent; its email is in the email log.");
+  }
   if (!SENDABLE.includes(line.status)) {
     ruleViolation(
       "This line has already been sent; its email is in the email log.",
@@ -762,6 +919,7 @@ export async function previewCallNotice(
     wire: { ...wire, accountNumber: maskedAccountNumber(wire.accountNumber) },
     manager: i.manager,
     isOutsideDate: notice.kind === "OUTSIDE_DATE",
+    terms: noticeTermsText(config),
   });
   return { subject, html, dueOn };
 }
@@ -782,6 +940,32 @@ export async function saveCallNoticeDraft(
 ): Promise<{ id: string; number: number }> {
   const { companyId, actor } = i;
   await lockCompanyLedger(tx, companyId);
+  // Under the lock: a draft is edited only while none of its lines has left
+  // UNSENT (a SENDING or SENT line's email may have gone out). Every change
+  // away from UNSENT happens under this lock, so the check holds for the rest
+  // of the transaction.
+  const existing = i.id
+    ? await tx.callNotice.findFirst({
+        where: { id: i.id, companyId },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          lines: { select: { id: true, status: true } },
+        },
+      })
+    : null;
+  if (i.id) {
+    if (!existing) notFound("Call Notice");
+    if (existing.status !== "DRAFT") {
+      ruleViolation("Only a draft Call Notice can be edited.");
+    }
+    if (existing.lines.some((l) => l.status !== "UNSENT")) {
+      conflict(
+        "This Call Notice is being sent or was sent to some members; it can no longer be edited.",
+      );
+    }
+  }
   const account = await tx.bankAccount.findFirst({
     where: { id: i.bankAccountId, companyId },
     select: { id: true },
@@ -819,23 +1003,31 @@ export async function saveCallNoticeDraft(
 
   let notice: { id: string; number: number };
   let action: AuditSchemaType["action"];
-  if (i.id) {
-    const existing = await tx.callNotice.findFirst({
-      where: { id: i.id, companyId },
-      select: { id: true, number: true, status: true },
-    });
-    if (!existing) notFound("Call Notice");
-    if (existing.status !== "DRAFT") {
-      ruleViolation("Only a draft Call Notice can be edited.");
-    }
+  if (existing) {
     await tx.callNotice.update({
       where: { id: existing.id, companyId },
       data: { purpose, bankAccountId: account.id },
     });
-    await tx.callNoticeLine.deleteMany({
-      where: { companyId, callNoticeId: existing.id },
-    });
-    notice = existing;
+    // Line by line with the guard in `where` (P2025 if a line left UNSENT):
+    // never `deleteMany`, which under relationMode "prisma" deletes children
+    // by pre-selected ids before a guarded parent delete. The lines were
+    // re-read under the lock above and are all UNSENT (no allocations, no
+    // default).
+    for (const l of existing.lines) {
+      try {
+        await tx.callNoticeLine.delete({
+          where: { id: l.id, companyId, status: "UNSENT" },
+        });
+      } catch (error) {
+        if (isRecordNotFound(error)) {
+          conflict(
+            "This Call Notice is being sent or was sent to some members; it can no longer be edited.",
+          );
+        }
+        throw error;
+      }
+    }
+    notice = { id: existing.id, number: existing.number };
     action = "callNotice.updated";
   } else {
     notice = await tx.callNotice.create({
@@ -880,14 +1072,26 @@ export async function cancelCallNoticeDraft(
   await lockCompanyLedger(tx, companyId);
   const notice = await tx.callNotice.findFirst({
     where: { id: i.id, companyId },
-    select: { id: true, number: true, status: true },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      lines: { select: { status: true } },
+    },
   });
   if (!notice) notFound("Call Notice");
   if (notice.status !== "DRAFT") {
     ruleViolation("Only a draft Call Notice can be cancelled.");
   }
+  // Under the lock: a line that left UNSENT may have been emailed (SENDING,
+  // SENT) or needs review (SEND_FAILED); such a notice is not a mere draft.
+  if (notice.lines.some((l) => l.status !== "UNSENT")) {
+    conflict(
+      "This Call Notice is being sent or was sent to some members; it can no longer be cancelled.",
+    );
+  }
   await tx.callNotice.update({
-    where: { id: notice.id, companyId },
+    where: { id: notice.id, companyId, status: "DRAFT" },
     data: {
       status: "CANCELLED",
       cancelledAt: new Date(),
@@ -905,9 +1109,9 @@ export async function cancelCallNoticeDraft(
 }
 
 // ---------------------------------------------------------------------------
-// Prepaid matching (send step 5, outside-date notice)
+// Prepaid matching (after an accepted send, outside-date notice, reconcile)
 
-/** Allocates the member's prepaid Balance money to a line just sent; returns the amount matched. */
+/** Allocates the member's prepaid Balance money to a sent line; returns the amount matched. */
 async function matchPrepaid(
   tx: Tx,
   i: {
@@ -961,37 +1165,207 @@ async function matchPrepaid(
   return match.total;
 }
 
+/** amountCalled − Σ net allocations − Σ fundings of the line's default. */
+async function lineOutstanding(
+  tx: Tx,
+  companyId: string,
+  line: { id: string; amountCalledCents: Cents },
+): Promise<Cents> {
+  const allocated = await tx.callNoticeAllocation.aggregate({
+    where: { companyId, callNoticeLineId: line.id },
+    _sum: { amountCents: true },
+  });
+  const memberDefault = await tx.memberDefault.findFirst({
+    where: { companyId, callNoticeLineId: line.id },
+    select: { id: true },
+  });
+  const funded = memberDefault
+    ? await tx.memberDefaultFunding.aggregate({
+        where: { companyId, memberDefaultId: memberDefault.id },
+        _sum: { amountCents: true },
+      })
+    : null;
+  return (
+    line.amountCalledCents -
+    (allocated._sum.amountCents ?? 0n) -
+    (funded?._sum.amountCents ?? 0n)
+  );
+}
+
+/**
+ * Matches prepaid money to one SENT or PAID line whose `prepaidMatchedAt` is
+ * null, marks it PAID when covered, settles its notice and sets the marker.
+ * The caller holds `lockLedgerAndPreferred`. Returns the line's status after.
+ */
+async function reconcileLineLocked(
+  tx: Tx,
+  i: {
+    companyId: string;
+    actor: LedgerActor;
+    lineId: string;
+    rule: LlcEconomicsConfig["balanceReturnStartRule"];
+  },
+): Promise<{ status: CallNoticeLineStatusEnum; matched: Cents }> {
+  const { companyId } = i;
+  const line = await tx.callNoticeLine.findFirst({
+    where: { id: i.lineId, companyId },
+    include: { callNotice: { select: { number: true } } },
+  });
+  if (!line) notFound("Call Notice line");
+  if (
+    !(line.status === "SENT" || line.status === "PAID") ||
+    line.prepaidMatchedAt !== null ||
+    line.dueOn === null
+  ) {
+    return { status: line.status, matched: 0n };
+  }
+  const dueOn = toDateOnly(line.dueOn);
+  const outstanding = await lineOutstanding(tx, companyId, line);
+  const matched =
+    outstanding > 0n
+      ? await matchPrepaid(tx, {
+          companyId,
+          actor: i.actor,
+          lineId: line.id,
+          commitmentId: line.commitmentId,
+          lineAmount: outstanding,
+          dueOn,
+          rule: i.rule,
+        })
+      : 0n;
+  const paid = line.status === "SENT" && matched > 0n && matched >= outstanding;
+  const paidOn = line.sentOn ?? line.dueOn;
+  await tx.callNoticeLine.update({
+    where: { id: line.id, companyId, prepaidMatchedAt: null },
+    data: {
+      prepaidMatchedAt: new Date(),
+      ...(paid ? { status: "PAID", paidInFullOn: paidOn } : {}),
+    },
+  });
+  if (paid) await settleNotices(tx, companyId, [line.callNoticeId]);
+  if (matched > 0n) {
+    await audit(
+      tx,
+      i.actor,
+      companyId,
+      "callNotice.prepaid-matched",
+      [
+        { type: "callNotice", id: line.callNoticeId },
+        { type: "stakeholder", id: line.stakeholderId },
+        { type: "commitment", id: line.commitmentId },
+      ],
+      `${formatCents(matched)} of Balance money already received was matched to Call Notice No. ${line.callNotice.number} (due ${dueOn})${paid ? "; the line is paid in full" : ""}.`,
+    );
+  }
+  return { status: paid ? "PAID" : line.status, matched };
+}
+
+/**
+ * Matches prepaid money to every SENT or PAID line not yet matched
+ * (`prepaidMatchedAt` null), oldest notice first, under the advisory lock and
+ * the Preferred unit-class lock. Runs at the start of `recordCallNoticePayment`
+ * (so a payment never goes ahead of money received earlier) and from the
+ * "Re-match prepaid money" action.
+ */
+export async function reconcileCallNoticeLines(
+  tx: Tx,
+  companyId: string,
+  commitmentId: string | undefined,
+  actor: LedgerActor,
+): Promise<
+  { lineId: string; matched: Cents; status: CallNoticeLineStatusEnum }[]
+> {
+  const locked = await lockLedgerAndPreferred(tx, companyId);
+  if (!locked) return [];
+  const lines = await tx.callNoticeLine.findMany({
+    where: {
+      companyId,
+      ...(commitmentId ? { commitmentId } : {}),
+      status: { in: ["SENT", "PAID"] },
+      prepaidMatchedAt: null,
+    },
+    orderBy: [
+      { callNotice: { number: "asc" } },
+      { createdAt: "asc" },
+      { id: "asc" },
+    ],
+    select: { id: true },
+  });
+  const out: {
+    lineId: string;
+    matched: Cents;
+    status: CallNoticeLineStatusEnum;
+  }[] = [];
+  for (const l of lines) {
+    const r = await reconcileLineLocked(tx, {
+      companyId,
+      actor,
+      lineId: l.id,
+      rule: locked.rule,
+    });
+    out.push({ lineId: l.id, ...r });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Send
 
 export type SendLineResult = {
   lineId: string;
   ok: boolean;
-  /** True whenever the mail server accepted the email (a "Retry failed" must skip it even when ok is false). */
+  /** True whenever the mail server accepted the email (such a line must never be sent again). */
   emailSent: boolean;
+  /** The line's status after this call; "Retry failed" retries only SEND_FAILED. */
+  status: CallNoticeLineStatusEnum;
+  /** The due date printed in this line's email (absent when nothing was sent). */
+  dueOn?: IsoDate;
   error?: string;
   emailLogId?: string | null;
 };
 
-type PreparedLine = {
+type ReservedLine = {
   lineId: string;
   stakeholderId: string;
-  name: string;
+  commitmentId: string;
+  amountCalled: Cents;
+  state: CommitmentState;
   to: string;
-  subject: string;
-  html: string;
+  alreadyReceived: Cents;
 };
 
-function errorText(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, 300);
+/** SENDING → SEND_FAILED when the line is still SENDING; returns the status after. */
+async function markSendFailed(
+  db: TPrisma,
+  companyId: string,
+  lineId: string,
+): Promise<CallNoticeLineStatusEnum> {
+  try {
+    await db.callNoticeLine.update({
+      where: { id: lineId, companyId, status: "SENDING" },
+      data: { status: "SEND_FAILED" },
+    });
+    return "SEND_FAILED";
+  } catch (error) {
+    if (!isRecordNotFound(error)) {
+      logger.error(
+        { err: error, companyId, lineId },
+        "Call Notice: could not mark the line SEND_FAILED",
+      );
+    }
+    const line = await db.callNoticeLine
+      .findFirst({ where: { id: lineId, companyId }, select: { status: true } })
+      .catch(() => null);
+    return line?.status ?? "SENDING";
+  }
 }
 
 /**
- * R26, R28. Validates everything, then emails each target line (in order of
- * member name) and records each accepted email in its own locked
- * transaction: line SENT with the due date printed in the email, prepaid
- * money matched, notice SENT. A failed send marks the line SEND_FAILED.
+ * R26, R28. (A) Reserves the target lines (SENDING) in one locked
+ * transaction after every check; (B) renders each email just before sending
+ * it and sends it (in order of member name); (C) records each accepted email
+ * (SENDING → SENT, no lock, no re-check) and then matches prepaid money in a
+ * separate locked transaction. A failed send marks the line SEND_FAILED.
  */
 export async function sendCallNotice(
   db: TPrisma,
@@ -1006,8 +1380,9 @@ export async function sendCallNotice(
 ): Promise<{ results: SendLineResult[]; dueOn: IsoDate }> {
   const companyId = i.company.id;
 
-  // (1)–(2) Validate everything and render every email before anything is sent.
-  const prepared = await db.$transaction(async (tx) => {
+  // (A) Validate and reserve, under the advisory and unit-class locks.
+  const reserved = await db.$transaction(async (tx) => {
+    await lockLedgerAndPreferred(tx, companyId);
     const notice = await tx.callNotice.findFirst({
       where: { id: i.id, companyId },
       include: { lines: true },
@@ -1016,14 +1391,8 @@ export async function sendCallNotice(
     if (notice.kind !== "CALL") {
       ruleViolation("A Balance-due record is not sent by email.");
     }
-    const sendable = notice.lines.filter((l) => SENDABLE.includes(l.status));
-    if (
-      !(
-        notice.status === "DRAFT" ||
-        (notice.status === "SENT" && sendable.length > 0)
-      )
-    ) {
-      ruleViolation("This Call Notice has no lines left to send.");
+    if (notice.status === "CANCELLED") {
+      ruleViolation("This Call Notice was cancelled; it cannot be sent.");
     }
     const blocked = sendBlockedReason({
       nodeEnv: process.env.NODE_ENV,
@@ -1044,19 +1413,43 @@ export async function sendCallNotice(
     }
     const wire = await getWireInstructions(tx, companyId, notice.bankAccountId);
 
-    let targets = sendable;
+    // Re-read under the lock: every target must still be sendable.
+    let targets = notice.lines.filter((l) => SENDABLE.includes(l.status));
     if (i.lineIds) {
       const wanted = new Set(i.lineIds);
       targets = notice.lines.filter((l) => wanted.has(l.id));
       if (targets.length !== wanted.size) notFound("Call Notice line");
       if (targets.some((l) => !SENDABLE.includes(l.status))) {
-        ruleViolation("Only unsent or failed lines can be sent.");
+        conflict(
+          "Some of these lines are being sent or were already sent; refresh the page. Nothing was emailed.",
+        );
       }
+    } else if (
+      targets.length === 0 &&
+      notice.lines.some((l) => l.status === "SENDING")
+    ) {
+      conflict(
+        "This Call Notice is being sent right now; refresh the page. Nothing was emailed.",
+      );
     }
     if (targets.length === 0) {
       ruleViolation("This Call Notice has no lines left to send.");
     }
+    // A failed line whose email the log shows as accepted must not be sent
+    // a second time (it is resolved on the notice page instead).
+    const logs = await sentEmailLogs(
+      tx,
+      companyId,
+      targets.filter((l) => l.status === "SEND_FAILED").map((l) => l.id),
+    );
+    if (logs.size > 0) {
+      conflict(
+        "The email log shows the notice to some of these members was already accepted by the mail server; resolve those lines on the notice page. Nothing was emailed.",
+      );
+    }
 
+    // Counts every SENDING, SENT and PAID line of every notice; the targets
+    // themselves are not counted (they are UNSENT or SEND_FAILED).
     const states = new Map(
       (
         await getCommitmentStates(tx, companyId, {
@@ -1091,14 +1484,7 @@ export async function sendCallNotice(
       );
     }
 
-    const items: {
-      lineId: string;
-      stakeholderId: string;
-      amountCalled: Cents;
-      state: CommitmentState;
-      to: string;
-      alreadyReceived: Cents;
-    }[] = [];
+    const items: ReservedLine[] = [];
     for (const { line, state, to } of checked.sort((a, b) =>
       byName(a.state, b.state),
     )) {
@@ -1112,9 +1498,23 @@ export async function sendCallNotice(
           line.commitmentId,
         ),
       });
+      try {
+        await tx.callNoticeLine.update({
+          where: { id: line.id, companyId, status: { in: SENDABLE } },
+          data: { status: "SENDING", dueOn: fromDateOnly(dueOn) },
+        });
+      } catch (error) {
+        if (isRecordNotFound(error)) {
+          conflict(
+            "Some of these lines are being sent or were already sent; refresh the page. Nothing was emailed.",
+          );
+        }
+        throw error;
+      }
       items.push({
         lineId: line.id,
         stakeholderId: line.stakeholderId,
+        commitmentId: line.commitmentId,
         amountCalled: line.amountCalledCents,
         state,
         to,
@@ -1124,240 +1524,354 @@ export async function sendCallNotice(
     return {
       items,
       wire,
+      config,
       today,
       outside,
       dueOn,
-      rule: config.balanceReturnStartRule,
       number: notice.number,
       purpose: notice.purpose,
     };
-  });
+  }, SEND_TX);
 
-  // Rendering is outside the transaction (it is slow for many recipients).
-  const lines: PreparedLine[] = [];
-  for (const item of prepared.items) {
-    const { subject, html } = await renderNoticeEmail({
-      companyName: i.company.name,
-      noticeNumber: prepared.number,
-      purpose: prepared.purpose,
-      state: item.state,
-      amountCalled: item.amountCalled,
-      alreadyReceived: item.alreadyReceived,
-      sentOn: prepared.today,
-      dueOn: prepared.dueOn,
-      outsideDate: prepared.outside,
-      wire: prepared.wire,
-      manager: i.manager,
-      isOutsideDate: false,
-    });
-    lines.push({
-      lineId: item.lineId,
-      stakeholderId: item.stakeholderId,
-      name: item.state.name,
-      to: item.to,
-      subject,
-      html,
-    });
-  }
-
-  // (3)–(5) Send, then record each accepted email.
+  const terms = noticeTermsText(reserved.config);
   const results: SendLineResult[] = [];
-  let anySent = false;
-  for (const p of lines) {
+  for (const item of reserved.items) {
+    // (B) Render just before sending, with the due date of the day the email
+    // goes out; if the day rolled over while rendering, render again.
+    let day = economicsToday(i.company.timezone);
+    let dueOn = reserved.dueOn;
+    let email: { subject: string; html: string };
+    try {
+      for (;;) {
+        dueOn =
+          day === reserved.today
+            ? reserved.dueOn
+            : dueDateFor(day, reserved.config);
+        email = await renderNoticeEmail({
+          companyName: i.company.name,
+          noticeNumber: reserved.number,
+          purpose: reserved.purpose,
+          state: item.state,
+          amountCalled: item.amountCalled,
+          alreadyReceived: item.alreadyReceived,
+          sentOn: day,
+          dueOn,
+          outsideDate: reserved.outside,
+          wire: reserved.wire,
+          manager: i.manager,
+          isOutsideDate: false,
+          terms,
+        });
+        const now = economicsToday(i.company.timezone);
+        if (now === day) break;
+        day = now;
+      }
+      if (dueOn !== reserved.dueOn) {
+        await db.callNoticeLine.update({
+          where: { id: item.lineId, companyId, status: "SENDING" },
+          data: { dueOn: fromDateOnly(dueOn) },
+        });
+      }
+    } catch (error) {
+      logger.error(
+        { err: error, companyId, lineId: item.lineId },
+        "Call Notice: the email could not be prepared",
+      );
+      const status = await markSendFailed(db, companyId, item.lineId);
+      results.push({
+        lineId: item.lineId,
+        ok: false,
+        emailSent: false,
+        status,
+        error: error instanceof TRPCError ? error.message : PREPARE_FAILED_TEXT,
+      });
+      continue;
+    }
+
     let sent: { emailLogId: string | null; sentAt: Date };
     try {
       sent = await sendMail(
         {
-          to: p.to,
-          subject: p.subject,
-          html: p.html,
+          to: item.to,
+          subject: email.subject,
+          html: email.html,
           headers: { "X-From-Name": i.company.name },
         },
         {
           kind: "llc.call-notice",
           companyId,
-          stakeholderId: p.stakeholderId,
+          stakeholderId: item.stakeholderId,
           relatedType: "callNoticeLine",
-          relatedId: p.lineId,
+          relatedId: item.lineId,
         },
       );
     } catch (error) {
-      await db.callNoticeLine.updateMany({
-        where: { id: p.lineId, companyId, status: { in: SENDABLE } },
-        data: { status: "SEND_FAILED" },
-      });
+      logger.warn(
+        { err: error, companyId, lineId: item.lineId },
+        "Call Notice: the mail server did not accept the email",
+      );
+      const status = await markSendFailed(db, companyId, item.lineId);
       results.push({
-        lineId: p.lineId,
+        lineId: item.lineId,
         ok: false,
         emailSent: false,
-        error: errorText(error),
+        status,
+        error: SEND_FAILED_TEXT,
       });
       continue;
     }
 
-    anySent = true;
+    // (C1) The email was accepted: the notice is legally sent. Record it in a
+    // small write that takes no lock and re-checks nothing.
     const sentOn = economicsToday(i.company.timezone, sent.sentAt);
+    const due = finalDueOn(dueOn, sentOn, reserved.config);
     try {
-      await db.$transaction((tx) =>
-        recordLineSent(tx, {
-          companyId,
-          actor: i.actor,
-          noticeId: i.id,
-          noticeNumber: prepared.number,
-          lineId: p.lineId,
-          name: p.name,
-          to: p.to,
-          sentAt: sent.sentAt,
-          sentOn,
-          dueOn: prepared.dueOn,
-          emailLogId: sent.emailLogId,
-          rule: prepared.rule,
-        }),
-      );
-      results.push({
-        lineId: p.lineId,
-        ok: true,
-        emailSent: true,
-        emailLogId: sent.emailLogId,
-      });
-    } catch (error) {
-      // The email was accepted, so the notice is legally sent: never mark it
-      // SEND_FAILED (a retry would send a second notice with a later due
-      // date). Record the send itself (best effort); prepaid money was not
-      // matched to the line and needs review.
-      const marked = await db.callNoticeLine
-        .updateMany({
-          where: { id: p.lineId, companyId, status: { in: SENDABLE } },
+      await db.$transaction(async (tx) => {
+        await tx.callNoticeLine.update({
+          where: { id: item.lineId, companyId, status: "SENDING" },
           data: {
             status: "SENT",
             sentAt: sent.sentAt,
             sentOn: fromDateOnly(sentOn),
-            dueOn: fromDateOnly(prepared.dueOn),
-            sentToEmail: p.to,
+            dueOn: fromDateOnly(due),
+            sentToEmail: item.to,
             emailLogId: sent.emailLogId,
           },
-        })
-        .then((r) => r.count === 1)
-        .catch(() => false);
-      if (marked) {
-        await db.callNotice
-          .updateMany({
-            where: { id: i.id, companyId, status: "DRAFT" },
-            data: { status: "SENT", sentAt: sent.sentAt },
-          })
-          .catch(() => undefined);
+        });
+        await tx.$executeRaw`
+          UPDATE "CallNotice"
+          SET "status" = 'SENT', "sentAt" = ${sent.sentAt}, "updatedAt" = ${new Date()}
+          WHERE "id" = ${i.id} AND "companyId" = ${companyId} AND "status" = 'DRAFT'`;
         await audit(
-          db,
+          tx,
           i.actor,
           companyId,
           "callNotice.sent",
           [
             { type: "callNotice", id: i.id },
-            { type: "stakeholder", id: p.stakeholderId },
+            { type: "stakeholder", id: item.stakeholderId },
+            { type: "commitment", id: item.commitmentId },
           ],
-          `${i.actor.name} sent Call Notice No. ${prepared.number} to ${p.name} (${p.to}), due ${prepared.dueOn}; recording the send failed (${errorText(error)}), so prepaid money was not matched to the line.`,
-        ).catch(() => undefined);
-      }
+          `${i.actor.name} sent Call Notice No. ${reserved.number} to ${item.state.name} (${item.to}): ${formatCents(item.amountCalled)} called, due ${due}.`,
+        );
+      });
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          companyId,
+          lineId: item.lineId,
+          emailLogId: sent.emailLogId,
+        },
+        "Call Notice: the email was accepted but the line could not be recorded as sent",
+      );
       results.push({
-        lineId: p.lineId,
+        lineId: item.lineId,
         ok: false,
         emailSent: true,
+        status: "SENDING",
+        dueOn: due,
         emailLogId: sent.emailLogId,
-        error: marked
-          ? `The email was sent and the line is marked sent, but recording it failed (${errorText(error)}). Do not resend; prepaid money for this member was not matched to the line.`
-          : `The email was sent (email log ${sent.emailLogId ?? "not written"}) but the line could not be marked sent (${errorText(error)}). Do not resend this line; ask an administrator to record it.`,
+        error: RECORD_FAILED_TEXT,
+      });
+      continue;
+    }
+
+    // (C2) Match prepaid money in its own locked transaction. On failure the
+    // marker stays null and reconcileCallNoticeLines finishes it later.
+    try {
+      const { status } = await db.$transaction(async (tx) => {
+        // Fail fast (and leave the marker null) rather than keep the send
+        // request waiting behind a long-held ledger lock: Prisma's own
+        // timeout does not cancel a statement blocked on a lock.
+        await tx.$executeRawUnsafe("SET LOCAL lock_timeout = '8s'");
+        const locked = await lockLedgerAndPreferred(tx, companyId);
+        if (!locked) throw new Error("The Preferred unit class is missing.");
+        return await reconcileLineLocked(tx, {
+          companyId,
+          actor: i.actor,
+          lineId: item.lineId,
+          rule: locked.rule,
+        });
+      }, MATCH_TX);
+      results.push({
+        lineId: item.lineId,
+        ok: true,
+        emailSent: true,
+        status,
+        dueOn: due,
+        emailLogId: sent.emailLogId,
+      });
+    } catch (error) {
+      logger.error(
+        { err: error, companyId, lineId: item.lineId },
+        "Call Notice: prepaid matching after the send failed",
+      );
+      results.push({
+        lineId: item.lineId,
+        ok: false,
+        emailSent: true,
+        status: "SENT",
+        dueOn: due,
+        emailLogId: sent.emailLogId,
+        error: MATCH_FAILED_TEXT,
       });
     }
   }
-
-  // (6) A notice whose lines are all PAID is settled.
-  if (anySent) {
-    await db.$transaction(async (tx) => {
-      await lockCompanyLedger(tx, companyId);
-      await settleNotices(tx, companyId, [i.id]);
-    });
-  }
-  return { results, dueOn: prepared.dueOn };
+  return { results, dueOn: reserved.dueOn };
 }
 
-async function recordLineSent(
+// ---------------------------------------------------------------------------
+// A line left in SENDING (R26: never flipped automatically)
+
+export type ResolveSendingAction = "RESOLVE" | "MARK_SENT" | "MARK_NOT_SENT";
+
+/**
+ * Resolves a line left in SENDING (or a SEND_FAILED line whose email the log
+ * shows as accepted), at least two minutes after its send started:
+ * - RESOLVE: the email log shows the email was accepted → finalise as a send
+ *   (SENT with the log's time and address, then prepaid matching);
+ * - MARK_SENT (no such log row): the Manager confirms it was sent on `sentOn`;
+ * - MARK_NOT_SENT (no such log row): back to SEND_FAILED, so it can be sent.
+ */
+export async function resolveCallNoticeSending(
   tx: Tx,
   i: {
-    companyId: string;
+    company: { id: string; timezone: string };
     actor: LedgerActor;
-    noticeId: string;
-    noticeNumber: number;
     lineId: string;
-    name: string;
-    to: string;
-    sentAt: Date;
-    sentOn: IsoDate;
-    dueOn: IsoDate;
-    emailLogId: string | null;
-    rule: LlcEconomicsConfig["balanceReturnStartRule"];
+    action: ResolveSendingAction;
+    sentOn?: IsoDate;
   },
-): Promise<void> {
-  const { companyId } = i;
-  await lockCompanyLedger(tx, companyId);
+): Promise<{ status: CallNoticeLineStatusEnum; matched: Cents }> {
+  const companyId = i.company.id;
+  const locked = await lockLedgerAndPreferred(tx, companyId);
+  if (!locked) ruleViolation("The company has no Preferred unit class.");
   const line = await tx.callNoticeLine.findFirst({
     where: { id: i.lineId, companyId },
+    include: { callNotice: { select: { id: true, number: true } } },
   });
   if (!line) notFound("Call Notice line");
-  if (!SENDABLE.includes(line.status)) {
-    ruleViolation("This line was already recorded as sent.");
-  }
-  // Re-check under the lock: the line is not yet SENT, so it is not in its
-  // own commitment's calledTotal.
-  const [state] = await getCommitmentStates(tx, companyId, {
-    commitmentIds: [line.commitmentId],
-  });
-  if (!state || line.amountCalledCents > state.uncalled) {
-    ruleViolation(
-      `${i.name}: the amount called is more than the uncalled Balance (Section 4.9).`,
+  const log = (await sentEmailLogs(tx, companyId, [line.id])).get(line.id);
+  if (!(line.status === "SENDING" || (line.status === "SEND_FAILED" && log))) {
+    conflict(
+      "Only a line shown as 'Sending' can be resolved; refresh the page.",
     );
   }
+  if (
+    line.status === "SENDING" &&
+    Date.now() - line.updatedAt.getTime() < SENDING_RESOLVE_AFTER_MS
+  ) {
+    conflict(
+      "This line started sending less than two minutes ago; wait and refresh the page.",
+    );
+  }
+  const { config, today } = await getEconomicsContext(tx, i.company);
+  const name =
+    (await stakeholderNames(tx, companyId, [line.stakeholderId])).get(
+      line.stakeholderId,
+    ) ?? "";
+  const target = [
+    { type: "callNotice" as const, id: line.callNoticeId },
+    { type: "stakeholder" as const, id: line.stakeholderId },
+    { type: "commitment" as const, id: line.commitmentId },
+  ];
+
+  if (i.action === "MARK_NOT_SENT") {
+    if (log) {
+      ruleViolation(
+        `The email log shows this notice was accepted by the mail server on ${formatDateOnly(economicsToday(i.company.timezone, log.sentAt))}; use Resolve.`,
+      );
+    }
+    await tx.callNoticeLine.update({
+      where: { id: line.id, companyId, status: "SENDING" },
+      data: { status: "SEND_FAILED" },
+    });
+    await audit(
+      tx,
+      i.actor,
+      companyId,
+      "callNotice.send-resolved",
+      target,
+      `${i.actor.name} marked the Call Notice No. ${line.callNotice.number} line of ${name} as not sent (no email log shows it was accepted).`,
+    );
+    return { status: "SEND_FAILED", matched: 0n };
+  }
+
+  let sentAt: Date | null;
+  let sentOn: IsoDate;
+  let sentToEmail: string | null;
+  let emailLogId: string | null;
+  if (i.action === "RESOLVE") {
+    if (!log) {
+      ruleViolation(
+        "No email log row shows this notice was accepted; choose 'Mark as sent' or 'Mark as not sent'.",
+      );
+    }
+    sentAt = log.sentAt;
+    sentOn = economicsToday(i.company.timezone, log.sentAt);
+    sentToEmail = log.toAddress;
+    emailLogId = log.id;
+  } else {
+    if (log) {
+      ruleViolation(
+        "The email log shows this notice was accepted by the mail server; use Resolve.",
+      );
+    }
+    if (!i.sentOn) ruleViolation("Enter the date the notice was sent.");
+    const createdOn = economicsToday(i.company.timezone, line.createdAt);
+    if (i.sentOn > today || i.sentOn < createdOn) {
+      ruleViolation(
+        `The date sent must be between ${formatDateOnly(createdOn)} and today.`,
+      );
+    }
+    sentAt = null;
+    sentOn = i.sentOn;
+    const [state] = await getCommitmentStates(tx, companyId, {
+      commitmentIds: [line.commitmentId],
+    });
+    sentToEmail = state?.noticeEmail ?? null;
+    emailLogId = null;
+  }
+  const printed = line.dueOn
+    ? toDateOnly(line.dueOn)
+    : dueDateFor(sentOn, config);
+  const due = finalDueOn(printed, sentOn, config);
   await tx.callNoticeLine.update({
-    where: { id: line.id, companyId },
+    where: {
+      id: line.id,
+      companyId,
+      status: { in: ["SENDING", "SEND_FAILED"] },
+    },
     data: {
       status: "SENT",
-      sentAt: i.sentAt,
-      sentOn: fromDateOnly(i.sentOn),
-      dueOn: fromDateOnly(i.dueOn),
-      sentToEmail: i.to,
-      emailLogId: i.emailLogId,
+      sentAt,
+      sentOn: fromDateOnly(sentOn),
+      dueOn: fromDateOnly(due),
+      sentToEmail,
+      emailLogId,
     },
   });
-  const matched = await matchPrepaid(tx, {
-    companyId,
-    actor: i.actor,
-    lineId: line.id,
-    commitmentId: line.commitmentId,
-    lineAmount: line.amountCalledCents,
-    dueOn: i.dueOn,
-    rule: i.rule,
-  });
-  if (matched >= line.amountCalledCents) {
-    await tx.callNoticeLine.update({
-      where: { id: line.id, companyId },
-      data: { status: "PAID", paidInFullOn: fromDateOnly(i.sentOn) },
-    });
-  }
-  await tx.callNotice.updateMany({
-    where: { id: i.noticeId, companyId, status: "DRAFT" },
-    data: { status: "SENT", sentAt: i.sentAt },
-  });
+  await tx.$executeRaw`
+    UPDATE "CallNotice"
+    SET "status" = 'SENT', "sentAt" = ${sentAt ?? fromDateOnly(sentOn)}, "updatedAt" = ${new Date()}
+    WHERE "id" = ${line.callNoticeId} AND "companyId" = ${companyId} AND "status" = 'DRAFT'`;
   await audit(
     tx,
     i.actor,
     companyId,
-    "callNotice.sent",
-    [
-      { type: "callNotice", id: i.noticeId },
-      { type: "stakeholder", id: line.stakeholderId },
-      { type: "commitment", id: line.commitmentId },
-    ],
-    `${i.actor.name} sent Call Notice No. ${i.noticeNumber} to ${i.name} (${i.to}): ${formatCents(line.amountCalledCents)} called, ${formatCents(matched)} already received, due ${i.dueOn}.`,
+    "callNotice.send-resolved",
+    target,
+    i.action === "RESOLVE"
+      ? `${i.actor.name} resolved the Call Notice No. ${line.callNotice.number} line of ${name} as sent on ${sentOn} to ${sentToEmail ?? "(unknown)"} (email log ${emailLogId}), due ${due}.`
+      : `${i.actor.name} confirmed the Call Notice No. ${line.callNotice.number} line of ${name} was sent on ${sentOn} (no email log row), due ${due}.`,
   );
+  return await reconcileLineLocked(tx, {
+    companyId,
+    actor: i.actor,
+    lineId: line.id,
+    rule: locked.rule,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1368,7 +1882,9 @@ export async function createOutsideDateNotice(
   i: { company: { id: string; timezone: string }; actor: LedgerActor },
 ): Promise<{ id: string; number: number; lineCount: number }> {
   const companyId = i.company.id;
-  await lockCompanyLedger(tx, companyId);
+  await lockLedgerAndPreferred(tx, companyId);
+  // Money received before an earlier notice belongs to that notice first.
+  await reconcileCallNoticeLines(tx, companyId, undefined, i.actor);
   const { config, today } = await getEconomicsContext(tx, i.company);
   const outside = requireOutsideDate(config);
   if (today < outside) {
@@ -1412,6 +1928,8 @@ export async function createOutsideDateNotice(
         amountCalledCents: s.uncalled,
         status: "SENT",
         dueOn: fromDateOnly(outside),
+        // Matched just below, in this transaction.
+        prepaidMatchedAt: new Date(),
       },
       select: { id: true },
     });
@@ -1467,13 +1985,16 @@ export async function recordCallNoticePayment(
   late: boolean;
 }> {
   const companyId = i.company.id;
-  await lockCompanyLedger(tx, companyId);
+  await lockLedgerAndPreferred(tx, companyId);
   await assertCompanyOwns(
     tx,
     companyId,
     { commitmentIds: [i.commitmentId] },
     () => notFound("Commitment"),
   );
+  // Prepaid money not yet matched to a sent line (the match after a send
+  // failed) is matched first, so this payment never goes ahead of it.
+  await reconcileCallNoticeLines(tx, companyId, i.commitmentId, i.actor);
   const { config, today } = await getEconomicsContext(tx, i.company);
   if (i.receivedOn > today) {
     ruleViolation("The date received cannot be in the future.");

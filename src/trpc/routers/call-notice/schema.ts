@@ -47,6 +47,21 @@ export const ZCreateOutsideDateNoticeSchema = z.object({
   confirm: z.literal(true),
 });
 
+export const ZReconcileSchema = z.object({ commitmentId: zId.optional() });
+
+export const ZResolveSendingSchema = z
+  .object({
+    lineId: zId,
+    action: z.enum(["RESOLVE", "MARK_SENT", "MARK_NOT_SENT"]),
+    /** Required for MARK_SENT: the date the notice was in fact sent. */
+    sentOn: zIsoDate.optional(),
+  })
+  .refine((v) => v.action !== "MARK_SENT" || v.sentOn !== undefined, {
+    message: "Enter the date the notice was sent.",
+    path: ["sentOn"],
+  });
+export type TResolveSending = z.infer<typeof ZResolveSendingSchema>;
+
 export const ZRecordPaymentSchema = z.object({
   commitmentId: zId,
   receivedOn: zIsoDate,

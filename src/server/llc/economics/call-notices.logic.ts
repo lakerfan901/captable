@@ -328,6 +328,85 @@ export function formatNoticeAmounts(
   };
 }
 
+const SMALL_NUMBERS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+  "twenty",
+];
+
+/** 3 → "three business days", 1 → "one business day", 25 → "25 business days". */
+export function businessDaysText(n: number): string {
+  const word = SMALL_NUMBERS[n] ?? String(n);
+  return `${word} business day${n === 1 ? "" : "s"}`;
+}
+
+/** 1200 → "12%", 1250 → "12.5%", 1234 → "12.34%". */
+export function bpsPercentText(bps: number): string {
+  const whole = Math.trunc(bps / 100);
+  const frac = Math.abs(bps % 100);
+  if (frac === 0) return `${whole}%`;
+  return `${whole}.${String(frac).padStart(2, "0").replace(/0$/, "")}%`;
+}
+
+/** 100_000n → "$1,000"; 100_050n → "$1,000.50". */
+export function priceText(cents: Cents): string {
+  return formatCents(cents).replace(/\.00$/, "");
+}
+
+/** The settings the Call Notice email prints, as the template's preformatted props. */
+export interface NoticeTermsText {
+  noticePeriod: string;
+  returnStart: string;
+  defaultInterestRate: string;
+  curePeriod: string;
+  forfeiturePercent: string;
+  pricePerUnit: string;
+}
+
+/**
+ * The parts of the Call Notice text that depend on the LLC term and the
+ * Preferred unit class (R5, R26, R30, R33–R34). Under the Operating Agreement
+ * defaults they read exactly as the original text.
+ */
+export function noticeTermsText(cfg: {
+  callNoticeBusinessDays: number;
+  balanceReturnStartRule: BalanceReturnStartRule;
+  defaultInterestBps: number;
+  forfeitureCureBusinessDays: number;
+  forfeitureBps: number;
+  pricePerUnitCents: Cents;
+}): NoticeTermsText {
+  return {
+    noticePeriod: businessDaysText(cfg.callNoticeBusinessDays),
+    returnStart:
+      cfg.balanceReturnStartRule === "RECEIPT_DATE"
+        ? "the date of receipt"
+        : "the later of the due date and the date of receipt",
+    defaultInterestRate: bpsPercentText(cfg.defaultInterestBps),
+    curePeriod: businessDaysText(cfg.forfeitureCureBusinessDays),
+    forfeiturePercent: bpsPercentText(cfg.forfeitureBps),
+    pricePerUnit: priceText(cfg.pricePerUnitCents),
+  };
+}
+
 /** `•••• 1234`: the only form of an account number that leaves the server. */
 export function maskedAccountNumber(accountNumber: string): string {
   return `•••• ${accountNumber.slice(-4)}`;

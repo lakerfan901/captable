@@ -7,7 +7,9 @@ import {
   getOverdueLines,
   listCallNotices,
   previewCallNotice,
+  reconcileCallNoticeLines,
   recordCallNoticePayment,
+  resolveCallNoticeSending,
   saveCallNoticeDraft,
   sendCallNotice,
 } from "@/server/llc/economics/call-notices";
@@ -20,7 +22,9 @@ import {
   ZCancelDraftSchema,
   ZCreateOutsideDateNoticeSchema,
   ZPreviewSchema,
+  ZReconcileSchema,
   ZRecordPaymentSchema,
+  ZResolveSendingSchema,
   ZSaveDraftSchema,
   ZSendSchema,
 } from "./schema";
@@ -168,6 +172,43 @@ export const callNoticeRouter = createTRPCRouter({
             amountCents: numberToCents(input.amountCents),
             reference: input.reference || undefined,
             note: input.note || undefined,
+          }),
+        ),
+      ),
+    ),
+
+  /** "Re-match prepaid money": matches prepaid Balance money to sent lines not yet matched. */
+  reconcile: withLlcAccessControl
+    .meta({ policies: { "capital-calls": { allow: ["update"] } } })
+    .input(ZReconcileSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.db.$transaction(
+        async (tx) =>
+          toWire({
+            lines: await reconcileCallNoticeLines(
+              tx,
+              ctx.membership.companyId,
+              input.commitmentId,
+              actorFrom(ctx),
+            ),
+          }),
+        { maxWait: 10_000, timeout: 30_000 },
+      ),
+    ),
+
+  /** Resolves a line left in SENDING (Resolve / Mark as sent / Mark as not sent). */
+  resolveSending: withLlcAccessControl
+    .meta({ policies: { "capital-calls": { allow: ["update"] } } })
+    .input(ZResolveSendingSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.db.$transaction(async (tx) =>
+        toWire(
+          await resolveCallNoticeSending(tx, {
+            company: ctx.company,
+            actor: actorFrom(ctx),
+            lineId: input.lineId,
+            action: input.action,
+            sentOn: input.sentOn,
           }),
         ),
       ),

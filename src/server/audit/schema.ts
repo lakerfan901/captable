@@ -145,6 +145,8 @@ export const AuditSchema = z.object({
     "callNotice.cancelled",
     "callNotice.sent",
     "callNotice.payment-recorded",
+    "callNotice.prepaid-matched",
+    "callNotice.send-resolved",
     "memberDefault.declared",
     "memberDefault.voided",
     "memberDefault.charge-added",

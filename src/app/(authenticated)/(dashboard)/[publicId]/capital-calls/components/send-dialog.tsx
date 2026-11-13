@@ -33,12 +33,15 @@ export type Recipient = {
 };
 
 /**
- * Lines a "Retry failed" may send again: only those whose email was never
- * accepted. A line with `emailSent: true` was legally sent; re-sending would
- * issue a second notice.
+ * Lines a "Retry failed" may send again: only those now SEND_FAILED (their
+ * email was never accepted). A line with `emailSent: true` was legally sent,
+ * and a line left SENDING is resolved on the notice page; re-sending either
+ * would issue a second notice.
  */
 export function retryableLineIds(results: readonly SendResult[]): string[] {
-  return results.filter((r) => !r.ok && !r.emailSent).map((r) => r.lineId);
+  return results
+    .filter((r) => r.status === "SEND_FAILED" && !r.emailSent)
+    .map((r) => r.lineId);
 }
 
 export function SendDialog({
@@ -47,6 +50,7 @@ export function SendDialog({
   proposedDueOn,
   sendBlockedReason,
   mailCatcher,
+  noticeTerms,
   recipients,
 }: {
   noticeId: string;
@@ -54,6 +58,8 @@ export function SendDialog({
   proposedDueOn: string | null;
   sendBlockedReason: string | null;
   mailCatcher: boolean;
+  /** The settings-dependent wording of the notice (default interest, cure period). */
+  noticeTerms: { defaultInterestRate: string; curePeriod: string };
   recipients: Recipient[];
 }) {
   const router = useRouter();
@@ -130,8 +136,9 @@ export function SendDialog({
             Section 4.9 for the amount shown. The notice is effective when the
             email is sent and cannot be withdrawn; the due date printed in it is
             binding. If a member does not pay in full by the due date, the
-            default provisions of Section 4.9 apply (12% interest, suspension
-            and, after five business days, forfeiture).
+            default provisions of Section 4.9 apply (
+            {noticeTerms.defaultInterestRate} interest, suspension and, after{" "}
+            {noticeTerms.curePeriod}, forfeiture).
           </DialogDescription>
         </DialogHeader>
 
@@ -167,9 +174,13 @@ export function SendDialog({
                     <span className="font-medium">{who?.name ?? r.lineId}</span>
                     {r.ok ? (
                       <Badge variant="success">Sent</Badge>
+                    ) : r.emailSent && r.status === "SENDING" ? (
+                      <Badge variant="warning">
+                        Email sent; not recorded — resolve on the notice page
+                      </Badge>
                     ) : r.emailSent ? (
                       <Badge variant="warning">
-                        Email sent; recording needs review
+                        Email sent; prepaid money to re-match
                       </Badge>
                     ) : (
                       <Badge variant="destructive">Failed</Badge>
