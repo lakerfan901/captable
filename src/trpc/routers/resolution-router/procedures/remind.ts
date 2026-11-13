@@ -10,11 +10,18 @@ import { ZResolutionRemindSchema } from "../schema";
 // ballots of a SENT resolution. No write here: the email job records the
 // REMINDER_EMAILED event, bumps reminderCount and writes `ballot.reminded`.
 //
-// Recovery path: a ballot that was never invited (send committed but its
-// invite job was lost) gets its INVITE (seq 0, the key send uses) instead of
-// a reminder, so the job also sets `invitedAt`.
+// Recovery path: a ballot that was never invited (`invitedAt` null) gets an
+// INVITE instead of a reminder, so the job also sets `invitedAt`:
+// - no invite claim yet for the current link version (the invite job was
+//   never queued, or is still waiting): seq 0, the key `send` uses, so a
+//   waiting job and this one send once between them;
+// - an invite claim older than STALE_CLAIM_MS but no `invitedAt` (the job
+//   claimed the key and crashed before sending): a fresh key "r<n>", since
+//   the claimed key will never send again (claims are at most once);
+// - a younger claim: the invite is being sent right now; skipped.
 
 const REMINDER_GAP_MS = 24 * 60 * 60 * 1000;
+const STALE_CLAIM_MS = 10 * 60 * 1000;
 
 export const remindProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
@@ -55,10 +62,19 @@ export const remindProcedure = withLlcAccessControl
         id: true,
         submittedAt: true,
         tokenRevokedAt: true,
+        tokenVersion: true,
         invitedAt: true,
         lastReminderAt: true,
         reminderCount: true,
       },
+    });
+    const inviteClaims = await ctx.db.resolutionEvent.findMany({
+      where: {
+        resolutionId: resolution.id,
+        type: "INVITE_EMAILED",
+        ballotId: { in: ballots.map((b) => b.id) },
+      },
+      select: { ballotId: true, dedupeKey: true, occurredAt: true },
     });
     if (wanted && ballots.length !== wanted.length) {
       throw new TRPCError({
@@ -75,7 +91,26 @@ export const remindProcedure = withLlcAccessControl
         continue;
       }
       if (b.invitedAt === null) {
-        items.push({ ballotId: b.id, kind: "INVITE", seq: 0 });
+        const claims = inviteClaims.filter(
+          (c) =>
+            c.ballotId === b.id &&
+            c.dedupeKey?.endsWith(`:v${b.tokenVersion}`) === true,
+        );
+        if (claims.length === 0) {
+          items.push({ ballotId: b.id, kind: "INVITE", seq: 0 });
+        } else if (
+          claims.every(
+            (c) => now.getTime() - c.occurredAt.getTime() > STALE_CLAIM_MS,
+          )
+        ) {
+          items.push({
+            ballotId: b.id,
+            kind: "INVITE",
+            seq: `r${claims.length}`,
+          });
+        } else {
+          skipped++;
+        }
         continue;
       }
       if (

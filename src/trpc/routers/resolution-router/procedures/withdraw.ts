@@ -1,7 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { emitResolutionFinalize } from "@/jobs/governance-resolution-finalize";
 import { Audit } from "@/server/audit";
+import { emitAfterCommit } from "@/server/governance/emit";
 import { recordEvent } from "@/server/governance/events";
+import { guardedWrite } from "@/server/governance/guarded";
 import { loadEvaluation, lockResolution } from "@/server/governance/tally";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionWithdrawSchema } from "../schema";
@@ -15,9 +17,10 @@ import { closeOverdue } from "./get";
 // SENT (CLOSED), the ballot-email job sends nothing for it, and the G8
 // reminder / link tools accept SENT only. The links are deliberately NOT
 // revoked (tokenRevokedAt / tokenVersion unchanged): the plan's withdraw
-// writes only status, closedAt and withdrawnReason, `ballot.view` shows the
-// "Withdrawn" page to the link holder (G11), and the withdrawal notice sent by
-// the finalize job links to that page (G9).
+// writes only status, closedAt and withdrawnReason, and `ballot.view` shows
+// the "Withdrawn" page to the link holder (G11). The withdrawal notice sent by
+// the finalize job goes to every ballot holder (invited or not) and carries
+// no ballot link (G9, M2/L2).
 
 const NOT_WITHDRAWABLE =
   "Only a sent resolution that is not yet effective can be withdrawn.";
@@ -85,30 +88,36 @@ export const withdrawProcedure = withLlcAccessControl
       // closed"); write-once like the transitions in G6.
       const ev = await loadEvaluation(tx, resolution.id);
 
-      const { count } = await tx.resolution.updateMany({
-        where: { id: resolution.id, companyId, status: "SENT" },
-        data: {
-          status: "WITHDRAWN",
-          closedAt: now,
-          withdrawnReason: input.reason,
-        },
-      });
-      if (count !== 1) {
+      const withdrawn = await guardedWrite(() =>
+        tx.resolution.update({
+          where: { id: resolution.id, companyId, status: "SENT" },
+          data: {
+            status: "WITHDRAWN",
+            closedAt: now,
+            withdrawnReason: input.reason,
+          },
+          select: { id: true },
+        }),
+      );
+      if (!withdrawn) {
         throw new TRPCError({ code: "BAD_REQUEST", message: NOT_WITHDRAWABLE });
       }
 
       for (const [i, row] of ev.requirements.entries()) {
         if (row.kind !== "UNIT_VOTE") continue;
         const tally = ev.evaluation.results[i]?.tally;
-        if (!tally) continue;
-        await tx.resolutionRequirement.updateMany({
-          where: {
-            id: row.id,
-            resolutionId: resolution.id,
-            forUnitsAtClose: null,
-          },
-          data: { forUnitsAtClose: tally.for },
-        });
+        if (!tally || row.forUnitsAtClose !== null) continue;
+        await guardedWrite(() =>
+          tx.resolutionRequirement.update({
+            where: {
+              id: row.id,
+              resolutionId: resolution.id,
+              forUnitsAtClose: null,
+            },
+            data: { forUnitsAtClose: tally.for },
+            select: { id: true },
+          }),
+        );
       }
 
       const ref = resolution.referenceCode ?? resolution.title;
@@ -137,7 +146,10 @@ export const withdrawProcedure = withLlcAccessControl
       return resolution.id;
     });
 
-    // After commit only: notifies every invited ballot holder (G9).
-    await emitResolutionFinalize(resolutionId);
+    // After commit only: notifies every ballot holder (G9). A failed emit is
+    // logged and recovered by the sweep (H2); the withdrawal stands.
+    await emitAfterCommit("resolution finalize", { resolutionId }, () =>
+      emitResolutionFinalize(resolutionId),
+    );
     return { publicId: input.publicId, status: "WITHDRAWN" as const };
   });

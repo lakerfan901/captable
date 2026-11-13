@@ -1,12 +1,15 @@
 import { TRPCError } from "@trpc/server";
 import { emitResolutionFinalize } from "@/jobs/governance-resolution-finalize";
 import { Audit } from "@/server/audit";
+import { emitAfterCommit } from "@/server/governance/emit";
 import { recordEvent } from "@/server/governance/events";
+import { guardedWrite } from "@/server/governance/guarded";
 import {
   evaluateAndTransition,
   lockResolution,
 } from "@/server/governance/tally";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
+import { boundRequestMeta } from "../../ballot-router/access";
 import { ZResolutionApproveSchema } from "../schema";
 import { closeOverdue } from "./get";
 
@@ -16,10 +19,11 @@ import { closeOverdue } from "./get";
 //
 // Who may sign: a team user with `governance: update` (the G7 table); the
 // typed signer name and capacity, the team user (`approvedByMemberId`), the
-// time, IP and user agent are recorded with the signature. Write-once: the
-// approval columns are written with `updateMany where approvedAt IS NULL`
-// under the resolution's row lock, so a second approval (sequential or
-// concurrent) gets CONFLICT and changes nothing.
+// time, IP and user agent (bounded, M3) are recorded with the signature.
+// Write-once: the approval columns are written with one single-row guarded
+// UPDATE (`guardedWrite`, `WHERE approvedAt IS NULL`) under the resolution's
+// row lock, so a second approval (sequential or concurrent) gets CONFLICT and
+// changes nothing.
 
 export const approveProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
@@ -27,6 +31,7 @@ export const approveProcedure = withLlcAccessControl
   .mutation(async ({ ctx, input }) => {
     const companyId = ctx.membership.companyId;
     const now = new Date();
+    const meta = boundRequestMeta(ctx.requestIp, ctx.userAgent);
 
     const found = await ctx.db.resolution.findFirst({
       where: { publicId: input.publicId, companyId },
@@ -122,22 +127,25 @@ export const approveProcedure = withLlcAccessControl
         });
       }
 
-      const { count } = await tx.resolutionRequirement.updateMany({
-        where: {
-          id: pending.id,
-          resolutionId: resolution.id,
-          approvedAt: null,
-        },
-        data: {
-          approvedByMemberId: ctx.membership.memberId,
-          approverName: input.signerName,
-          approverCapacity: input.signerCapacity,
-          approvedAt: now,
-          approvalIp: ctx.requestIp,
-          approvalUserAgent: ctx.userAgent,
-        },
-      });
-      if (count !== 1) {
+      const signed = await guardedWrite(() =>
+        tx.resolutionRequirement.update({
+          where: {
+            id: pending.id,
+            resolutionId: resolution.id,
+            approvedAt: null,
+          },
+          data: {
+            approvedByMemberId: ctx.membership.memberId,
+            approverName: input.signerName,
+            approverCapacity: input.signerCapacity,
+            approvedAt: now,
+            approvalIp: meta.ip,
+            approvalUserAgent: meta.userAgent,
+          },
+          select: { id: true },
+        }),
+      );
+      if (!signed) {
         throw new TRPCError({
           code: "CONFLICT",
           message: "The Common Member's approval has already been recorded.",
@@ -152,15 +160,15 @@ export const approveProcedure = withLlcAccessControl
         actorType: "user",
         actorId: ctx.session.user.id,
         summary: `${input.signerName} (${input.signerCapacity}) signed ${ref} for the Common Member (Section ${pending.section})`,
-        ip: ctx.requestIp,
-        userAgent: ctx.userAgent,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
       });
       await Audit.create(
         {
           action: "resolution.approved",
           companyId,
           actor: { type: "user", id: ctx.session.user.id },
-          context: { requestIp: ctx.requestIp, userAgent: ctx.userAgent },
+          context: { requestIp: meta.ip, userAgent: meta.userAgent },
           target: [{ type: "resolution", id: resolution.id }],
           summary: `${ctx.session.user.name ?? "A user"} signed ${ref} "${resolution.title}" for the Common Member as ${input.signerName}, ${input.signerCapacity}`,
         },
@@ -170,15 +178,20 @@ export const approveProcedure = withLlcAccessControl
       const transition = await evaluateAndTransition(tx, resolution.id, now, {
         type: "user",
         id: ctx.session.user.id,
-        ip: ctx.requestIp,
-        userAgent: ctx.userAgent,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
       });
       return { transition };
     });
 
-    // After commit only.
-    if (result.transition) {
-      await emitResolutionFinalize(result.transition.resolutionId);
+    // After commit only; a failed emit is logged and recovered (H2).
+    const transition = result.transition;
+    if (transition) {
+      await emitAfterCommit(
+        "resolution finalize",
+        { resolutionId: transition.resolutionId },
+        () => emitResolutionFinalize(transition.resolutionId),
+      );
     }
     return {
       publicId: input.publicId,

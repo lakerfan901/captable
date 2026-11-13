@@ -3,7 +3,9 @@ import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionEvidenceSchema } from "../schema";
 
 // resolution.evidence (03-governance.md G8): the Manager's proof-of-vote
-// record as CSV, one row per ballot. Contains no link or token.
+// record as CSV, one row per ballot. Contains no link or token. The last two
+// columns show a ballot whose email was changed after send (H1); the
+// original address is the frozen register entry's (ballots copy it at send).
 
 const HEADER = [
   "name",
@@ -22,17 +24,22 @@ const HEADER = [
   "invitedAt",
   "firstViewedAt",
   "reminderCount",
+  "Ballot email changed after send",
+  "Original ballot email",
 ] as const;
 
-/** CSV cell: formula-injection guard (= + - @ prefixed with '), then RFC 4180 quoting. */
-function cell(value: string | number | boolean | Date | null): string {
+/**
+ * CSV cell: formula-injection guard (a leading = + - @ TAB or CR is prefixed
+ * with '), then RFC 4180 quoting.
+ */
+function csvCell(value: string | number | boolean | Date | null): string {
   let s =
     value === null
       ? ""
       : value instanceof Date
         ? value.toISOString()
         : String(value);
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -43,7 +50,12 @@ export const evidenceProcedure = withLlcAccessControl
     const companyId = ctx.membership.companyId;
     const resolution = await ctx.db.resolution.findFirst({
       where: { publicId: input.publicId, companyId },
-      select: { id: true, publicId: true, referenceCode: true },
+      select: {
+        id: true,
+        publicId: true,
+        referenceCode: true,
+        snapshotId: true,
+      },
     });
     if (!resolution) {
       throw new TRPCError({
@@ -55,6 +67,7 @@ export const evidenceProcedure = withLlcAccessControl
       where: { resolutionId: resolution.id, companyId },
       orderBy: [{ name: "asc" }, { id: "asc" }],
       select: {
+        stakeholderId: true,
         name: true,
         email: true,
         preferredUnits: true,
@@ -74,8 +87,19 @@ export const evidenceProcedure = withLlcAccessControl
       },
     });
 
-    const lines = [HEADER.join(",")];
+    const entries = resolution.snapshotId
+      ? await ctx.db.recordSnapshotEntry.findMany({
+          where: { snapshotId: resolution.snapshotId, companyId },
+          select: { stakeholderId: true, email: true },
+        })
+      : [];
+    const originalEmail = new Map(
+      entries.map((e) => [e.stakeholderId, e.email.trim()]),
+    );
+
+    const lines = [HEADER.map(csvCell).join(",")];
     for (const b of ballots) {
+      const original = originalEmail.get(b.stakeholderId) ?? b.email;
       lines.push(
         [
           b.name,
@@ -94,8 +118,10 @@ export const evidenceProcedure = withLlcAccessControl
           b.invitedAt,
           b.firstViewedAt,
           b.reminderCount,
+          original === b.email ? "no" : "yes",
+          original,
         ]
-          .map(cell)
+          .map(csvCell)
           .join(","),
       );
     }

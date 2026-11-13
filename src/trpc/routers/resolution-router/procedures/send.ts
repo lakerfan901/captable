@@ -28,7 +28,9 @@ import { ballotTokenExpiry } from "@/lib/governance/token-payload";
 import { denominator, fromMicro, minimumFor } from "@/lib/llc/voting";
 import { Audit } from "@/server/audit";
 import type { PrismaTransactionalClient } from "@/server/db";
+import { emitAfterCommit } from "@/server/governance/emit";
 import { recordEvent } from "@/server/governance/events";
+import { guardedWrite } from "@/server/governance/guarded";
 import { sha256Hex } from "@/server/governance/hash";
 import { takeRecordSnapshot } from "@/server/governance/snapshot";
 import {
@@ -38,6 +40,7 @@ import {
   type TransitionResult,
 } from "@/server/governance/tally";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
+import { boundRequestMeta } from "../../ballot-router/access";
 import { ZResolutionSendSchema } from "../schema";
 import { assertDraftReferences, parseDraftParams } from "./create";
 import { requirementLabel } from "./get";
@@ -59,8 +62,15 @@ import { requirementLabel } from "./get";
 //   existing codes are read only after that lock is held, so the second
 //   sender sees the first sender's committed code. `@@unique([companyId,
 //   referenceCode])` stays as the backstop (mapped to CONFLICT below).
+// - `resolution.update` / `resolution.delete` take the same row lock and
+//   require DRAFT after it, so a draft edit can never land on a sent
+//   resolution. Every guarded write here is a single-row `guardedWrite`
+//   (never a guarded `updateMany`, see server/governance/guarded.ts).
 // - Nothing written here is updated afterwards except through the write-once
 //   paths of C3 (requirement satisfaction/approvals, ballot votes, status).
+// - Everything shown or sent after send (ballot page, emails, PDF, PO copy)
+//   is read from `frozenContent` (title, params, text), never from the live
+//   columns.
 
 const MAX_WINDOW_DAYS = 180;
 const DEFAULT_WINDOW_DAYS = 30;
@@ -83,6 +93,11 @@ async function lockReferenceCodes(
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))::text AS locked`;
 }
 
+/** M5: the message `send` refuses with and `preview` shows as a blocker. */
+export function undeclaredOverdueMessage(name: string): string {
+  return `${name} has an overdue Balance with no declared default. Declare the default (Section 4.9) or record the payment before sending.`;
+}
+
 function isUniqueViolation(error: unknown): boolean {
   return (error as { code?: unknown } | null)?.code === "P2002";
 }
@@ -95,16 +110,18 @@ export const sendProcedure = withLlcAccessControl
     const now = new Date();
     const zone = ctx.company.timezone || GOVERNANCE_TIME_ZONE;
     const userName = ctx.session.user.name ?? "A user";
+    // Client-controlled headers: bounded before they are stored (M3).
+    const meta = boundRequestMeta(ctx.requestIp, ctx.userAgent);
     const actor: GovernanceActor = {
       type: "user",
       id: ctx.session.user.id,
-      ip: ctx.requestIp,
-      userAgent: ctx.userAgent,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
     };
     const auditActor = { type: "user" as const, id: ctx.session.user.id };
     const auditContext = {
-      requestIp: ctx.requestIp,
-      userAgent: ctx.userAgent,
+      requestIp: meta.ip,
+      userAgent: meta.userAgent,
     };
 
     let result: {
@@ -193,7 +210,7 @@ export const sendProcedure = withLlcAccessControl
 
           // 6. Freeze the register (insert only, C3.1). Every type gets one,
           //    PURCHASE_ORDER included: evaluation needs it.
-          const { snapshot, entries } = await takeRecordSnapshot(tx, {
+          const { snapshot, entries, warnings } = await takeRecordSnapshot(tx, {
             companyId,
             recordDate: input.recordDate,
             purpose: "RESOLUTION",
@@ -201,7 +218,24 @@ export const sendProcedure = withLlcAccessControl
           });
           const entryById = new Map(entries.map((e) => [e.stakeholderId, e]));
 
+          // 6a. R13 / Section 4.9 (M5): an overdue Balance with no declared
+          //     default as of the record date must not vote. Refused until
+          //     the default is declared (units suspended) or the payment is
+          //     recorded. A resolution without ballots (PURCHASE_ORDER) has
+          //     no unit vote and is not affected.
+          if (b.hasBallots && warnings.length > 0) {
+            badRequest(
+              undeclaredOverdueMessage(
+                entryById.get(warnings[0]?.stakeholderId ?? "")?.name ??
+                  "A holder",
+              ),
+            );
+          }
+
           // 7. Requirements, frozen against the register.
+          // Not a guarded write: every requirement row of this DRAFT is
+          // replaced, under the row lock, after DRAFT was re-checked; the
+          // rows have no children.
           await tx.resolutionRequirement.deleteMany({
             where: { resolutionId },
           });
@@ -355,6 +389,9 @@ export const sendProcedure = withLlcAccessControl
           const frozen = {
             title,
             type,
+            // Frozen so the PO copy, emails and the ballot page never read
+            // the live `params` column after send.
+            params,
             doc,
             lockedClauses: buildLockedClauses(type, params, {
               companyName: ctx.company.name,
@@ -378,21 +415,24 @@ export const sendProcedure = withLlcAccessControl
           const frozenContent = JSON.parse(canonical) as object;
 
           // 12. DRAFT -> SENT (guarded; set once, C3.4).
-          const { count } = await tx.resolution.updateMany({
-            where: { id: resolutionId, companyId, status: "DRAFT" },
-            data: {
-              status: "SENT",
-              sentAt: now,
-              recordDate: ymdToUtcDate(input.recordDate),
-              snapshotId: snapshot.id,
-              closesAt,
-              referenceCode,
-              frozenContent,
-              frozenHash,
-              autoReminders: input.autoReminders,
-            },
-          });
-          if (count !== 1) {
+          const moved = await guardedWrite(() =>
+            tx.resolution.update({
+              where: { id: resolutionId, companyId, status: "DRAFT" },
+              data: {
+                status: "SENT",
+                sentAt: now,
+                recordDate: ymdToUtcDate(input.recordDate),
+                snapshotId: snapshot.id,
+                closesAt,
+                referenceCode,
+                frozenContent,
+                frozenHash,
+                autoReminders: input.autoReminders,
+              },
+              select: { id: true },
+            }),
+          );
+          if (!moved) {
             throw new TRPCError({
               code: "CONFLICT",
               message: "This resolution has already been sent.",
@@ -433,19 +473,21 @@ export const sendProcedure = withLlcAccessControl
               kind === "MANAGER_APPROVAL" ? "the Manager" : "the Common Member";
             for (const row of requirementRows) {
               if (row.kind !== kind) continue;
-              const { count: signed } =
-                await tx.resolutionRequirement.updateMany({
+              const signed = await guardedWrite(() =>
+                tx.resolutionRequirement.update({
                   where: { id: row.id, resolutionId, approvedAt: null },
                   data: {
                     approvedByMemberId: ctx.membership.memberId,
                     approverName: signature.signerName,
                     approverCapacity: signature.signerCapacity,
                     approvedAt: now,
-                    approvalIp: ctx.requestIp,
-                    approvalUserAgent: ctx.userAgent,
+                    approvalIp: meta.ip,
+                    approvalUserAgent: meta.userAgent,
                   },
-                });
-              if (signed !== 1) {
+                  select: { id: true },
+                }),
+              );
+              if (!signed) {
                 throw new Error(`Requirement ${row.id} was already approved`);
               }
             }
@@ -459,8 +501,8 @@ export const sendProcedure = withLlcAccessControl
               actorType: "user",
               actorId: ctx.session.user.id,
               summary: `${signature.signerName} (${signature.signerCapacity}) signed ${referenceCode} for ${role}`,
-              ip: ctx.requestIp,
-              userAgent: ctx.userAgent,
+              ip: meta.ip,
+              userAgent: meta.userAgent,
             });
             await Audit.create(
               {
@@ -500,8 +542,8 @@ export const sendProcedure = withLlcAccessControl
             actorType: "user",
             actorId: ctx.session.user.id,
             summary: sentSummary,
-            ip: ctx.requestIp,
-            userAgent: ctx.userAgent,
+            ip: meta.ip,
+            userAgent: meta.userAgent,
           });
           await Audit.create(
             {
@@ -515,20 +557,31 @@ export const sendProcedure = withLlcAccessControl
             tx,
           );
           if (type === "TERM_EXTENSION") {
-            await tx.complianceDeadline.updateMany({
+            // One guarded write per open deadline (a guarded updateMany would
+            // overwrite a deadline closed concurrently by someone else).
+            const open = await tx.complianceDeadline.findMany({
               where: {
                 companyId,
                 ruleKey: "EXTENSION_REQUEST_DUE",
                 status: "OPEN",
               },
-              data: {
-                status: "DONE",
-                satisfiedByType: "RESOLUTION",
-                satisfiedById: resolutionId,
-                completedAt: now,
-                completedById: ctx.membership.memberId,
-              },
+              select: { id: true },
             });
+            for (const deadline of open) {
+              await guardedWrite(() =>
+                tx.complianceDeadline.update({
+                  where: { id: deadline.id, companyId, status: "OPEN" },
+                  data: {
+                    status: "DONE",
+                    satisfiedByType: "RESOLUTION",
+                    satisfiedById: resolutionId,
+                    completedAt: now,
+                    completedById: ctx.membership.memberId,
+                  },
+                  select: { id: true },
+                }),
+              );
+            }
           }
 
           // 16. Evaluate: a PURCHASE_ORDER (Manager approval only) becomes
@@ -560,16 +613,27 @@ export const sendProcedure = withLlcAccessControl
       throw error;
     }
 
-    // After commit only.
-    if (result.transition) {
-      await emitResolutionFinalize(result.transition.resolutionId);
+    // After commit only. A failed emit is logged, never an error for the
+    // caller: the resolution IS sent (H2, see server/governance/emit.ts).
+    const transition = result.transition;
+    if (transition) {
+      await emitAfterCommit(
+        "resolution finalize",
+        { resolutionId: transition.resolutionId },
+        () => emitResolutionFinalize(transition.resolutionId),
+      );
     } else {
-      await emitBallotEmails(
-        result.ballotIds.map((ballotId) => ({
-          ballotId,
-          kind: "INVITE" as const,
-          seq: 0,
-        })),
+      await emitAfterCommit(
+        "ballot invites",
+        { publicId: result.publicId },
+        () =>
+          emitBallotEmails(
+            result.ballotIds.map((ballotId) => ({
+              ballotId,
+              kind: "INVITE" as const,
+              seq: 0,
+            })),
+          ),
       );
     }
 

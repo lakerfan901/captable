@@ -32,7 +32,8 @@ import { getUrl, transformer } from "@/trpc/shared";
 //
 // The token is a credential. These calls use a private tRPC client with no
 // logger link (the app-wide client logs failed operations, inputs included,
-// to the console) and no batching; mutations send the token in the POST body.
+// to the console) and no batching. Every public ballot procedure is a
+// mutation, so the token always travels in the POST body, never in a URL.
 // Nothing here logs, reports or displays the token or a raw error object.
 
 let ballotClient: ReturnType<typeof createTRPCClient<AppRouter>> | null = null;
@@ -351,7 +352,7 @@ export function ExecutedConsentButton({ token }: { token: string }) {
     // popup on mobile browsers); it is pointed at the file once we have it.
     const tab = window.open("", "_blank");
     try {
-      const { url } = await client().ballot.executedPdf.query({ token });
+      const { url } = await client().ballot.executedPdf.mutate({ token });
       if (tab) {
         tab.opener = null;
         tab.location.href = url;

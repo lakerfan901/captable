@@ -8,9 +8,11 @@ import { resolveOpenBallot } from "./resolve";
 // and every invalid token get the same NOT_FOUND).
 //
 // Writes nothing but the view metadata of THIS ballot: `firstViewedAt` (set
-// once, by a guarded update, so concurrent calls cannot both set it),
-// `viewCount + 1`, and one BALLOT_VIEWED event on the first view only. It
-// never touches the vote columns, the link columns or the resolution.
+// once, by a single-row guarded UPDATE `WHERE firstViewedAt IS NULL`, which
+// Postgres re-checks at write time, so of two concurrent first views exactly
+// one sets it), `viewCount + 1`, and one BALLOT_VIEWED event written in the
+// same transaction as the winning `firstViewedAt` only. It never touches the
+// vote columns, the link columns or the resolution.
 // Call it from the browser (HTTP), not from a Server Component: the RSC
 // caller reports 127.0.0.1 and an empty user agent (A1).
 
@@ -28,24 +30,24 @@ export const markViewedProcedure = withoutAuth
     const meta = boundRequestMeta(ctx.requestIp, ctx.userAgent);
 
     await ctx.db.$transaction(async (tx) => {
-      const first = await tx.resolutionBallot.updateMany({
-        where: {
-          id: ballot.id,
-          resolutionId: resolution.id,
-          firstViewedAt: null,
-        },
-        data: { firstViewedAt: now },
-      });
+      // ONE guarded statement each (Postgres re-checks the WHERE at write
+      // time; see server/governance/guarded.ts). Raw SQL rather than
+      // `guardedWrite` because losing this race is routine on a public page
+      // (two tabs, a double effect) and must not be logged as an error.
+      // A guarded `updateMany` would let both callers "win".
+      const first =
+        ballot.firstViewedAt !== null
+          ? 0
+          : await tx.$executeRaw`
+              UPDATE "ResolutionBallot" SET "firstViewedAt" = ${now}, "updatedAt" = ${now}
+              WHERE "id" = ${ballot.id} AND "resolutionId" = ${resolution.id}
+                AND "firstViewedAt" IS NULL`;
       // Bounded counter (Int column): stops counting rather than overflow.
-      await tx.resolutionBallot.updateMany({
-        where: {
-          id: ballot.id,
-          resolutionId: resolution.id,
-          viewCount: { lt: MAX_VIEW_COUNT },
-        },
-        data: { viewCount: { increment: 1 } },
-      });
-      if (first.count === 1) {
+      await tx.$executeRaw`
+        UPDATE "ResolutionBallot" SET "viewCount" = "viewCount" + 1, "updatedAt" = ${now}
+        WHERE "id" = ${ballot.id} AND "resolutionId" = ${resolution.id}
+          AND "viewCount" < ${MAX_VIEW_COUNT}`;
+      if (first === 1) {
         await recordEvent(tx, {
           resolutionId: resolution.id,
           companyId: resolution.companyId,

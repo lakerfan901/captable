@@ -1,8 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { toDateOnly } from "@/lib/date-only";
+import { GOVERNANCE_TIME_ZONE } from "@/lib/governance/dates";
 import { behaviour, type ResolutionType } from "@/lib/governance/presets";
 import { type RichDoc, RichDocSchema } from "@/lib/governance/rich-doc";
+import type { TPrismaOrTransaction } from "@/server/db";
+import { frozenTitle } from "@/server/governance/frozen";
 import { withoutAuth } from "@/trpc/api/trpc";
 import { closeOverdue } from "../../resolution-router/procedures/get";
 import { ballotPageState } from "../access";
@@ -16,7 +19,17 @@ import { type ResolvedBallot, resolveBallot } from "./resolve";
 // Members (names, emails, units or votes), never a tally, never an IP, user
 // agent, email or internal id. The output is built field by field; no row and
 // no `frozenContent` is passed through (its `requirements` labels can name an
-// affected Member, so only `doc` and `lockedClauses` are read from it).
+// affected Member and its `params` are not for the holder, so only `title`,
+// `doc` and `lockedClauses` are read from it).
+//
+// It also says whether the resolution needs a Disinterested vote (so the page
+// can tell an insider that its units do not count toward it; never a tally)
+// and the company's time zone (dates on the page are shown in it, as `send`
+// computes them).
+//
+// A MUTATION (POST), like every public ballot procedure: the token is a
+// credential and must never travel in a URL (tRPC sends query inputs in the
+// query string, which reaches access logs, proxies and Sentry).
 
 const FrozenTextSchema = z.object({
   doc: RichDocSchema,
@@ -35,7 +48,31 @@ function frozenText(frozenContent: unknown): {
   return parsed.data;
 }
 
-function toView(resolved: Extract<ResolvedBallot, { kind: "OK" }>) {
+const DISINTERESTED_BASES = [
+  "DISINTERESTED_MAJORITY",
+  "DISINTERESTED_67",
+  "DISINTERESTED_70",
+] as const;
+
+async function hasDisinterestedVote(
+  db: TPrismaOrTransaction,
+  resolutionId: string,
+): Promise<boolean> {
+  const row = await db.resolutionRequirement.findFirst({
+    where: {
+      resolutionId,
+      kind: "UNIT_VOTE",
+      basis: { in: [...DISINTERESTED_BASES] },
+    },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+function toView(
+  resolved: Extract<ResolvedBallot, { kind: "OK" }>,
+  hasDisinterestedRequirement: boolean,
+) {
   const { ballot, resolution, company } = resolved;
   const type = resolution.type as ResolutionType;
   const preset = behaviour(type);
@@ -46,8 +83,9 @@ function toView(resolved: Extract<ResolvedBallot, { kind: "OK" }>) {
   return {
     state: ballotPageState(resolution.status, ballot.submittedAt),
     company: { name: company.name, logo: company.logo },
+    timeZone: company.timezone || GOVERNANCE_TIME_ZONE,
     resolution: {
-      title: resolution.title,
+      title: frozenTitle(resolution),
       referenceCode: resolution.referenceCode,
       type,
       kindLabel: preset.kindLabel,
@@ -65,6 +103,7 @@ function toView(resolved: Extract<ResolvedBallot, { kind: "OK" }>) {
       lockedClauses,
       frozenHash: resolution.frozenHash,
       deemedAgainstAtClose: preset.deemedAgainstAtClose,
+      hasDisinterestedRequirement,
       hasExecutedPdf:
         resolution.status === "EFFECTIVE" &&
         resolution.executedDocumentId !== null,
@@ -85,7 +124,7 @@ function toView(resolved: Extract<ResolvedBallot, { kind: "OK" }>) {
 
 export const viewProcedure = withoutAuth
   .input(ZBallotTokenSchema)
-  .query(async ({ ctx, input }) => {
+  .mutation(async ({ ctx, input }) => {
     const now = new Date();
     let resolved = await resolveBallot(ctx.db, input.token, now);
     if (resolved.kind === "REPLACED") {
@@ -108,7 +147,10 @@ export const viewProcedure = withoutAuth
       }
     }
 
-    return toView(resolved);
+    return toView(
+      resolved,
+      await hasDisinterestedVote(ctx.db, resolved.resolution.id),
+    );
   });
 
 export type BallotView = Awaited<ReturnType<typeof toView>>;

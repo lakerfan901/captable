@@ -14,15 +14,12 @@ import { isKeyInCompanyNamespace } from "@/lib/upload-authorization";
 import { Audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { getFileFromS3 } from "@/server/file-uploads";
-import {
-  hasEvent,
-  recordEvent,
-  recordEventOnce,
-} from "@/server/governance/events";
+import { hasEvent, recordEvent, sendOnce } from "@/server/governance/events";
+import { frozenParams, frozenTitle } from "@/server/governance/frozen";
+import { guardedWrite } from "@/server/governance/guarded";
 import { loadLlcCompany } from "@/server/governance/guards";
 import { buildResolutionPdfData } from "@/server/governance/resolution-pdf-data";
 import { lockResolution } from "@/server/governance/tally";
-import { ballotUrl, signBallotToken } from "@/server/governance/tokens";
 import { sendMail } from "@/server/mailer";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
 
@@ -30,10 +27,18 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 // One result notice or purchase-order copy per Member per job
-// (03-governance.md G9, B3 R21). Delivery is at-least-once: the dedupe event
-// is written after the send, so a crash between sending and writing the
-// marker can cause one duplicate email; a missing email is not possible
-// without a failed job in the queue.
+// (03-governance.md G9, B3 R21).
+//
+// Delivery is AT MOST ONCE per dedupe key (M1): the RESULT_EMAILED /
+// COPY_EMAILED event is inserted (claimed) in its own committed statement
+// BEFORE the send and only the claimant sends (`sendOnce`); a failed send
+// releases the claim so the retry can send. A crash between claim and send
+// leaves no email; `resolution.resendNotice` re-sends under a fresh key.
+//
+// The recipient address is the ballot's CURRENT email when the Member has a
+// ballot (it may have been replaced after send, M2), else the frozen register
+// entry's. The notice never carries a ballot link: it is only sent for a
+// closed resolution. Title, params and text come from the frozen content.
 
 const JOB_NAME = "governance.resolution-notice";
 const DASH = "—";
@@ -93,6 +98,7 @@ export function isClosedStatus(
 
 const config = defineWorkerConfig({
   name: JOB_NAME,
+  policy: "stately",
   schema: z.object({
     resolutionId: z.string().min(1),
     stakeholderId: z.string().min(1),
@@ -150,6 +156,7 @@ async function loadExecutedPdf(
 export const resolutionNoticeWorker = defineWorker(config, async (job) => {
   const { resolutionId, stakeholderId, kind, seq } = job.data;
   const dedupeKey = noticeDedupeKey(kind, stakeholderId, seq);
+  // Fast path only (skips loading the PDF); the claim below is the guarantee.
   if (await hasEvent(db, resolutionId, dedupeKey)) return;
 
   const resolution = await db.resolution.findUnique({
@@ -177,7 +184,9 @@ export const resolutionNoticeWorker = defineWorker(config, async (job) => {
   const ballot = await db.resolutionBallot.findUnique({
     where: { resolutionId_stakeholderId: { resolutionId, stakeholderId } },
   });
-  const recipient = entry ?? ballot;
+  // M2: a ballot's email may have been replaced after send; its current
+  // address wins over the frozen register's.
+  const recipient = ballot ? { name: ballot.name, email: ballot.email } : entry;
   if (!recipient) {
     throw new Error(
       `Stakeholder ${stakeholderId} is not a recipient of resolution ${resolutionId}`,
@@ -193,12 +202,14 @@ export const resolutionNoticeWorker = defineWorker(config, async (job) => {
     : [];
 
   const referenceCode = resolution.referenceCode ?? DASH;
+  const title = frozenTitle(resolution);
   const effectiveAt = formatDateTime(resolution.effectiveAt, zone);
   let subject: string;
   let html: string;
 
   if (kind === "PO_COPY") {
-    const params = parseParams("PURCHASE_ORDER", resolution.params);
+    // Vendor, equipment and price as frozen (and signed) at send.
+    const params = parseParams("PURCHASE_ORDER", frozenParams(resolution));
     const manager = resolution.requirements.find(
       (r) => r.kind === "MANAGER_APPROVAL" && r.approvedAt !== null,
     );
@@ -208,7 +219,7 @@ export const resolutionNoticeWorker = defineWorker(config, async (job) => {
         variant: "PO_COPY",
         companyName: company.name,
         recipientName: recipient.name,
-        title: resolution.title,
+        title,
         referenceCode,
         vendor: params.vendor,
         equipment: params.equipment,
@@ -220,20 +231,14 @@ export const resolutionNoticeWorker = defineWorker(config, async (job) => {
       }),
     );
   } else {
-    const liveLink =
-      ballot !== null &&
-      ballot.tokenRevokedAt === null &&
-      ballot.tokenExpiresAt.getTime() > Date.now()
-        ? ballotUrl(await signBallotToken(ballot))
-        : null;
-    subject = `Result: ${resolution.title} — ${RESULT_LABEL[status]}`;
+    subject = `Result: ${title} — ${RESULT_LABEL[status]}`;
     html = await render(
       ResolutionNoticeEmail({
         variant: "RESULT",
         status,
         companyName: company.name,
         recipientName: recipient.name,
-        title: resolution.title,
+        title,
         referenceCode,
         sentence: resultSentence({
           status,
@@ -243,45 +248,55 @@ export const resolutionNoticeWorker = defineWorker(config, async (job) => {
         withdrawnReason:
           status === "WITHDRAWN" ? resolution.withdrawnReason : null,
         tallyLines: await resultTallyLines(resolutionId),
-        link: liveLink,
+        // Closed resolution: never a ballot link (M2).
+        link: null,
       }),
     );
   }
 
-  await sendMail(
+  const outcome = await sendOnce(
     {
-      to: recipient.email,
-      subject,
-      html,
-      headers: { "X-From-Name": company.name },
-      attachments,
-    },
-    {
-      kind: kind === "PO_COPY" ? "resolution.copy" : "resolution.result",
+      resolutionId,
       companyId: company.id,
-      stakeholderId,
-      relatedType: "resolution",
-      relatedId: resolutionId,
+      ballotId: ballot?.id ?? null,
+      type: kind === "PO_COPY" ? "COPY_EMAILED" : "RESULT_EMAILED",
+      actorType: "system",
+      actorId: null,
+      summary: `${kind === "PO_COPY" ? "Copy" : "Result notice"} emailed to ${recipient.name}`,
+      dedupeKey,
+    },
+    async () => {
+      await sendMail(
+        {
+          to: recipient.email,
+          subject,
+          html,
+          headers: { "X-From-Name": company.name },
+          attachments,
+        },
+        {
+          kind: kind === "PO_COPY" ? "resolution.copy" : "resolution.result",
+          companyId: company.id,
+          stakeholderId,
+          relatedType: "resolution",
+          relatedId: resolutionId,
+        },
+      );
     },
   );
-
-  await recordEventOnce(db, {
-    resolutionId,
-    companyId: company.id,
-    ballotId: ballot?.id ?? null,
-    type: kind === "PO_COPY" ? "COPY_EMAILED" : "RESULT_EMAILED",
-    actorType: "system",
-    actorId: null,
-    summary: `${kind === "PO_COPY" ? "Copy" : "Result notice"} emailed to ${recipient.name}`,
-    dedupeKey,
-  });
+  if (outcome === "SKIPPED") return;
 
   if (kind === "PO_COPY") {
     await markCopyDelivered(resolutionId, company.id, referenceCode);
   }
 });
 
-/** R16: once every Member of the frozen register has a COPY_EMAILED event. */
+/**
+ * R16: once every Member of the frozen register has a COPY_EMAILED event AND
+ * a SENT `resolution.copy` email log. The event alone is not enough: it is
+ * the claim written before the send, and another Member's send may still be
+ * in flight (or fail and release its claim).
+ */
 async function markCopyDelivered(
   resolutionId: string,
   companyId: string,
@@ -307,13 +322,35 @@ async function markCopyDelivered(
     const emailedIds = new Set(
       emailed.map((e) => e.dedupeKey?.split(":")[2]).filter(Boolean),
     );
-    if (!members.every((m) => emailedIds.has(m.stakeholderId))) return;
+    const logs = await tx.emailLog.findMany({
+      where: {
+        companyId,
+        relatedType: "resolution",
+        relatedId: resolutionId,
+        kind: "resolution.copy",
+        status: "SENT",
+      },
+      select: { stakeholderId: true },
+    });
+    const sentIds = new Set(logs.map((l) => l.stakeholderId));
+    if (
+      !members.every(
+        (m) => emailedIds.has(m.stakeholderId) && sentIds.has(m.stakeholderId),
+      )
+    ) {
+      return;
+    }
 
     const now = new Date();
-    await tx.resolution.update({
-      where: { id: resolutionId },
-      data: { copyDeliveredAt: now },
-    });
+    // Under the row lock and re-checked above; guarded as a backstop.
+    const marked = await guardedWrite(() =>
+      tx.resolution.update({
+        where: { id: resolutionId, copyDeliveredAt: null },
+        data: { copyDeliveredAt: now },
+        select: { id: true },
+      }),
+    );
+    if (!marked) return;
     await recordEvent(tx, {
       resolutionId,
       companyId,
@@ -333,18 +370,24 @@ async function markCopyDelivered(
       },
       tx,
     );
-    await tx.complianceDeadline.updateMany({
-      where: {
-        companyId,
-        dedupeKey: `PO_RESOLUTION_COPY:${resolutionId}`,
-        status: "OPEN",
-      },
-      data: {
-        status: "DONE",
-        satisfiedByType: "RESOLUTION",
-        satisfiedById: resolutionId,
-        completedAt: now,
-      },
-    });
+    // `(companyId, dedupeKey)` is unique: one guarded single-row write.
+    await guardedWrite(() =>
+      tx.complianceDeadline.update({
+        where: {
+          companyId_dedupeKey: {
+            companyId,
+            dedupeKey: `PO_RESOLUTION_COPY:${resolutionId}`,
+          },
+          status: "OPEN",
+        },
+        data: {
+          status: "DONE",
+          satisfiedByType: "RESOLUTION",
+          satisfiedById: resolutionId,
+          completedAt: now,
+        },
+        select: { id: true },
+      }),
+    );
   });
 }

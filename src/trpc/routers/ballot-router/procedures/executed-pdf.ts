@@ -13,6 +13,7 @@ import { resolveOpenBallot } from "./resolve";
 // resolution's company; its bucket key must be in that company's namespace.
 // Only a 10-minute presigned GET URL is returned (it is signed for that one
 // object); the storage key, bucket and document ids are never returned.
+// A mutation (POST) so the token never travels in a URL (see view.ts).
 
 const unavailable = (): never => {
   throw new TRPCError({
@@ -23,7 +24,7 @@ const unavailable = (): never => {
 
 export const executedPdfProcedure = withoutAuth
   .input(ZBallotTokenSchema)
-  .query(async ({ ctx, input }) => {
+  .mutation(async ({ ctx, input }) => {
     const { resolution, company } = await resolveOpenBallot(
       ctx.db,
       input.token,

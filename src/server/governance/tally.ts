@@ -25,15 +25,18 @@ import type {
 } from "@/server/db";
 import { getOrCreateLlcTerm } from "@/server/llc/economics/term";
 import { recordEvent } from "./events";
+import { guardedWrite } from "./guarded";
 import { loadLlcCompany } from "./guards";
 
 // Tally and status transition (03-governance.md G6).
 //
 // Every decision is made from the FROZEN register (RecordSnapshotEntry) and
-// the ballots of the resolution; live positions are never read here. Every
-// write is a guarded `updateMany` (write-once, C3), and the whole evaluation
-// runs under a row lock on the Resolution, so two ballots submitted at the
-// same moment cannot both cross (or both miss) the threshold.
+// the ballots of the resolution; live positions are never read here. The
+// whole evaluation runs under a row lock on the Resolution (rows are re-read
+// after the lock is taken), so two ballots submitted at the same moment cannot
+// both cross (or both miss) the threshold. Every write is additionally a
+// guarded single-row write (`guardedWrite`, write-once, C3), never a guarded
+// `updateMany` (see guarded.ts for why).
 
 export interface GovernanceActor {
   type: "user" | "stakeholder" | "system";
@@ -263,16 +266,19 @@ export async function evaluateAndTransition(
     for (const ballot of state.ballots) {
       if (ballot.submittedAt !== null) continue;
       if (!ballot.countsPreferred && !ballot.countsDisinterested) continue;
-      const { count } = await tx.resolutionBallot.updateMany({
-        where: { id: ballot.id, resolutionId, submittedAt: null },
-        data: {
-          choice: "AGAINST",
-          deemed: true,
-          submittedAt: closesAt,
-          bodyHash: state.frozenHash,
-        },
-      });
-      if (count !== 1) continue;
+      const deemed = await guardedWrite(() =>
+        tx.resolutionBallot.update({
+          where: { id: ballot.id, resolutionId, submittedAt: null },
+          data: {
+            choice: "AGAINST",
+            deemed: true,
+            submittedAt: closesAt,
+            bodyHash: state.frozenHash,
+          },
+          select: { id: true },
+        }),
+      );
+      if (!deemed) continue;
       deemedAny = true;
       await recordEvent(tx, {
         resolutionId,
@@ -307,20 +313,25 @@ export async function evaluateAndTransition(
   }
 
   // 4. Record each requirement the first time it is satisfied (write-once).
+  const forUnitsWritten = new Set<string>();
   for (const [i, row] of state.requirements.entries()) {
     const result = evaluation.results[i];
     if (!result) throw new Error("Evaluation does not match requirements");
     if (result.state !== "PASSED" || row.satisfiedAt !== null) continue;
-    const { count } = await tx.resolutionRequirement.updateMany({
-      where: { id: row.id, resolutionId, satisfiedAt: null },
-      data: {
-        satisfiedAt: now,
-        ...(row.kind === "UNIT_VOTE" && result.tally
-          ? { forUnitsAtClose: result.tally.for }
-          : {}),
-      },
-    });
-    if (count !== 1) continue;
+    const satisfied = await guardedWrite(() =>
+      tx.resolutionRequirement.update({
+        where: { id: row.id, resolutionId, satisfiedAt: null },
+        data: {
+          satisfiedAt: now,
+          ...(row.kind === "UNIT_VOTE" && result.tally
+            ? { forUnitsAtClose: result.tally.for }
+            : {}),
+        },
+        select: { id: true },
+      }),
+    );
+    if (!satisfied) continue;
+    if (row.kind === "UNIT_VOTE" && result.tally) forUnitsWritten.add(row.id);
     await recordEvent(tx, {
       resolutionId,
       companyId,
@@ -358,31 +369,39 @@ export async function evaluateAndTransition(
   }
 
   // 6. Transition (guarded: only from SENT).
-  const { count } = await tx.resolution.updateMany({
-    where: { id: resolutionId, status: "SENT" },
-    data:
-      to === "EFFECTIVE"
-        ? {
-            status: "EFFECTIVE",
-            effectiveAt: now,
-            ...(copyDueOn !== null
-              ? { copyDueOn: ymdToUtcDate(copyDueOn) }
-              : {}),
-          }
-        : { status: to, closedAt: now },
-  });
-  if (count !== 1) {
+  const moved = await guardedWrite(() =>
+    tx.resolution.update({
+      where: { id: resolutionId, status: "SENT" },
+      data:
+        to === "EFFECTIVE"
+          ? {
+              status: "EFFECTIVE",
+              effectiveAt: now,
+              ...(copyDueOn !== null
+                ? { copyDueOn: ymdToUtcDate(copyDueOn) }
+                : {}),
+            }
+          : { status: to, closedAt: now },
+      select: { id: true },
+    }),
+  );
+  if (!moved) {
     throw new Error(`Resolution ${resolutionId} left SENT concurrently`);
   }
 
   for (const [i, row] of state.requirements.entries()) {
     if (row.kind !== "UNIT_VOTE") continue;
     const tally = evaluation.results[i]?.tally;
-    if (!tally) continue;
-    await tx.resolutionRequirement.updateMany({
-      where: { id: row.id, resolutionId, forUnitsAtClose: null },
-      data: { forUnitsAtClose: tally.for },
-    });
+    if (!tally || row.forUnitsAtClose !== null || forUnitsWritten.has(row.id)) {
+      continue;
+    }
+    await guardedWrite(() =>
+      tx.resolutionRequirement.update({
+        where: { id: row.id, resolutionId, forUnitsAtClose: null },
+        data: { forUnitsAtClose: tally.for },
+        select: { id: true },
+      }),
+    );
   }
 
   await recordEvent(tx, {

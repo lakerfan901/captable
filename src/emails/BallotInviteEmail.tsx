@@ -147,4 +147,62 @@ BallotInviteEmail.PreviewProps = {
   link: "https://captable.inc/ballots/...",
 } as BallotInviteEmailProps;
 
+// Security notice (03-governance.md G8, H1): the ballot link of a Member was
+// re-issued to a different email address. Sent to the previous address and
+// to the Member's notice email on file. Deliberately carries NO link.
+
+export interface BallotAddressChangedEmailProps {
+  companyName: string;
+  recipientName: string | null | undefined;
+  title: string;
+  referenceCode: string;
+}
+
+export function ballotAddressChangedSubject(input: {
+  title: string;
+  companyName: string;
+}): string {
+  return `Your ballot link was re-issued: ${input.title} — ${input.companyName}`;
+}
+
+export const BallotAddressChangedEmail = ({
+  companyName,
+  recipientName,
+  title,
+  referenceCode,
+}: BallotAddressChangedEmailProps) => {
+  const firstName = recipientName?.trim().split(/\s+/)[0] || "there";
+  return (
+    <Html>
+      <Head />
+      <Preview>{`Your ballot link for ${title} was re-issued`}</Preview>
+      <Tailwind>
+        <Body className="mx-auto my-auto bg-white font-sans">
+          <Container className="mx-auto my-[40px] max-w-[465px] border-separate rounded border border-solid border-neutral-200 p-[20px]">
+            <Heading className="mx-0 my-[30px] p-0 text-center text-[24px] font-normal text-black">
+              {companyName} - <strong>Ballot link re-issued</strong>
+            </Heading>
+            <Text className="text-[14px] leading-[24px] text-black">
+              Hello {firstName},
+            </Text>
+            <Text className="text-[14px] leading-[24px] text-black">
+              The ballot link for <strong>{title}</strong> ({referenceCode}) was
+              re-issued to a different email address. Your previous link no
+              longer works.
+            </Text>
+            <Text className="text-[14px] leading-[24px] text-black">
+              If you did not ask for this, contact the Manager of {companyName}{" "}
+              before the response deadline.
+            </Text>
+            <Hr className="mx-0 my-[26px] w-full border border-solid border-neutral-200" />
+            <Text className="text-xs text-gray-400!">
+              {noticeFooter(companyName)}
+            </Text>
+          </Container>
+        </Body>
+      </Tailwind>
+    </Html>
+  );
+};
+
 export default BallotInviteEmail;

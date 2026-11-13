@@ -9,7 +9,6 @@ import { RichDocView } from "@/components/governance/rich-doc-view";
 import { SharePageLayout } from "@/components/share/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatDateOnly } from "@/lib/date-only";
-import { GOVERNANCE_TIME_ZONE } from "@/lib/governance/dates";
 import type { RichDoc } from "@/lib/governance/rich-doc";
 import { api } from "@/trpc/server";
 
@@ -18,7 +17,9 @@ import { api } from "@/trpc/server";
 // credential. It is passed to `ballot.view` (server side, read-only) and to
 // the client `BallotForm`, which makes the evidence-bearing calls from the
 // browser. It is never logged or rendered. `no-referrer` keeps it out of the
-// Referer of every request this page makes (logo, links, the PDF).
+// Referer of every request this page makes (logo, links, the PDF). Every
+// public ballot procedure is a mutation, so the token is never put in a URL
+// by a tRPC call. Dates are shown in the company's time zone (from `view`).
 
 export const metadata: Metadata = {
   title: "Member consent",
@@ -29,21 +30,21 @@ export const metadata: Metadata = {
 type View = Awaited<ReturnType<typeof api.ballot.view>>;
 type OkView = Exclude<View, { state: "REPLACED" }>;
 
-function formatInstant(at: Date | string | null): string {
+function formatInstant(at: Date | string | null, timeZone: string): string {
   if (at === null) return "—";
   const d = typeof at === "string" ? new Date(at) : at;
   const text = new Intl.DateTimeFormat("en-US", {
-    timeZone: GOVERNANCE_TIME_ZONE,
+    timeZone,
     dateStyle: "long",
     timeStyle: "short",
   }).format(d);
   const zone =
     new Intl.DateTimeFormat("en-US", {
-      timeZone: GOVERNANCE_TIME_ZONE,
+      timeZone,
       timeZoneName: "short",
     })
       .formatToParts(d)
-      .find((p) => p.type === "timeZoneName")?.value ?? GOVERNANCE_TIME_ZONE;
+      .find((p) => p.type === "timeZoneName")?.value ?? timeZone;
   return `${text} ${zone}`;
 }
 
@@ -80,7 +81,7 @@ function Facts({ view }: { view: OkView }) {
         <div>
           <dt className="inline text-muted-foreground">Respond by </dt>
           <dd className="inline font-medium">
-            {formatInstant(resolution.closesAt)}
+            {formatInstant(resolution.closesAt, view.timeZone)}
           </dd>
         </div>
       ) : null}
@@ -132,7 +133,8 @@ function OwnResponse({ view }: { view: OkView }) {
   }
   return (
     <p>
-      Your response was recorded on {formatInstant(ballot.submittedAt)}:{" "}
+      Your response was recorded on{" "}
+      {formatInstant(ballot.submittedAt, view.timeZone)}:{" "}
       <span className="font-semibold">
         {CHOICE_TEXT[ballot.choice] ?? ballot.choice}
       </span>
@@ -149,13 +151,12 @@ function ClosedBanner({
   token: string;
 }): ReactNode {
   const r = view.resolution;
+  const at = (d: Date | string | null) => formatInstant(d, view.timeZone);
   switch (r.status) {
     case "EFFECTIVE":
       return (
         <Alert className="border-green-300 bg-green-50">
-          <AlertTitle>
-            Approved. Effective {formatInstant(r.effectiveAt)}.
-          </AlertTitle>
+          <AlertTitle>Approved. Effective {at(r.effectiveAt)}.</AlertTitle>
           {r.hasExecutedPdf ? (
             <AlertDescription className="mt-3">
               <ExecutedConsentButton token={token} />
@@ -169,7 +170,7 @@ function ClosedBanner({
           <AlertTitle>Not approved.</AlertTitle>
           {r.closedAt ? (
             <AlertDescription>
-              Voting closed on {formatInstant(r.closedAt)}.
+              Voting closed on {at(r.closedAt)}.
             </AlertDescription>
           ) : null}
         </Alert>
@@ -178,16 +179,14 @@ function ClosedBanner({
       return (
         <Alert variant="destructive">
           <AlertTitle>
-            Closed on {formatInstant(r.closedAt)} without the required approval.
+            Closed on {at(r.closedAt)} without the required approval.
           </AlertTitle>
         </Alert>
       );
     case "WITHDRAWN":
       return (
         <Alert>
-          <AlertTitle>
-            Withdrawn by the Manager on {formatInstant(r.closedAt)}.
-          </AlertTitle>
+          <AlertTitle>Withdrawn by the Manager on {at(r.closedAt)}.</AlertTitle>
           {r.withdrawnReason ? (
             <AlertDescription>Reason: {r.withdrawnReason}</AlertDescription>
           ) : null}
@@ -257,6 +256,15 @@ export default async function BallotPage(props: {
         {consentOnly && data.state === "OPEN" ? (
           <p className="text-sm">
             Your consent is requested as an affected Member (Section 12.1(b)).
+          </p>
+        ) : null}
+
+        {resolution.hasDisinterestedRequirement &&
+        ballot.countsPreferred &&
+        !ballot.countsDisinterested ? (
+          <p className="text-sm">
+            Your units are not counted toward the Disinterested vote (Section
+            1.18).
           </p>
         ) : null}
 

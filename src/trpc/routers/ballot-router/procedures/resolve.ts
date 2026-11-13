@@ -41,6 +41,7 @@ const ballotSelect = {
   tokenExpiresAt: true,
   tokenRevokedAt: true,
   firstViewedAt: true,
+  viewCount: true,
   choice: true,
   deemed: true,
   signedName: true,

@@ -1,6 +1,10 @@
 import { type NextRequest, NextResponse, userAgent } from "next/server";
 import { logger } from "@/lib/logger";
+import { loggablePath } from "@/lib/token-redaction";
 import { env } from "./env";
+
+// The token rule lives in lib/token-redaction (shared with the Sentry hooks).
+export { loggablePath };
 
 const log = logger.child({ module: "proxy" });
 
@@ -8,13 +12,6 @@ const log = logger.child({ module: "proxy" });
 // token in the path or in the tRPC query string. A token is a credential, so
 // the access log records the path with token-shaped segments redacted and
 // never the query string.
-const TOKEN_SEGMENT = /^[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}$/;
-export function loggablePath(pathname: string): string {
-  return pathname
-    .split("/")
-    .map((segment) => (TOKEN_SEGMENT.test(segment) ? "[token]" : segment))
-    .join("/");
-}
 // This function can be marked `async` if using `await` inside
 export function proxy(request: NextRequest) {
   if (env.LOGS || env.NODE_ENV === "production" || env.NODE_ENV === "staging") {

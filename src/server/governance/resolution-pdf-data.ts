@@ -42,6 +42,7 @@ const APPROVAL_ROLE = {
   COMMON_MEMBER_APPROVAL: "Common Member",
 } as const;
 
+// The frozen title is what the PDF prints (never the live column).
 const FrozenContentSchema = z.object({
   title: z.string().optional(),
   doc: RichDocSchema,
@@ -131,6 +132,25 @@ export async function buildResolutionPdfData(
       signedAt: formatDateTime(b.submittedAt, zone),
     }));
 
+  // H1: ballots whose email was changed after send (the frozen register
+  // entry holds the address the ballot was sent to at first).
+  const entryEmail = new Map(
+    (resolution.snapshot?.entries ?? []).map((e) => [
+      e.stakeholderId,
+      e.email.trim(),
+    ]),
+  );
+  const emailChanges = ballots
+    .filter((b) => {
+      const original = entryEmail.get(b.stakeholderId);
+      return original !== undefined && original !== b.email;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    .map(
+      (b) =>
+        `Ballot email changed after send: the ballot link of ${b.name} was re-issued to a different email address after the resolution was sent.`,
+    );
+
   const deemedIds = new Set(
     ballots
       .filter((b) => b.deemed && b.choice === "AGAINST")
@@ -183,6 +203,7 @@ export async function buildResolutionPdfData(
     approvals,
     hasBallots: preset.hasBallots ? "yes" : "no",
     memberSignatures,
+    emailChanges,
     tallies,
   };
 }

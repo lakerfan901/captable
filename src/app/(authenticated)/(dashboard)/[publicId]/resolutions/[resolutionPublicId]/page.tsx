@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ResolutionDetail } from "@/components/governance/resolution-detail";
 import { ResolutionDraftEditor } from "@/components/governance/resolution-draft-editor";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
+import { GOVERNANCE_TIME_ZONE } from "@/lib/governance/dates";
 import type { ResolutionType } from "@/lib/governance/presets";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { withServerComponentSession } from "@/server/auth";
@@ -69,6 +70,7 @@ export default async function ResolutionPage({
         canDelete={canDelete}
         mailCatcher={mailCatcher}
         defaultSignerName={session.user.name ?? ""}
+        timeZone={entity.timezone || GOVERNANCE_TIME_ZONE}
       />
     );
   }

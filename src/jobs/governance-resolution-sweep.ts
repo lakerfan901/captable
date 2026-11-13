@@ -21,11 +21,17 @@ import { emitResolutionFinalize } from "./governance-resolution-finalize";
 //    resolution already closed (by a read or a previous run) is a no-op.
 // 2. Automatic reminders 7 and 2 days before the deadline. Each is keyed
 //    "auto-7" / "auto-2"; the email job's dedupe event makes it once only.
+// 3. Re-emits finalize for every closed resolution (EFFECTIVE, FAILED,
+//    EXPIRED, WITHDRAWN) whose `resultNotifiedAt` is still null more than
+//    FINALIZE_GRACE_MS after it closed (H2): the emit after the closing
+//    transaction may have failed, or the finalize job may have failed for
+//    good. Finalize is idempotent (row lock, claimed emails).
 // Closing does not depend on this job alone: reads close overdue resolutions
 // too (A7).
 
 const JOB_NAME = "governance.resolution-sweep";
 const AUTO_REMINDER_DAYS = [7, 2] as const;
+const FINALIZE_GRACE_MS = 3 * 60 * 1000;
 
 const log = logger.child({ module: "governance-resolution-sweep" });
 
@@ -55,10 +61,47 @@ async function closeOverdueResolutions(now: Date): Promise<number> {
           }),
         { maxWait: 10_000, timeout: 30_000 },
       );
-      if (transition) await emitResolutionFinalize(transition.resolutionId);
+      if (transition) {
+        // Committed: a failed emit is retried by step 3, not by re-closing.
+        await emitResolutionFinalize(transition.resolutionId).catch((err) =>
+          log.error(
+            { err, resolutionId: transition.resolutionId },
+            "Failed to emit finalize; step 3 re-emits it",
+          ),
+        );
+      }
     } catch (err) {
       failures++;
       log.error({ err, resolutionId: id }, "Failed to close resolution");
+    }
+  }
+  return failures;
+}
+
+/** H2: finalize every closed resolution that was never fully finalized. */
+async function reEmitMissedFinalize(now: Date): Promise<number> {
+  const before = new Date(now.getTime() - FINALIZE_GRACE_MS);
+  const missed = await db.resolution.findMany({
+    where: {
+      resultNotifiedAt: null,
+      OR: [
+        // EFFECTIVE sets effectiveAt only (closedAt stays null).
+        { status: "EFFECTIVE", effectiveAt: { lt: before } },
+        {
+          status: { in: ["FAILED", "EXPIRED", "WITHDRAWN"] },
+          closedAt: { lt: before },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  let failures = 0;
+  for (const { id } of missed) {
+    try {
+      await emitResolutionFinalize(id);
+    } catch (err) {
+      failures++;
+      log.error({ err, resolutionId: id }, "Failed to re-emit finalize");
     }
   }
   return failures;
@@ -108,8 +151,12 @@ export const resolutionSweepWorker = defineWorker(config, async () => {
   const now = new Date();
   const failures = await closeOverdueResolutions(now);
   await emitAutoReminders(now);
-  if (failures > 0) {
-    // Retried by pg-boss; already-closed resolutions are skipped.
-    throw new Error(`${failures} overdue resolution(s) could not be closed`);
+  const missed = await reEmitMissedFinalize(now);
+  if (failures + missed > 0) {
+    // Retried by pg-boss; already-closed resolutions are skipped, and a
+    // finalize that could not be emitted is picked up by step 3 again.
+    throw new Error(
+      `${failures} overdue resolution(s) could not be closed; ${missed} finalize job(s) could not be emitted`,
+    );
   }
 });

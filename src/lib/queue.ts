@@ -3,6 +3,7 @@ import {
   type JobInsert,
   PgBoss,
   type Queue,
+  type QueuePolicy,
   type SendOptions,
   type WorkHandler,
 } from "pg-boss";
@@ -57,6 +58,37 @@ interface WorkerFactory {
   name: JobType;
   // biome-ignore lint/suspicious/noExplicitAny: handler payload type varies per queue
   handler: WorkHandler<any>;
+  /** pg-boss queue policy; unset keeps pg-boss's default (`standard`). */
+  policy?: QueuePolicy;
+}
+
+/**
+ * Creates the queue with its policy, or reports a mismatch. pg-boss applies a
+ * policy only at creation (`updateQueue` refuses a `policy` and `createQueue`
+ * is a no-op for an existing queue), and deleting a queue deletes its jobs, so
+ * an existing queue with another policy is left as it is and logged: an
+ * operator can delete it while it is empty and restart to apply the policy.
+ * Queues without a policy are created exactly as before.
+ */
+async function ensureQueue(name: string, policy: QueuePolicy | undefined) {
+  if (policy === undefined) {
+    await queue.createQueue(name, QUEUE_OPTIONS);
+    return;
+  }
+  const existing = await queue.getQueue(name);
+  if (existing === null) {
+    await queue.createQueue(name, { ...QUEUE_OPTIONS, policy });
+    return;
+  }
+  const current = existing.policy ?? "standard";
+  if (current !== policy) {
+    log.warn(
+      { queue: name, current, wanted: policy },
+      logPrefix(
+        `Queue ${name} exists with policy "${current}", not "${policy}". Delete it while it has no pending jobs and restart to apply the policy.`,
+      ),
+    );
+  }
 }
 
 interface ScheduleFactory {
@@ -82,8 +114,9 @@ function createQueue() {
       log.info(logPrefix(`Registering job:${jobName}`));
 
       // createQueue() is a no-op for an existing queue, so apply the options
-      // explicitly to keep existing queues in sync with QUEUE_OPTIONS.
-      await queue.createQueue(jobName, QUEUE_OPTIONS);
+      // explicitly to keep existing queues in sync with QUEUE_OPTIONS (the
+      // policy cannot be updated; see ensureQueue).
+      await ensureQueue(jobName, job.policy);
       await queue.updateQueue(jobName, QUEUE_OPTIONS);
       await queue.work(jobName, job.handler);
     }
@@ -123,6 +156,7 @@ function defineWorker<
 >(config: U, handler: (data: Job<z.infer<T>>) => Promise<V>) {
   return {
     name: config.name,
+    policy: config.policy,
     handler: ([job]: Job<z.infer<T>>[]) => {
       if (!job) {
         throw new Error("");
@@ -154,6 +188,15 @@ function defineJob<U extends ReturnType<typeof defineWorkerConfig>>(config: U) {
 interface defineWorkerConfigOptions<T> {
   schema: T;
   name: JobType;
+  /**
+   * pg-boss queue policy, applied when the queue is created. `singletonKey`
+   * only de-duplicates under a policy other than `standard`: `stately`
+   * allows one job per key in each of created / retry / active, so a
+   * duplicate emit while one is waiting is dropped. No policy de-duplicates
+   * after a job completed: a job that must have an effect at most once still
+   * claims its own dedupe key (see the governance email jobs).
+   */
+  policy?: QueuePolicy;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: schema generic is erased for heterogeneous worker configs

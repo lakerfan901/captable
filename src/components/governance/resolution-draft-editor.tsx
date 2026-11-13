@@ -67,6 +67,8 @@ export interface ResolutionDraftEditorProps {
   canDelete: boolean;
   mailCatcher: boolean;
   defaultSignerName: string;
+  /** Company time zone (record date and deadline are measured in it). */
+  timeZone: string;
 }
 
 export function ResolutionDraftEditor({
@@ -82,6 +84,7 @@ export function ResolutionDraftEditor({
   canDelete,
   mailCatcher,
   defaultSignerName,
+  timeZone,
 }: ResolutionDraftEditorProps) {
   const router = useRouter();
   const [title, setTitle] = useState(initialTitle);
@@ -296,6 +299,7 @@ export function ResolutionDraftEditor({
           params={params}
           mailCatcher={mailCatcher}
           defaultSignerName={defaultSignerName}
+          timeZone={timeZone}
         />
       ) : null}
     </div>
