@@ -88,7 +88,7 @@ export default async function NewTransferPage() {
         base={base}
         members={members}
         classes={classes}
-        holdings={holdings}
+        holdings={Object.keys(holdings).length > 0 ? holdings : null}
         today={todayInZone(new Date(), entity.timezone || GOVERNANCE_TIME_ZONE)}
       />
     </div>

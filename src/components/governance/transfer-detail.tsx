@@ -1421,8 +1421,9 @@ export function TransferDetail({
   const kind = data.kind as TransferKind;
   const isOpen = data.status === "OPEN";
   const editable = canUpdate && isOpen;
-  // Cards remount with the server's values after every change.
-  const stamp = String(new Date(data.updatedAt).getTime());
+  // A card remounts with the server's values when its own saved fields change
+  // (unsaved edits in the other cards are kept).
+  const k = (...v: unknown[]) => JSON.stringify(v);
 
   return (
     <div className="flex flex-col gap-4">
@@ -1448,7 +1449,7 @@ export function TransferDetail({
         </div>
       </div>
 
-      {result ? (
+      {result && data.admittedOn === null ? (
         <Alert>
           <AlertTitle>Transfer recorded</AlertTitle>
           <AlertDescription>
@@ -1468,7 +1469,14 @@ export function TransferDetail({
 
       {isOpen ? (
         <TermsCard
-          key={`terms-${stamp}`}
+          key={k(
+            data.toStakeholderId,
+            data.proposedPriceCents,
+            data.terms,
+            data.bonaFideOffer,
+            data.priceEstablishedOn,
+            data.notes,
+          )}
           data={data}
           members={members}
           editable={editable}
@@ -1485,7 +1493,7 @@ export function TransferDetail({
       ) : null}
       {hasRofr(kind) ? (
         <RofrCard
-          key={`rofr-${stamp}`}
+          key={k(data.rofrOutcome, data.rofrDecidedOn, data.rofrNote)}
           data={data}
           editable={editable}
           onDirty={onDirty}
@@ -1493,7 +1501,11 @@ export function TransferDetail({
       ) : null}
       {kind === "VOLUNTARY" ? (
         <ConsentCard
-          key={`consent-${stamp}`}
+          key={k(
+            data.managerConsent,
+            data.managerConsentOn,
+            data.managerConsentNote,
+          )}
           data={data}
           editable={editable}
           onDirty={onDirty}
@@ -1501,7 +1513,7 @@ export function TransferDetail({
       ) : null}
       {kind === "VOLUNTARY" || kind === "PERMITTED_TRANSFEREE" ? (
         <SecuritiesCard
-          key={`securities-${stamp}`}
+          key={k(data.securitiesOpinion)}
           data={data}
           editable={editable}
           onDirty={onDirty}
@@ -1509,7 +1521,11 @@ export function TransferDetail({
       ) : null}
       {data.unitClassKind === "COMMON" ? (
         <CommonUnitsCard
-          key={`common-${stamp}`}
+          key={k(
+            data.requiredResolution?.publicId,
+            data.exemptUnder71,
+            data.exemptNote,
+          )}
           data={data}
           resolutions={resolutions}
           editable={editable}
@@ -1518,7 +1534,7 @@ export function TransferDetail({
       ) : null}
 
       <CompleteCard
-        key={`complete-${stamp}`}
+        key={k(data.transferNoticeOn, data.status)}
         data={data}
         editable={editable}
         anyDirty={anyDirty}
@@ -1529,7 +1545,15 @@ export function TransferDetail({
 
       {data.status !== "CANCELLED" && data.toStakeholderId ? (
         <AdmissionCard
-          key={`admission-${stamp}`}
+          key={k(
+            data.admissionSignaturePage,
+            data.admissionExpensesPaid,
+            data.admissionQualified,
+            data.admissionManagerConsent,
+            data.status,
+            data.admittedOn,
+            data.effectiveOn,
+          )}
           data={data}
           canUpdate={canUpdate}
           onDirty={onDirty}
