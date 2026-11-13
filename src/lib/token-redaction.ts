@@ -14,7 +14,7 @@ export const TOKEN_SEGMENT = /^[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}$/;
 const TOKEN_ANYWHERE = /[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}/g;
 
 /** Path prefixes whose next segment is always a credential. */
-const TOKEN_ROUTES = /\/(ballots|member-reports)\/[^/?#\s"']+/g;
+const TOKEN_ROUTES = /\/(ballots|member-reports|w9)\/[^/?#\s"']+/g;
 
 export const REDACTED_TOKEN = "[token]";
 export const REDACTED = "[Filtered]";
@@ -77,7 +77,7 @@ export function loggablePath(pathname: string): string {
 /**
  * Redacts credentials inside any string (full URL, path, transaction name,
  * span description, breadcrumb message): the query of a presigned storage
- * URL (`redactSignedUrls`), `/ballots/<x>` and `/member-reports/<x>`
+ * URL (`redactSignedUrls`), `/ballots/<x>`, `/member-reports/<x>` and `/w9/<x>`
  * segments, the values of `input` / `token` query parameters, and any
  * JWT-shaped run.
  */

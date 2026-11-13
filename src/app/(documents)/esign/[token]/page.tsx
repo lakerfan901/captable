@@ -1,3 +1,5 @@
+import { RiErrorWarningLine } from "@remixicon/react";
+import { TRPCError } from "@trpc/server";
 import type { Metadata } from "next";
 import EmptyState from "@/components/common/empty-state";
 import { PdfCanvas } from "@/components/template/pdf-canvas";
@@ -16,8 +18,45 @@ interface SigningPageProps {
   }>;
 }
 
+/**
+ * A link that cannot be opened for signing: a purpose token (W-9, ballot,
+ * report: FORBIDDEN), a malformed, tampered or expired token (jose), a token
+ * without the signing claims (zod), or no recipient still waiting to sign
+ * (Prisma "not found"). Anything else is a real failure and is rethrown.
+ */
+function isInvalidLink(error: unknown): boolean {
+  if (!(error instanceof TRPCError)) return false;
+  if (error.code === "FORBIDDEN" || error.code === "NOT_FOUND") return true;
+  const cause = error.cause as { code?: unknown; name?: unknown } | undefined;
+  if (cause?.name === "ZodError") return true;
+  return (
+    typeof cause?.code === "string" &&
+    (cause.code.startsWith("ERR_J") || cause.code === "P2025")
+  );
+}
+
 export default async function SigningPage(props: SigningPageProps) {
   const { token } = await props.params;
+
+  const data = await api.template
+    .getSigningFields({ token })
+    .catch((error: unknown) => {
+      if (isInvalidLink(error)) return null;
+      throw error;
+    });
+
+  if (!data) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-5">
+        <EmptyState
+          icon={<RiErrorWarningLine />}
+          title="Link not valid"
+          subtitle="This link is invalid or has expired."
+          error={true}
+        />
+      </div>
+    );
+  }
 
   const {
     fields,
@@ -26,9 +65,7 @@ export default async function SigningPage(props: SigningPageProps) {
     templateId,
     signableFields,
     status: templateStatus,
-  } = await api.template.getSigningFields({
-    token,
-  });
+  } = data;
 
   const session = await getServerComponentAuthSession();
   const companyPublicId = session?.user.companyPublicId;

@@ -60,6 +60,10 @@ const nextConfig = {
         source: "/member-reports/:path*",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
+      {
+        source: "/w9/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ]);
   },
   output: process.env.DOCKER_OUTPUT ? "standalone" : undefined,

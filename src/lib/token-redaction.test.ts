@@ -31,6 +31,9 @@ describe("redactTokens", () => {
     ],
     ["/ballots/short-or-odd-token", "/ballots/[token]"],
     ["/member-reports/abc.def?x=1", "/member-reports/[token]?x=1"],
+    [`https://app.example/w9/${JWT}`, "https://app.example/w9/[token]"],
+    ["/w9/short-or-odd-token?x=1", "/w9/[token]?x=1"],
+    ["acme/w9-docs-pkt-abc.pdf", "acme/w9-docs-pkt-abc.pdf"],
     [`GET /ballots/${JWT}`, "GET /ballots/[token]"],
     [
       `/api/trpc/ballot.view?input=${encodeURIComponent(JSON.stringify({ json: { token: JWT } }))}`,
