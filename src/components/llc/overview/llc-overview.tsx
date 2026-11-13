@@ -157,6 +157,9 @@ export async function LlcOverview({ publicId }: Props) {
 
               <StatCard title="Members" value={overview.memberCount}>
                 <span>
+                  {overview.committedCount} committed, not yet admitted
+                </span>
+                <span>
                   {overview.prospectCount}{" "}
                   {overview.prospectCount === 1 ? "prospect" : "prospects"}
                 </span>

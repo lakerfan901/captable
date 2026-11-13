@@ -49,5 +49,17 @@ export const getMemberProcedure = withLlcAccessControl
     if (!stakeholder) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Member not found." });
     }
-    return toMemberDTO(stakeholder);
+    // A prospect with an open subscription is shown as "Committed".
+    const pending = await db.commitment.findFirst({
+      where: {
+        companyId: membership.companyId,
+        stakeholderId: stakeholder.id,
+        status: "PENDING",
+      },
+      select: { id: true },
+    });
+    return {
+      ...toMemberDTO(stakeholder),
+      hasPendingCommitment: pending !== null,
+    };
   });

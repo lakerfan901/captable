@@ -66,7 +66,12 @@ const columns: ColumnDef<DataTableFeatures, Row>[] = [
   {
     id: "status",
     header: "Status",
-    cell: ({ row }) => <MemberStatusBadge status={row.original.memberStatus} />,
+    cell: ({ row }) => (
+      <MemberStatusBadge
+        status={row.original.memberStatus}
+        committed={row.original.hasPendingCommitment}
+      />
+    ),
   },
   {
     id: "admitted",

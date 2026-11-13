@@ -56,11 +56,21 @@ const STATUS_VARIANTS = {
   FINANCIAL_INTEREST_ONLY: "info",
 } as const;
 
+/**
+ * `committed`: the holder has a subscription the Manager has not yet accepted.
+ * Such a prospect has signed but is not admitted until the Initial Installment
+ * is received and the subscription is accepted, so it is shown as "Committed".
+ */
 export function MemberStatusBadge({
   status,
+  committed = false,
 }: {
   status: MemberDTO["memberStatus"];
+  committed?: boolean;
 }) {
+  if (status === "PROSPECT" && committed) {
+    return <Badge variant="info">Committed</Badge>;
+  }
   return (
     <Badge variant={STATUS_VARIANTS[status]}>
       {MEMBER_STATUS_LABELS[status]}

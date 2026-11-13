@@ -14,11 +14,20 @@ export const getStakeholdersProcedure = withAccessControl
             name: true,
           },
         },
+        // A prospect with an open subscription is shown as "Committed".
+        commitments: {
+          where: { status: "PENDING" },
+          select: { id: true },
+          take: 1,
+        },
       },
       orderBy: {
         createdAt: "desc",
       },
     });
 
-    return data;
+    return data.map(({ commitments, ...stakeholder }) => ({
+      ...stakeholder,
+      hasPendingCommitment: commitments.length > 0,
+    }));
   });

@@ -16,7 +16,10 @@ export type MemberScheduleOverview = {
   paidCents: number;
   outstandingBalanceCents: number;
   memberCount: number;
+  /** Prospects with no open subscription. */
   prospectCount: number;
+  /** Prospects whose subscription is signed but not yet accepted. */
+  committedCount: number;
   preferredUnits: string;
 };
 
@@ -39,7 +42,7 @@ export const memberScheduleRouter = createTRPCRouter({
     .meta({ policies: { stakeholder: { allow: ["read"] } } })
     .query(async ({ ctx }): Promise<MemberScheduleOverview> => {
       const companyId = ctx.membership.companyId;
-      const [schedule, preferredClass, memberCount, prospectCount] =
+      const [schedule, preferredClass, memberCount, prospects, committedCount] =
         await Promise.all([
           loadMemberSchedule(ctx.db, ctx.company),
           ctx.db.unitClass.findFirst({
@@ -52,6 +55,13 @@ export const memberScheduleRouter = createTRPCRouter({
           ctx.db.stakeholder.count({
             where: { companyId, memberStatus: "PROSPECT" },
           }),
+          ctx.db.stakeholder.count({
+            where: {
+              companyId,
+              memberStatus: "PROSPECT",
+              commitments: { some: { status: "PENDING" } },
+            },
+          }),
         ]);
       const totals = preferredClass
         ? await getClassTotals(ctx.db, companyId, preferredClass.id)
@@ -63,7 +73,8 @@ export const memberScheduleRouter = createTRPCRouter({
           ? centsToNumber(totals.outstandingBalanceCents)
           : 0,
         memberCount,
-        prospectCount,
+        prospectCount: prospects - committedCount,
+        committedCount,
         preferredUnits: totals ? totals.units : "0.000000",
       };
     }),

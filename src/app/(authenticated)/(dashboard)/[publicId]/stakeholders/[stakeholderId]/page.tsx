@@ -66,7 +66,10 @@ export default async function MemberPage(props: {
         <div className="flex flex-col gap-y-1">
           <h3 className="font-medium">{member.name}</h3>
           <div className="flex items-center gap-2">
-            <MemberStatusBadge status={member.memberStatus} />
+            <MemberStatusBadge
+              status={member.memberStatus}
+              committed={member.hasPendingCommitment}
+            />
             {member.isInsider && <InsiderBadge />}
           </div>
         </div>
