@@ -5,6 +5,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { dayjsExt } from "@/common/dayjs";
 import { TAG } from "@/lib/tags";
 import { AuditLogTemplate } from "@/pdf-templates/audit-log-template";
+import { Audit } from "@/server/audit";
 import {
   getFileFromS3,
   type TUploadFile,
@@ -316,6 +317,37 @@ export async function completeEsignDocuments({
     companyId: template.companyId,
     uploaderName,
   });
+
+  // F13: a countersigned Exhibit B is filed on the member, in the same
+  // transaction (and so as idempotent as the rest of this function). A
+  // stakeholder outside the company is skipped, not thrown on: a throw would
+  // make the job retry forever and the packet would never complete.
+  if (template.workflow === "SUBSCRIPTION" && template.stakeholderId) {
+    const stakeholder = await db.stakeholder.findFirst({
+      where: { id: template.stakeholderId, companyId: template.companyId },
+      select: { id: true, name: true },
+    });
+    if (stakeholder) {
+      await db.document.update({
+        where: { id: document.id, companyId: template.companyId },
+        data: { stakeholderId: stakeholder.id, kind: "exhibit-b" },
+      });
+      await Audit.create(
+        {
+          action: "document.attached",
+          companyId: template.companyId,
+          actor: { type: "company", id: template.companyId },
+          context: { requestIp, userAgent },
+          target: [
+            { type: "document", id: document.id },
+            { type: "stakeholder", id: stakeholder.id },
+          ],
+          summary: `The signed Exhibit B "${document.name}" was filed on ${stakeholder.name}.`,
+        },
+        db,
+      );
+    }
+  }
 
   await db.template.update({
     where: { id: template.id },
