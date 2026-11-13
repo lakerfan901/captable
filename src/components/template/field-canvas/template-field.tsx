@@ -17,8 +17,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { COLORS } from "@/constants/esign";
+import {
+  canonicalOptionsFor,
+  getSubscriptionFieldKey,
+  SUBSCRIPTION_FIELD_KEYS,
+} from "@/lib/esign/subscription-fields";
 import { cn } from "@/lib/utils";
-import type { TemplateFieldForm } from "@/providers/template-field-provider";
+import {
+  type TemplateFieldForm,
+  useTemplateEditor,
+} from "@/providers/template-field-provider";
 import type { RouterOutputs } from "@/trpc/shared";
 import { FieldTypeData } from "../field-type-data";
 import { CustomFieldRenderer } from "./custom-field-renderer";
@@ -54,6 +62,7 @@ export function TemplateField({
   recipients,
 }: TemplateFieldProps) {
   const { control, getValues } = useFormContext<TemplateFieldForm>();
+  const { isMaster } = useTemplateEditor();
   const recipientId = useWatch({
     control: control,
     name: `fields.${index}.recipientId`,
@@ -92,7 +101,7 @@ export function TemplateField({
           render={({ field }) => (
             <FormItem>
               <FormLabel className="sr-only">Field type</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <Select onValueChange={field.onChange} value={field.value}>
                 <FormControl>
                   <SelectTrigger className="trigger group h-8">
                     <SelectValue />
@@ -135,6 +144,13 @@ export function TemplateField({
       </div>
 
       <RecipientSelect recipients={recipients} index={index} />
+
+      {isMaster && (
+        <MeaningSelect
+          index={index}
+          role={recipients.find((r) => r.id === recipientId)?.role ?? null}
+        />
+      )}
 
       <CustomFieldRenderer index={index} />
     </TemplateFieldContainer>
@@ -188,6 +204,72 @@ function RecipientSelect({ index, recipients }: RecipientSelectProps) {
                       </span>
                     </span>
                   </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** Radix `SelectItem` rejects an empty value, so "None" uses a sentinel. */
+const NO_MEANING = "__none__";
+
+interface MeaningSelectProps {
+  index: number;
+  role: string | null;
+}
+
+/**
+ * What a master field means (A3.14): the subscription keys of the field's
+ * recipient role. Choosing one sets the field's type, name and required flag
+ * (and the canonical options of a SELECT key) from the key definition.
+ */
+function MeaningSelect({ index, role }: MeaningSelectProps) {
+  const { control, setValue } = useFormContext<TemplateFieldForm>();
+  const keys = SUBSCRIPTION_FIELD_KEYS.filter((key) => key.role === role);
+
+  return (
+    <FormField
+      control={control}
+      name={`fields.${index}.semanticKey`}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Meaning</FormLabel>
+          <Select
+            value={field.value ?? NO_MEANING}
+            onValueChange={(value) => {
+              if (value === NO_MEANING) {
+                field.onChange(null);
+                return;
+              }
+              const def = getSubscriptionFieldKey(value);
+              field.onChange(value);
+              if (!def) return;
+              setValue(`fields.${index}.type`, def.type);
+              setValue(`fields.${index}.name`, def.label);
+              setValue(`fields.${index}.required`, def.required);
+              const [first, ...rest] = canonicalOptionsFor(value) ?? [];
+              if (first) {
+                setValue(`fields.${index}.meta`, {
+                  options: [first, ...rest],
+                });
+              }
+            }}
+          >
+            <FormControl>
+              <SelectTrigger className="h-auto px-2 py-1">
+                <SelectValue />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              <SelectItem value={NO_MEANING}>None</SelectItem>
+              {keys.map((key) => (
+                <SelectItem key={key.key} value={key.key}>
+                  {key.label}
                 </SelectItem>
               ))}
             </SelectContent>

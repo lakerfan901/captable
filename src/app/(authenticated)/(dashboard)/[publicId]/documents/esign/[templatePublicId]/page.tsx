@@ -15,13 +15,18 @@ const EsignTemplateDetailPage = async (props: {
 
   const session = await withServerComponentSession();
 
-  const { name, status, url, fields, recipients } = await api.template.get({
-    publicId: templatePublicId,
-    isDraftOnly: true,
-  });
+  const { name, status, url, fields, recipients, isMaster } =
+    await api.template.get({
+      publicId: templatePublicId,
+      isDraftOnly: true,
+    });
 
   return (
-    <TemplateFieldProvider recipients={recipients} fields={fields}>
+    <TemplateFieldProvider
+      recipients={recipients}
+      fields={fields}
+      isMaster={isMaster}
+    >
       <TemplateFieldForm
         companyPublicId={session.user.companyPublicId}
         templatePublicId={templatePublicId}

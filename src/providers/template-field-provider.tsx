@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Form } from "@/components/ui/form";
@@ -16,7 +16,20 @@ interface TemplateFieldProviderProps {
   children: ReactNode;
   fields?: Field[];
   recipients: recipients[];
+  /** A subscription master: fields get a "Meaning" and it is never sent. */
+  isMaster?: boolean;
 }
+
+interface TemplateEditorContextValue {
+  isMaster: boolean;
+}
+
+const TemplateEditorContext = createContext<TemplateEditorContextValue>({
+  isMaster: false,
+});
+
+/** Editor-wide facts that are not part of the submitted form. */
+export const useTemplateEditor = () => useContext(TemplateEditorContext);
 
 const formSchema = z.object({
   status: z.enum([TemplateStatus.PENDING, TemplateStatus.DRAFT]),
@@ -46,6 +59,7 @@ const formSchema = z.object({
               .optional(),
           })
           .optional(),
+        semanticKey: z.string().max(64).nullish(),
       }),
     )
     .nonempty(),
@@ -60,6 +74,7 @@ export const TemplateFieldProvider = ({
   children,
   fields,
   recipients,
+  isMaster = false,
 }: TemplateFieldProviderProps) => {
   const form = useForm<TemplateFieldForm>({
     defaultValues: {
@@ -80,5 +95,9 @@ export const TemplateFieldProvider = ({
     resolver: zodResolver(formSchema),
   });
 
-  return <Form {...form}>{children}</Form>;
+  return (
+    <TemplateEditorContext.Provider value={{ isMaster }}>
+      <Form {...form}>{children}</Form>
+    </TemplateEditorContext.Provider>
+  );
 };

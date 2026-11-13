@@ -2,7 +2,7 @@
 
 import * as Toolbar from "@radix-ui/react-toolbar";
 import { useCallback, useRef, useState } from "react";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, useWatch } from "react-hook-form";
 import { OptionalMessageModal } from "@/components/esign/optional-message-modal";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,9 +26,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { COLORS } from "@/constants/esign";
+import { missingSubscriptionKeys } from "@/lib/esign/subscription-fields";
 import { cn } from "@/lib/utils";
 import type { FieldTypes } from "@/prisma/enums";
-import type { TemplateFieldForm } from "@/providers/template-field-provider";
+import {
+  type TemplateFieldForm,
+  useTemplateEditor,
+} from "@/providers/template-field-provider";
 import type { RouterOutputs } from "@/trpc/shared";
 import { FieldTypeData } from "../field-type-data";
 
@@ -91,10 +95,32 @@ interface CanvasToolbarProps {
   recipients: Recipients;
 }
 
+/** Required subscription keys not yet placed on a field of the right role. */
+function MissingKeysLine({ recipients }: CanvasToolbarProps) {
+  const { control } = useFormContext<TemplateFieldForm>();
+  const fields = useWatch({ control, name: "fields" });
+  const roleOf = new Map(recipients.map((r) => [r.id, r.role]));
+  const missing = missingSubscriptionKeys(
+    (fields ?? []).map((field) => ({
+      semanticKey: field.semanticKey ?? null,
+      role: roleOf.get(field.recipientId) ?? null,
+    })),
+  );
+
+  return (
+    <p className="mt-1 rounded bg-white/50 px-2 py-1 text-xs text-muted-foreground backdrop-blur-lg">
+      {missing.length
+        ? `Missing: ${missing.join(", ")}`
+        : "Every required field is placed."}
+    </p>
+  );
+}
+
 export function CanvasToolbar({ recipients }: CanvasToolbarProps) {
   const [open, setOpen] = useState<boolean>(false);
   const { control, setValue } = useFormContext<TemplateFieldForm>();
   const submitRef = useRef<HTMLButtonElement>(null);
+  const { isMaster } = useTemplateEditor();
 
   const handleDraft = () => {
     if (submitRef.current) {
@@ -154,27 +180,37 @@ export function CanvasToolbar({ recipients }: CanvasToolbarProps) {
         <div className="flex items-end gap-x-2">
           <RecipientList recipients={recipients} />
 
-          <DropdownMenu>
+          {isMaster ? (
+            // A master is never sent (B22); it stays DRAFT.
             <Toolbar.Button asChild>
-              <DropdownMenuTrigger asChild>
-                <Button>Save & Continue</Button>
-              </DropdownMenuTrigger>
+              <Button type="button" onClick={handleDraft}>
+                Save master
+              </Button>
             </Toolbar.Button>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={handleDraft}>
-                Save as draft
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={openOptionalMessageModal}>
-                Send for signatures
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          ) : (
+            <DropdownMenu>
+              <Toolbar.Button asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button>Save & Continue</Button>
+                </DropdownMenuTrigger>
+              </Toolbar.Button>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={handleDraft}>
+                  Save as draft
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={openOptionalMessageModal}>
+                  Send for signatures
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           <button aria-hidden ref={submitRef} type="submit" hidden>
             submit
           </button>
         </div>
       </Toolbar.Root>
+      {isMaster && <MissingKeysLine recipients={recipients} />}
       {open && (
         <OptionalMessageModal
           callback={onSignatureRequest}
