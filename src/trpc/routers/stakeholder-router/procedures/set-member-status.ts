@@ -1,8 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { Audit } from "@/server/audit";
+import { guardedUpdate } from "@/server/guarded-write";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZSetMemberStatusInput } from "../member-schema";
 import { toMemberDTO } from "./get-member";
+
+const STATUS_CHANGE_RULE =
+  "Status can only change between Member and Financial interest only; a prospect is admitted through acceptance (Sections 1.8, 1.11, 7.9.2).";
 
 /**
  * Moves a holder between MEMBER and FINANCIAL_INTEREST_ONLY (Sections 1.8,
@@ -33,15 +37,29 @@ export const setMemberStatusProcedure = withLlcAccessControl
         ) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message:
-              "Status can only change between Member and Financial interest only; a prospect is admitted through acceptance (Sections 1.8, 1.11, 7.9.2).",
+            message: STATUS_CHANGE_RULE,
           });
         }
 
-        const updated = await tx.stakeholder.update({
-          where: { id: input.id, companyId },
-          data: { memberStatus: input.memberStatus },
-        });
+        // Guarded on the status just read: a concurrent change (another team
+        // user, or an admission) makes this one refuse instead of being
+        // recorded a second time (guarded-write.ts).
+        const updated = await guardedUpdate(() =>
+          tx.stakeholder.update({
+            where: {
+              id: input.id,
+              companyId,
+              memberStatus: existing.memberStatus,
+            },
+            data: { memberStatus: input.memberStatus },
+          }),
+        );
+        if (updated === null) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: STATUS_CHANGE_RULE,
+          });
+        }
 
         await Audit.create(
           {

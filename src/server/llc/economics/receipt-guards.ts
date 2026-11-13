@@ -3,6 +3,7 @@ import "server-only";
 import { formatDateOnly, fromDateOnly, toDateOnly } from "@/lib/date-only";
 import type { IsoDate } from "@/lib/llc/dates";
 import type { PrismaTransactionalClient } from "@/server/db";
+import { guardedUpdate } from "@/server/guarded-write";
 import { ruleViolation } from "./scope";
 
 /*
@@ -153,21 +154,44 @@ export async function beforeVoidReceipt(
     });
   }
 
+  // Re-open PAID lines and SETTLED notices. One guarded `update` per row, not
+  // `updateMany`: the call-notice writers hold the company advisory lock, not
+  // the unit-class lock held here, and `updateMany` drops its status filter
+  // from the UPDATE (guarded-write.ts). A row whose status changed meanwhile
+  // is left as it is.
   const lineIds = [...new Set(inForce.map((r) => r.callNoticeLineId))];
-  await tx.callNoticeLine.updateMany({
+  const paidLines = await tx.callNoticeLine.findMany({
     where: { companyId, id: { in: lineIds }, status: "PAID" },
-    data: { status: "SENT", paidInFullOn: null },
+    select: { id: true },
   });
+  for (const { id } of paidLines) {
+    await guardedUpdate(() =>
+      tx.callNoticeLine.update({
+        where: { id, companyId, status: "PAID" },
+        data: { status: "SENT", paidInFullOn: null },
+        select: { id: true },
+      }),
+    );
+  }
   const lines = await tx.callNoticeLine.findMany({
     where: { companyId, id: { in: lineIds } },
     select: { callNoticeId: true },
   });
-  await tx.callNotice.updateMany({
+  const settled = await tx.callNotice.findMany({
     where: {
       companyId,
       id: { in: [...new Set(lines.map((l) => l.callNoticeId))] },
       status: "SETTLED",
     },
-    data: { status: "SENT" },
+    select: { id: true },
   });
+  for (const { id } of settled) {
+    await guardedUpdate(() =>
+      tx.callNotice.update({
+        where: { id, companyId, status: "SETTLED" },
+        data: { status: "SENT" },
+        select: { id: true },
+      }),
+    );
+  }
 }

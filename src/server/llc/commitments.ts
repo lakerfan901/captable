@@ -68,6 +68,7 @@ import { formatCents } from "@/lib/money";
 import { Audit } from "@/server/audit";
 import type { AuditSchemaType } from "@/server/audit/schema";
 import type { PrismaTransactionalClient } from "@/server/db";
+import { guardedUpdate } from "@/server/guarded-write";
 import { economicsToday } from "@/server/llc/economics/clock";
 import {
   assertLedgerDateOpenForReceipt,
@@ -683,10 +684,24 @@ export async function decideCommitment(
         refundDueBy,
       },
     });
-    const cancelled = await tx.template.updateMany({
-      where: { companyId, commitmentId: commitment.id, status: "PENDING" },
-      data: { status: "CANCELLED" },
+    // Guarded single-row write: the e-sign flow changes Template.status
+    // without the class lock, so the guard has to hold on the UPDATE itself
+    // (guarded-write.ts); `updateMany` would overwrite a packet completed
+    // concurrently.
+    const packet = await tx.template.findFirst({
+      where: { commitmentId: commitment.id, companyId, status: "PENDING" },
+      select: { id: true },
     });
+    const cancelled =
+      packet === null
+        ? null
+        : await guardedUpdate(() =>
+            tx.template.update({
+              where: { id: packet.id, companyId, status: "PENDING" },
+              data: { status: "CANCELLED" },
+              select: { id: true },
+            }),
+          );
     await writeAudit(
       tx,
       actor,
@@ -700,7 +715,7 @@ export async function decideCommitment(
         held > 0n
           ? `; ${formatCents(held)} received must be returned by ${dateToWire(refundDueBy)}`
           : ""
-      }${cancelled.count > 0 ? "; the Exhibit B packet was cancelled" : ""}.`,
+      }${cancelled !== null ? "; the Exhibit B packet was cancelled" : ""}.`,
     );
     return tx.commitment.findFirstOrThrow({
       where: { id: commitment.id, companyId },

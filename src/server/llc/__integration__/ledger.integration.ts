@@ -32,6 +32,7 @@ import {
 } from "@/server/llc/commitments";
 import { ledgerInvariantErrors } from "@/server/llc/receipt-rules";
 import { createCallerFactory } from "@/trpc/api/trpc";
+import { stakeholderRouter } from "@/trpc/routers/stakeholder-router/router";
 import { unitClassRouter } from "@/trpc/routers/unit-class-router/router";
 
 type Tx = PrismaTransactionalClient;
@@ -891,10 +892,387 @@ async function g1() {
 }
 
 // ---------------------------------------------------------------------------
+// Guarded writes under concurrency (src/server/guarded-write.ts)
+//
+// Prisma's `updateMany` re-selects ids first and drops its filter from the
+// UPDATE, so a writer that blocked on the row lock overwrote the row after
+// the other transaction committed. Each race below holds a transaction that
+// changes the guarded row, starts the service call (which blocks on that
+// row), confirms the wait in pg_stat_activity, then releases.
+
+const bucketIds: string[] = [];
+
+/** Runs `fn` in a transaction that stays open until `release()` is called. */
+async function holdOpen(fn: (t: Tx) => Promise<void>) {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let ready: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const done = db.$transaction(
+    async (t) => {
+      await fn(t);
+      ready();
+      await gate;
+    },
+    { timeout: 15_000 },
+  );
+  await held;
+  return { release, done };
+}
+
+/** Statements currently waiting on a lock in this database. */
+async function lockWaits(): Promise<string[]> {
+  await new Promise((r) => setTimeout(r, 700));
+  const rows = await db.$queryRaw<{ q: string }[]>`
+    SELECT left(query, 120) AS q FROM pg_stat_activity
+    WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+  return rows.map((r) => r.q);
+}
+
+function reject(t: Tx, commitmentId: string) {
+  return decideCommitment(
+    t,
+    {
+      companyId,
+      commitmentId,
+      decision: "REJECT",
+      acceptedOn: "2026-11-05",
+      rejectionReason: "integration rejection",
+    },
+    actor,
+  );
+}
+
+async function guardedPacket() {
+  console.log("Guarded writes: rejection and the Exhibit B packet");
+  const bucket = await db.bucket.create({
+    data: {
+      name: "zz ledger packet",
+      key: `zz-ledger-${randomUUID()}`,
+      mimeType: "application/pdf",
+      size: 1,
+    },
+  });
+  bucketIds.push(bucket.id);
+  const newPacket = (commitmentId: string) =>
+    db.template.create({
+      data: {
+        publicId: `zz-ledger-${randomUUID()}`,
+        name: "Exhibit B",
+        status: "PENDING",
+        bucketId: bucket.id,
+        uploaderId: memberId,
+        companyId,
+        commitmentId,
+      },
+    });
+  const rejectionAudit = (name: string) =>
+    db.audit.findFirst({
+      where: {
+        companyId,
+        action: "commitment.rejected",
+        summary: { contains: name },
+      },
+    });
+
+  // No packet: the guarded write matches nothing (P2025) and the rest of the
+  // transaction still runs.
+  const a = await newMember("Packet None");
+  const ca = await newCommitment(a.id, 10_000_000n);
+  await tx((t) => reject(t, ca.id));
+  const auditA = await rejectionAudit("Packet None");
+  check(
+    "rejection without a packet completes and is audited",
+    (await commitmentRow(ca.id)).status === "REJECTED" &&
+      auditA !== null &&
+      !auditA.summary?.includes("packet"),
+    auditA?.summary ?? "no audit row",
+  );
+
+  // Pending packet: cancelled.
+  const b = await newMember("Packet Pending");
+  const cb = await newCommitment(b.id, 10_000_000n);
+  const pb = await newPacket(cb.id);
+  await tx((t) => reject(t, cb.id));
+  const packetB = await db.template.findFirstOrThrow({ where: { id: pb.id } });
+  const auditB = await rejectionAudit("Packet Pending");
+  check(
+    "rejection cancels a pending Exhibit B packet",
+    packetB.status === "CANCELLED" &&
+      auditB?.summary?.includes("the Exhibit B packet was cancelled") === true,
+    `${packetB.status}; ${auditB?.summary}`,
+  );
+
+  // Race: the packet completes (e-sign job, no unit class lock) while the
+  // rejection is in flight. The completed packet must stay COMPLETE.
+  const c = await newMember("Packet Race");
+  const cc = await newCommitment(c.id, 10_000_000n);
+  const pc = await newPacket(cc.id);
+  const hold = await holdOpen(async (t) => {
+    await t.template.update({
+      where: { id: pc.id },
+      data: { status: "COMPLETE", completedOn: new Date() },
+    });
+  });
+  const rejection = errorOf(() => tx((t) => reject(t, cc.id)));
+  const waits = await lockWaits();
+  check(
+    "rejection waits on the packet row",
+    waits.some((q) => q.includes('"Template"')),
+    JSON.stringify(waits),
+  );
+  hold.release();
+  await hold.done;
+  const message = await rejection;
+  const packetC = await db.template.findFirstOrThrow({ where: { id: pc.id } });
+  const auditC = await rejectionAudit("Packet Race");
+  check(
+    "a packet completed during the rejection stays COMPLETE",
+    message === null &&
+      packetC.status === "COMPLETE" &&
+      auditC !== null &&
+      !auditC.summary?.includes("packet"),
+    `${message ?? "rejected"}; packet ${packetC.status}; ${auditC?.summary}`,
+  );
+  await assertInvariant("packet races");
+}
+
+async function guardedVoidReopen() {
+  console.log("Guarded writes: voiding a receipt re-opens its Call Notice");
+  let noticeNumber = 9_000;
+  /** Accepted commitment with one Balance receipt allocated in full to a
+   *  PAID line of a SETTLED notice. */
+  async function fixture(name: string) {
+    const m = await newMember(name);
+    const c = await newCommitment(m.id, 10_000_000n);
+    await receive(c.id, "2026-11-03", 4_000_000n);
+    await accept(c.id, "2026-11-04");
+    const receipt = await receive(c.id, "2026-11-06", 1_000_000n);
+    noticeNumber += 1;
+    const notice = await db.callNotice.create({
+      data: {
+        companyId,
+        number: noticeNumber,
+        status: "SETTLED",
+        sentAt: new Date("2026-11-05T12:00:00Z"),
+        createdById: memberId,
+      },
+    });
+    const line = await db.callNoticeLine.create({
+      data: {
+        companyId,
+        callNoticeId: notice.id,
+        stakeholderId: m.id,
+        commitmentId: c.id,
+        amountCalledCents: 1_000_000n,
+        status: "PAID",
+        sentAt: new Date("2026-11-05T12:00:00Z"),
+        sentOn: new Date("2026-11-05"),
+        dueOn: new Date("2026-11-06"),
+        paidInFullOn: new Date("2026-11-06"),
+      },
+    });
+    await db.callNoticeAllocation.create({
+      data: {
+        companyId,
+        callNoticeLineId: line.id,
+        capitalReceiptId: receipt.id,
+        amountCents: 1_000_000n,
+        receivedOn: new Date("2026-11-06"),
+        prefReturnStartOn: new Date("2026-11-06"),
+        source: "PAYMENT",
+        createdById: memberId,
+      },
+    });
+    return { receipt, notice, line };
+  }
+
+  const plain = await fixture("Void Reopen");
+  await voidReceipt(plain.receipt.id);
+  const lineA = await db.callNoticeLine.findFirstOrThrow({
+    where: { id: plain.line.id },
+  });
+  const noticeA = await db.callNotice.findFirstOrThrow({
+    where: { id: plain.notice.id },
+  });
+  const negated = await db.callNoticeAllocation.count({
+    where: {
+      companyId,
+      callNoticeLineId: plain.line.id,
+      amountCents: { lt: 0n },
+    },
+  });
+  check(
+    "void re-opens the PAID line and the SETTLED notice",
+    lineA.status === "SENT" &&
+      lineA.paidInFullOn === null &&
+      noticeA.status === "SENT" &&
+      negated === 1,
+    `line ${lineA.status}, notice ${noticeA.status}, negations ${negated}`,
+  );
+
+  // Race: the line and the notice leave PAID / SETTLED in another
+  // transaction while the void is in flight. The void must not write over
+  // them (nothing does this today; it proves the guard holds).
+  const race = await fixture("Void Race");
+  const hold = await holdOpen(async (t) => {
+    await t.callNoticeLine.update({
+      where: { id: race.line.id },
+      data: { status: "UNSENT", paidInFullOn: null },
+    });
+    await t.callNotice.update({
+      where: { id: race.notice.id },
+      data: { status: "CANCELLED" },
+    });
+  });
+  const voiding = errorOf(() => voidReceipt(race.receipt.id));
+  const waits = await lockWaits();
+  check(
+    "void waits on the Call Notice line row",
+    waits.some((q) => q.includes('"CallNoticeLine"')),
+    JSON.stringify(waits),
+  );
+  hold.release();
+  await hold.done;
+  const message = await voiding;
+  const lineB = await db.callNoticeLine.findFirstOrThrow({
+    where: { id: race.line.id },
+  });
+  const noticeB = await db.callNotice.findFirstOrThrow({
+    where: { id: race.notice.id },
+  });
+  const voided = await receiptRow(race.receipt.id);
+  check(
+    "void leaves a line and notice changed meanwhile as they are",
+    message === null &&
+      voided.voidedAt !== null &&
+      lineB.status === "UNSENT" &&
+      noticeB.status === "CANCELLED",
+    `${message ?? "voided"}; line ${lineB.status}, notice ${noticeB.status}`,
+  );
+
+  // Same, with only the notice changing (the line write goes through, the
+  // notice write is the one that waits).
+  const race2 = await fixture("Void Race Notice");
+  const hold2 = await holdOpen(async (t) => {
+    await t.callNotice.update({
+      where: { id: race2.notice.id },
+      data: { status: "CANCELLED" },
+    });
+  });
+  const voiding2 = errorOf(() => voidReceipt(race2.receipt.id));
+  const waits2 = await lockWaits();
+  check(
+    "void waits on the Call Notice row",
+    waits2.some((q) => q.includes('"CallNotice"')),
+    JSON.stringify(waits2),
+  );
+  hold2.release();
+  await hold2.done;
+  const message2 = await voiding2;
+  const lineC = await db.callNoticeLine.findFirstOrThrow({
+    where: { id: race2.line.id },
+  });
+  const noticeC = await db.callNotice.findFirstOrThrow({
+    where: { id: race2.notice.id },
+  });
+  check(
+    "void re-opens the line but leaves a notice changed meanwhile as it is",
+    message2 === null &&
+      lineC.status === "SENT" &&
+      noticeC.status === "CANCELLED",
+    `${message2 ?? "voided"}; line ${lineC.status}, notice ${noticeC.status}`,
+  );
+  await assertInvariant("void re-open races");
+}
+
+async function guardedMemberStatus() {
+  console.log("Guarded writes: member status change racing another");
+  const m = await newMember("Status Race", {
+    memberStatus: "MEMBER",
+    admittedOn: new Date("2026-11-01"),
+  });
+  const caller = makeStakeholderCaller();
+  const hold = await holdOpen(async (t) => {
+    await t.stakeholder.update({
+      where: { id: m.id },
+      data: { memberStatus: "FINANCIAL_INTEREST_ONLY" },
+    });
+  });
+  const change = errorOf(() =>
+    caller.setMemberStatus({
+      id: m.id,
+      memberStatus: "FINANCIAL_INTEREST_ONLY",
+      reason: "integration race",
+    }),
+  );
+  const waits = await lockWaits();
+  check(
+    "status change waits on the stakeholder row",
+    waits.some((q) => q.includes('"Stakeholder"')),
+    JSON.stringify(waits),
+  );
+  hold.release();
+  await hold.done;
+  const message = await change;
+  const audits = await db.audit.count({
+    where: {
+      companyId,
+      action: "stakeholder.updated",
+      summary: { contains: "changed the status of Status Race" },
+    },
+  });
+  check(
+    "a status change that no longer applies is refused, not recorded twice",
+    message !== null && /Status can only change/.test(message) && audits === 0,
+    `${message ?? "it succeeded"}; ${audits} status audit rows`,
+  );
+  const ok = await errorOf(() =>
+    caller.setMemberStatus({
+      id: m.id,
+      memberStatus: "MEMBER",
+      reason: "integration back",
+    }),
+  );
+  const after = await db.stakeholder.findFirstOrThrow({ where: { id: m.id } });
+  check(
+    "an uncontended status change still applies",
+    ok === null && after.memberStatus === "MEMBER",
+    ok ?? after.memberStatus,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Setup, caller, cleanup
 
 let userId = "";
 let memberId = "";
+
+function makeStakeholderCaller() {
+  const session = {
+    user: {
+      id: userId,
+      name: "Integration",
+      email: `${userId}@ledger-integration.test`,
+      companyId,
+      memberId,
+      companyPublicId: "x",
+      isOnboarded: true,
+    },
+    expires: "2099-01-01T00:00:00.000Z",
+  } as unknown as Session;
+  return createCallerFactory(stakeholderRouter)({
+    db,
+    session,
+    requestIp: "127.0.0.1",
+    userAgent: "ledger-integration",
+    headers: new Headers(),
+  });
+}
 
 function makeCaller() {
   const session = {
@@ -990,6 +1368,13 @@ async function cleanup() {
   if (!companyId) return;
   const id = companyId;
   await db.$executeRaw`DELETE FROM "Audit" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "CallNoticeAllocation" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "CallNoticeLine" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "CallNotice" WHERE "companyId" = ${id}`;
+  await db.$executeRaw`DELETE FROM "Template" WHERE "companyId" = ${id}`;
+  if (bucketIds.length > 0) {
+    await db.bucket.deleteMany({ where: { id: { in: bucketIds } } });
+  }
   await db.$executeRaw`DELETE FROM "CapitalReceipt" WHERE "companyId" = ${id}`;
   await db.$executeRaw`DELETE FROM "Commitment" WHERE "companyId" = ${id}`;
   await db.$executeRaw`DELETE FROM "Stakeholder" WHERE "companyId" = ${id}`;
@@ -999,6 +1384,11 @@ async function cleanup() {
   if (userId) await db.$executeRaw`DELETE FROM "User" WHERE id = ${userId}`;
   const left = await db.$queryRaw<{ n: bigint }[]>`
     SELECT (SELECT count(*) FROM "Audit" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "CallNoticeAllocation" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "CallNoticeLine" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "CallNotice" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "Template" WHERE "companyId" = ${id})
+         + (SELECT count(*) FROM "Bucket" WHERE id = ANY(${bucketIds}::text[]))
          + (SELECT count(*) FROM "CapitalReceipt" WHERE "companyId" = ${id})
          + (SELECT count(*) FROM "Commitment" WHERE "companyId" = ${id})
          + (SELECT count(*) FROM "Stakeholder" WHERE "companyId" = ${id})
@@ -1024,6 +1414,9 @@ async function main() {
       ["L4", l4AndReplacement],
       ["G1", g1],
       ["M2 reductions", () => m2Reductions(caller)],
+      ["Guarded packet", guardedPacket],
+      ["Guarded void re-open", guardedVoidReopen],
+      ["Guarded member status", guardedMemberStatus],
     ];
     for (const [name, run] of scenarios) {
       const message = await errorOf(run);
