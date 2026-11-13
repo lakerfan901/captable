@@ -25,10 +25,18 @@ const seed = async () => {
     await nuke();
 
     console.log("Seeding database".underline.cyan);
-    return db.$transaction(async () => {
+    await db.$transaction(async () => {
       await seedCompanies();
       await seedTeam();
     });
+    // LLC governance register and resolutions (03-governance.md G19); test
+    // seeds only (`db:seed` sets NODE_ENV=test). The hook must be loaded
+    // before the server modules the seed imports.
+    if (process.env.NODE_ENV === "test") {
+      await import("./server-only-hook.mjs");
+      const { seedLlcGovernance } = await import("./llc-governance");
+      await seedLlcGovernance();
+    }
   } else {
     throw new Error("Seeding aborted");
   }
