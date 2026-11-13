@@ -119,3 +119,45 @@ export type TResolutionApproveInput = z.infer<typeof ZResolutionApproveSchema>;
 export type TResolutionWithdrawInput = z.infer<
   typeof ZResolutionWithdrawSchema
 >;
+
+// Ballot management (03-governance.md G8, session b).
+
+const zId = z.string().trim().min(1).max(64);
+
+export const ZResolutionAddRecipientsSchema = z
+  .object({
+    publicId: zPublicId,
+    stakeholderIds: z.array(zId).min(1).max(500),
+  })
+  .strict();
+
+export const ZResolutionRemindSchema = z
+  .object({
+    publicId: zPublicId,
+    ballotIds: z.array(zId).min(1).max(500).optional(),
+  })
+  .strict();
+
+export const ZResolutionReplaceBallotLinkSchema = z
+  .object({
+    publicId: zPublicId,
+    ballotId: zId,
+    email: z.string().trim().email().max(320).optional(),
+  })
+  .strict();
+
+export const ZResolutionRevokeBallotLinkSchema = z
+  .object({ publicId: zPublicId, ballotId: zId })
+  .strict();
+
+export const ZResolutionEvidenceSchema = z
+  .object({ publicId: zPublicId })
+  .strict();
+
+export type TResolutionAddRecipientsInput = z.infer<
+  typeof ZResolutionAddRecipientsSchema
+>;
+export type TResolutionRemindInput = z.infer<typeof ZResolutionRemindSchema>;
+export type TResolutionReplaceBallotLinkInput = z.infer<
+  typeof ZResolutionReplaceBallotLinkSchema
+>;
