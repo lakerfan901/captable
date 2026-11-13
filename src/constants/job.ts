@@ -7,6 +7,7 @@ export const JOB_TYPES = {
     "member-invite",
     "esign-confirmation",
     "esign-notification",
+    "admission-notice",
   ],
   esign: ["generate-pdf", "complete-pdf"],
   governance: [

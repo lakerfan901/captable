@@ -2,7 +2,9 @@ import "server-only";
 
 import path from "node:path";
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -48,7 +50,8 @@ export type TypeKeyPrefixes =
   | "shares-docs"
   | `data-room/${string}`
   | "resolutions"
-  | "member-reports";
+  | "member-reports"
+  | "w9-docs";
 
 export interface getPresignedUrlOptions {
   contentType: string;
@@ -64,6 +67,11 @@ export interface getPresignedUrlOptions {
    * e.g. text/html where an image was authorized.
    */
   signContentType?: boolean;
+  /**
+   * Include Content-Length in the signature so the uploader must send
+   * exactly this many bytes (W-9 uploads, F12). Unset for every other caller.
+   */
+  contentLength?: number;
 }
 
 const TEN_MINUTES_IN_SECONDS = 10 * 60;
@@ -76,6 +84,7 @@ export const getPresignedPutUrl = async ({
   identifier,
   bucketMode,
   signContentType,
+  contentLength,
 }: getPresignedUrlOptions) => {
   const { name, ext } = path.parse(fileName);
 
@@ -87,12 +96,20 @@ export const getPresignedPutUrl = async ({
     Bucket: bucketMode === "privateBucket" ? PrivateBucket : PublicBucket,
     Key,
     ContentType: contentType,
+    ...(contentLength !== undefined && { ContentLength: contentLength }),
     ACL: bucketMode === "privateBucket" ? "private" : "public-read",
   });
 
+  const signableHeaders = [
+    ...(signContentType ? ["content-type"] : []),
+    ...(contentLength !== undefined ? ["content-length"] : []),
+  ];
+
   const url: string = await getSignedUrl(S3, putObjectCommand, {
     expiresIn: expiresIn ?? TEN_MINUTES_IN_SECONDS,
-    ...(signContentType && { signableHeaders: new Set(["content-type"]) }),
+    ...(signableHeaders.length && {
+      signableHeaders: new Set(signableHeaders),
+    }),
   });
 
   const bucketUrl = new URL(url);
@@ -130,6 +147,33 @@ export const getPresignedGetUrl = async (
   });
 
   return { key, url };
+};
+
+/**
+ * Size and stored Content-Type of a private object, or null when it does not
+ * exist. Other storage errors are rethrown.
+ */
+export const headObject = async (
+  key: string,
+): Promise<{ size: number; contentType: string | undefined } | null> => {
+  try {
+    const head = await S3.send(
+      new HeadObjectCommand({ Bucket: PrivateBucket, Key: key }),
+    );
+    return { size: head.ContentLength ?? 0, contentType: head.ContentType };
+  } catch (error) {
+    const status = (error as { $metadata?: { httpStatusCode?: number } })
+      ?.$metadata?.httpStatusCode;
+    if (status === 404 || (error as { name?: string })?.name === "NotFound") {
+      return null;
+    }
+    throw error;
+  }
+};
+
+/** Deletes a private object (no error when it is already gone). */
+export const deleteObject = async (key: string): Promise<void> => {
+  await S3.send(new DeleteObjectCommand({ Bucket: PrivateBucket, Key: key }));
 };
 
 /**
