@@ -117,17 +117,17 @@ export const sendMail = async (
 ): Promise<SendMailResult> => {
   const { "X-From-Name": senderName, ...headers } = (options.headers ||
     {}) as RecordType;
-  const from = buildFrom(senderName, env.EMAIL_FROM);
-
   const toAddress = normalizeRecipients(options.to);
   const transport = getTransport();
 
   let info: SMTPTransport.SentMessageInfo;
   try {
+    // Inside the try: a missing / unparsable EMAIL_FROM is a failed send
+    // with a FAILED EmailLog row, like any transport error.
     info = await transport.sendMail({
       ...options,
       headers,
-      from,
+      from: buildFrom(senderName, env.EMAIL_FROM ?? ""),
     });
   } catch (error) {
     // Connection errors (e.g. ECONNREFUSED as an AggregateError) can have an
