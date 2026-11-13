@@ -74,6 +74,26 @@ export const _delete = withAuthApiV1
         });
       }
 
+      // A holder named on a unit transfer is part of the ledger's history:
+      // deleting it would leave units the register can no longer attribute.
+      const transfer = await tx.unitTransfer.findFirst({
+        where: {
+          companyId: stakeholder.companyId,
+          OR: [
+            { fromStakeholderId: stakeholder.id },
+            { toStakeholderId: stakeholder.id },
+          ],
+        },
+        select: { id: true },
+      });
+      if (transfer) {
+        throw new ApiError({
+          code: "BAD_REQUEST",
+          message:
+            "This stakeholder is a party to a unit transfer and cannot be deleted.",
+        });
+      }
+
       await tx.stakeholder.delete({
         where: {
           id: stakeholder.id,
