@@ -57,11 +57,7 @@ import {
   validateAcceptance,
   validateCashReceipt,
 } from "@/lib/admission/commitment-rules";
-import {
-  fromDateOnly,
-  isValidDateOnly,
-  todayInTimeZone,
-} from "@/lib/date-only";
+import { fromDateOnly, isValidDateOnly } from "@/lib/date-only";
 import { addBusinessDays } from "@/lib/llc/business-days";
 import {
   microUnitsFromDecimal,
@@ -72,6 +68,7 @@ import { formatCents } from "@/lib/money";
 import { Audit } from "@/server/audit";
 import type { AuditSchemaType } from "@/server/audit/schema";
 import type { PrismaTransactionalClient } from "@/server/db";
+import { economicsToday } from "@/server/llc/economics/clock";
 import {
   forfeitureUnits,
   planVoid,
@@ -196,7 +193,7 @@ async function companyToday(tx: Tx, companyId: string): Promise<string> {
     select: { timezone: true },
   });
   if (!company) throw notFound("Company not found.");
-  return todayInTimeZone(company.timezone);
+  return economicsToday(company.timezone);
 }
 
 const KIND_LABEL: Record<ReceiptKind, string> = {
