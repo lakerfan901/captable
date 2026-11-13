@@ -81,6 +81,17 @@ export async function LlcOverview({ publicId }: Props) {
     attention.push("Final Closing Date is not set");
   }
 
+  // Accepted plus pending subscriptions: what Members have committed in
+  // total. The cap itself is measured on accepted commitments (Section 4.8).
+  const totalCommittedCents = ind.committedCents + ind.pendingCommittedCents;
+  const totalCapUsedBps =
+    ind.capCents === null || ind.capCents <= 0
+      ? null
+      : Math.min(
+          10000,
+          Math.floor((totalCommittedCents * 10000) / ind.capCents),
+        );
+
   return (
     <>
       {header}
@@ -107,20 +118,26 @@ export async function LlcOverview({ publicId }: Props) {
                 title="Committed"
                 value={
                   ind.capCents === null
-                    ? formatCentsCompact(ind.committedCents)
-                    : `${formatCentsCompact(ind.committedCents)} of ${formatCentsCompact(ind.capCents)}`
+                    ? formatCentsCompact(totalCommittedCents)
+                    : `${formatCentsCompact(totalCommittedCents)} of ${formatCentsCompact(ind.capCents)}`
                 }
-                progressBps={ind.capUsedBps}
+                progressBps={totalCapUsedBps}
               >
-                {ind.remainingCents === null ? (
+                <span>Accepted {formatCents(ind.committedCents)}</span>
+                <span>
+                  Pending {formatCents(ind.pendingCommittedCents)} (
+                  {ind.pendingCount} not yet accepted)
+                </span>
+                {ind.capCents === null ? (
                   <span>No offering cap set</span>
                 ) : (
-                  <span>Remaining {formatCents(ind.remainingCents)}</span>
+                  <span>
+                    Remaining if all are accepted{" "}
+                    {formatCents(
+                      Math.max(0, ind.capCents - totalCommittedCents),
+                    )}
+                  </span>
                 )}
-                <span>
-                  {ind.pendingCount} pending (
-                  {formatCents(ind.pendingCommittedCents)})
-                </span>
                 {noCommitments ? (
                   <Link href={`/${publicId}/admissions`} className="underline">
                     No commitments yet
