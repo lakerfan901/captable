@@ -9,6 +9,7 @@ import {
 } from "@/lib/governance/presets";
 import { Audit } from "@/server/audit";
 import type { TPrismaOrTransaction } from "@/server/db";
+import { termExtensionDraftFields } from "@/server/governance/term-extension";
 import { assertCompanyOwns } from "@/server/tenant-ownership";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionCreateSchema } from "../schema";
@@ -84,11 +85,15 @@ export const createProcedure = withLlcAccessControl
   .mutation(async ({ ctx, input }) => {
     const companyId = ctx.membership.companyId;
     const type = input.type;
-    const params = parseDraftParams(type, input.params);
+    let params = parseDraftParams(type, input.params);
     const companyName = ctx.company.name;
 
     return await ctx.db.$transaction(async (tx) => {
       await assertDraftReferences(tx, companyId, type, params);
+      // A term extension's dates come from the term clock, never the input.
+      if (type === "TERM_EXTENSION") {
+        params = (await termExtensionDraftFields(tx, companyId)).params;
+      }
       const title = buildTitle(type, params, { companyName }).slice(0, 200);
       const resolution = await tx.resolution.create({
         data: {

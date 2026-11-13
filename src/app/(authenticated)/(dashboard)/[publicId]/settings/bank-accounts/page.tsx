@@ -23,6 +23,9 @@ const ApiSettingsPage = async () => {
     return <UnAuthorizedState />;
   }
 
+  const canCreate = allow(true, ["bank-accounts", "create"], false);
+  const canDelete = allow(true, ["bank-accounts", "delete"], false);
+
   return (
     <Fragment>
       {data.bankAccounts.length === 0 ? (
@@ -30,9 +33,13 @@ const ApiSettingsPage = async () => {
           bordered={false}
           icon={<RiBankFill />}
           title="Bank accounts"
-          subtitle="Add a bank account to receive funds"
+          subtitle={
+            canCreate
+              ? "Add a bank account to receive funds"
+              : "No bank account has been added yet"
+          }
         >
-          <CtaButton />
+          {canCreate ? <CtaButton /> : null}
         </EmptyState>
       ) : (
         <div className="flex flex-col gap-y-3">
@@ -44,12 +51,17 @@ const ApiSettingsPage = async () => {
               </p>
             </div>
 
-            <div>
-              <CtaButton />
-            </div>
+            {canCreate ? (
+              <div>
+                <CtaButton />
+              </div>
+            ) : null}
           </div>
 
-          <BankAccountsTable accounts={data.bankAccounts} />
+          <BankAccountsTable
+            accounts={data.bankAccounts}
+            canDelete={canDelete}
+          />
         </div>
       )}
     </Fragment>

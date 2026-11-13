@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { generatePublicId } from "@/common/id";
 import { Audit } from "@/server/audit";
+import { termExtensionDraftFields } from "@/server/governance/term-extension";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionCloneSchema } from "../schema";
 
@@ -33,9 +34,17 @@ export const cloneProcedure = withLlcAccessControl
           message: "Resolution not found.",
         });
       }
-      const title = (
+      let title = (
         source.status === "DRAFT" ? `Copy of ${source.title}` : source.title
       ).slice(0, 200);
+      let params = source.params ?? {};
+      // A term extension's dates and title come from the term clock now, not
+      // from the copied consent (which asked about an earlier date).
+      if (source.type === "TERM_EXTENSION") {
+        const canonical = await termExtensionDraftFields(tx, companyId);
+        params = { ...canonical.params };
+        title = canonical.title;
+      }
       const created = await tx.resolution.create({
         data: {
           publicId: generatePublicId(),
@@ -44,7 +53,7 @@ export const cloneProcedure = withLlcAccessControl
           status: "DRAFT",
           title,
           matterKey: source.matterKey,
-          params: source.params ?? {},
+          params,
           body: source.body ?? [],
           clonedFromId: source.id,
           authorId: ctx.membership.memberId,

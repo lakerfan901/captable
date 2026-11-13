@@ -32,6 +32,7 @@ import {
   buildRequirements,
   type ResolutionType,
 } from "@/lib/governance/presets";
+import { TEST_MODE_TEXT } from "@/lib/mail-delivery";
 import { api } from "@/trpc/react";
 
 // Send dialog (03-governance.md G10, session b). Sending is irreversible: it
@@ -117,7 +118,7 @@ export function SendDialog({
 
   const recordDateValid = /^\d{4}-\d{2}-\d{2}$/.test(recordDate);
   const preview = api.resolution.preview.useQuery(
-    { type, params, recordDate },
+    { type, params, recordDate, publicId },
     { enabled: open && recordDateValid && recordDate <= today, retry: false },
   );
   const send = api.resolution.send.useMutation();
@@ -220,12 +221,10 @@ export function SendDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {mailCatcher ? (
+        {mailCatcher || preview.data?.mailTestMode ? (
           <Alert variant="destructive">
             <AlertTitle>Test mode</AlertTitle>
-            <AlertDescription>
-              Test mode: emails go to the mail catcher and are not delivered.
-            </AlertDescription>
+            <AlertDescription>{TEST_MODE_TEXT}</AlertDescription>
           </Alert>
         ) : null}
 

@@ -9,6 +9,7 @@ import type { ResolutionType } from "@/lib/governance/presets";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { withServerComponentSession } from "@/server/auth";
 import { requireLlc } from "@/server/entity";
+import { currentMailDelivery } from "@/server/mail-delivery";
 import { api } from "@/trpc/server";
 
 export const metadata: Metadata = { title: "Resolution" };
@@ -43,9 +44,8 @@ export default async function ResolutionPage({
   if (resolution.status === "DRAFT") {
     const canUpdate = allow(true, ["governance", "update"], false);
     const canDelete = allow(true, ["governance", "delete"], false);
-    const mailCatcher = allow(true, ["emails", "read"], false)
-      ? (await api.emailLog.deliveryStatus()).mailCatcher
-      : false;
+    // Every sender sees the test-mode banner (not only `emails: read`).
+    const mailCatcher = currentMailDelivery("RESOLUTION").testMode;
     const session = await withServerComponentSession();
     const stakeholders =
       (await allow(api.stakeholder.getStakeholders(), [

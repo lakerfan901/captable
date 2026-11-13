@@ -7,7 +7,10 @@
 // (evaluating it too early would cache missing public values app-wide).
 import { PUBLIC_ENV_KEY } from "@/constants/env";
 import { sentryDataCollection } from "@/constants/sentry-data-collection";
-import { sentryScrubbing } from "@/constants/sentry-scrub";
+import {
+  isSignedStorageRequest,
+  sentryScrubbing,
+} from "@/constants/sentry-scrub";
 import { redactDeep } from "@/lib/token-redaction";
 
 type CaptureRouterTransitionStart =
@@ -33,11 +36,17 @@ const initSentry = async () => {
     debug: false,
     dataCollection: sentryDataCollection,
     // Emailed-link tokens (ballot and member-report paths, `input` / `token`
-    // query parameters) never leave in an event, span or breadcrumb.
+    // query parameters) and presigned storage URLs never leave in an event,
+    // span or breadcrumb.
     ...sentryScrubbing,
     replaysOnErrorSampleRate: 1.0,
     replaysSessionSampleRate: 0.1,
     integrations: [
+      // No span for a presigned storage URL (uploads PUT to S3 / MinIO with
+      // a reusable signed URL); its fetch breadcrumb is scrubbed.
+      Sentry.browserTracingIntegration({
+        shouldCreateSpanForRequest: (url) => !isSignedStorageRequest(url),
+      }),
       Sentry.replayIntegration({
         maskAllText: true,
         blockAllMedia: true,

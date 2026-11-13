@@ -39,7 +39,9 @@ import {
   lockResolution,
   type TransitionResult,
 } from "@/server/governance/tally";
+import { termExtensionSendBlockers } from "@/server/governance/term-extension";
 import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
+import { assertMailDeliverable } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { boundRequestMeta } from "../../ballot-router/access";
 import { ZResolutionSendSchema } from "../schema";
@@ -113,6 +115,9 @@ export const sendProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
   .input(ZResolutionSendSchema)
   .mutation(async ({ ctx, input }) => {
+    // Production with the bundled mail catcher: refused before anything
+    // is written (Members would not receive the email).
+    assertMailDeliverable("RESOLUTION");
     const companyId = ctx.membership.companyId;
     const now = new Date();
     const zone = ctx.company.timezone || GOVERNANCE_TIME_ZONE;
@@ -184,6 +189,20 @@ export const sendProcedure = withLlcAccessControl
           const title = resolution.title.trim();
           if (title === "") badRequest("The resolution needs a title.");
           await assertDraftReferences(tx, companyId, type, params);
+
+          // 2a. A term extension must ask about exactly the dates the term
+          //     clock will move between when it becomes EFFECTIVE (the clock
+          //     counts EFFECTIVE extensions), with no other one open. Checked
+          //     under the company ledger lock taken in step 0, which the term
+          //     clock setters also take (they refuse while one is SENT).
+          if (type === "TERM_EXTENSION") {
+            const blockers = await termExtensionSendBlockers(tx, companyId, {
+              id: resolutionId,
+              params,
+              title,
+            });
+            if (blockers.length > 0) badRequest(blockers.join(" "));
+          }
 
           // 3. Requirements are always rebuilt from type + params.
           const specs = buildRequirements(type, params);

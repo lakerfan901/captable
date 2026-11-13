@@ -72,6 +72,8 @@ interface FieldSpec {
   description?: string;
   optional?: boolean;
   options?: { value: string; label: string }[];
+  /** Shown but not editable (the server sets the value). */
+  readOnly?: boolean;
 }
 
 const VOTE_BASIS_OPTIONS = [
@@ -140,13 +142,24 @@ const FIELDS: Record<ResolutionType, FieldSpec[]> = {
       description: "The Manager or the Affiliate placing the order as agent.",
     },
   ],
+  // Both come from the term clock (Settings → LLC term) and are set by the
+  // server: the consent must ask about exactly the dates the clock moves
+  // between when it is approved (Codex review 2, finding 3).
   TERM_EXTENSION: [
     {
       name: "currentTargetSaleDate",
       label: "Current Target Sale Date",
       kind: "date",
+      readOnly: true,
+      description:
+        "From the term clock (Settings → LLC term). If approved, the Target Sale Date moves one year later.",
     },
-    { name: "extensionNumber", label: "Extension number", kind: "int" },
+    {
+      name: "extensionNumber",
+      label: "Extension number",
+      kind: "int",
+      readOnly: true,
+    },
   ],
   MANAGER_REMOVAL: [
     { name: "managerName", label: "Manager to be removed", kind: "text" },
@@ -559,6 +572,8 @@ function PresetField({
                     <Input
                       type="number"
                       step={1}
+                      readOnly={spec.readOnly}
+                      className={spec.readOnly ? "bg-muted" : undefined}
                       name={field.name}
                       ref={field.ref}
                       onBlur={field.onBlur}
@@ -581,6 +596,8 @@ function PresetField({
                       }
                       placeholder={spec.kind === "money" ? "0.00" : undefined}
                       {...field}
+                      readOnly={spec.readOnly}
+                      className={spec.readOnly ? "bg-muted" : undefined}
                       value={String(field.value ?? "")}
                     />
                   )}
@@ -661,12 +678,15 @@ export function NewResolutionFlow({
   base,
   members,
   prefill,
+  unavailable = {},
 }: {
   /** `/<companyPublicId>/resolutions` */
   base: string;
   members: PresetMember[];
   /** Per-type initial values (e.g. PURCHASE_ORDER names from the last one). */
   prefill: Partial<Record<ResolutionType, FormValues>>;
+  /** Types that cannot be prepared now, with the reason (shown instead of the form). */
+  unavailable?: Partial<Record<ResolutionType, string>>;
 }) {
   const router = useRouter();
   const [type, setType] = useState<ResolutionType | null>(null);
@@ -700,16 +720,30 @@ export function NewResolutionFlow({
         <CardTitle>{RESOLUTION_TYPE_LABEL[type]}</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResolutionPresetForm
-          key={type}
-          type={type}
-          defaultValues={prefill[type]}
-          members={members}
-          submitLabel="Create draft"
-          pending={create.isPending}
-          onCancel={() => setType(null)}
-          onSubmit={(params) => create.mutate({ type, params })}
-        />
+        {unavailable[type] ? (
+          <div className="flex flex-col gap-4">
+            <Alert variant="destructive">
+              <AlertTitle>This resolution cannot be prepared now</AlertTitle>
+              <AlertDescription>{unavailable[type]}</AlertDescription>
+            </Alert>
+            <div>
+              <Button variant="outline" onClick={() => setType(null)}>
+                Back
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <ResolutionPresetForm
+            key={type}
+            type={type}
+            defaultValues={prefill[type]}
+            members={members}
+            submitLabel="Create draft"
+            pending={create.isPending}
+            onCancel={() => setType(null)}
+            onSubmit={(params) => create.mutate({ type, params })}
+          />
+        )}
       </CardContent>
     </Card>
   );

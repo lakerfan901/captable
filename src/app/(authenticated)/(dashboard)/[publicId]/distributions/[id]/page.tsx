@@ -18,6 +18,7 @@ import {
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { requireLlc } from "@/server/entity";
+import { currentMailDelivery } from "@/server/mail-delivery";
 import { ZDistributionInputsSchema } from "@/trpc/routers/distribution/schema";
 import { api } from "@/trpc/server";
 import type { AvailableCashStatement } from "../../financials/components/available-cash-card";
@@ -272,7 +273,12 @@ export default async function DistributionPage({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <DistributionActions distributionId={d.id} status={d.status} />
+          <DistributionActions
+            distributionId={d.id}
+            status={d.status}
+            canUpdate={canUpdate}
+            mailDelivery={currentMailDelivery("DISTRIBUTION_NOTICES")}
+          />
           {canReverse && d.number !== null ? (
             <ReverseDialog id={d.id} number={d.number} />
           ) : null}

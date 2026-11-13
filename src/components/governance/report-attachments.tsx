@@ -177,8 +177,11 @@ export function ReportAttachments({
     }
   };
 
-  const open = async (attachmentId: string) => {
-    const tab = window.open("", "_blank");
+  const open = async (attachmentId: string, inline: boolean) => {
+    // A PDF or image opens in a new tab (opened inside the click so popup
+    // blockers allow it); any other file is served as a download and fetched
+    // in place, so no blank tab is left behind.
+    const tab = inline ? window.open("", "_blank") : null;
     try {
       const { url } = await utils.memberReport.attachmentUrl.fetch({
         publicId,
@@ -214,7 +217,7 @@ export function ReportAttachments({
             <button
               type="button"
               className="break-all text-left underline"
-              onClick={() => void open(a.id)}
+              onClick={() => void open(a.id, a.inline)}
             >
               {a.name}
             </button>
@@ -425,18 +428,26 @@ export function PublicReportDocuments({
   attachments,
 }: {
   token: string;
-  attachments: { id: string; name: string; kind: string; private: boolean }[];
+  attachments: {
+    id: string;
+    name: string;
+    kind: string;
+    private: boolean;
+    /** PDF or image (opens in a tab); otherwise downloaded. */
+    inline: boolean;
+  }[];
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (attachments.length === 0) return null;
 
-  const openFile = async (attachmentId: string) => {
+  const openFile = async (attachmentId: string, inline: boolean) => {
     setError(null);
     setBusy(attachmentId);
-    // Open the tab inside the click (an `await` first would be blocked as a
-    // popup on mobile browsers); it is pointed at the file once we have it.
-    const tab = window.open("", "_blank");
+    // A PDF or image: open the tab inside the click (an `await` first would
+    // be blocked as a popup on mobile browsers); it is pointed at the file
+    // once we have it. Any other file is served as a download: no tab.
+    const tab = inline ? window.open("", "_blank") : null;
     try {
       const { url } = await client().memberReportView.attachmentUrl.mutate({
         token,
@@ -468,7 +479,7 @@ export function PublicReportDocuments({
               size="sm"
               className="max-w-full justify-start truncate"
               disabled={busy === a.id}
-              onClick={() => void openFile(a.id)}
+              onClick={() => void openFile(a.id, a.inline)}
             >
               {busy === a.id ? "Opening…" : a.name}
             </Button>

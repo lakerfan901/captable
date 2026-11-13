@@ -10,6 +10,11 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import slugify from "@sindresorhus/slugify";
 import { customId } from "@/common/id";
 import { env } from "@/env";
+import {
+  attachmentDisposition,
+  isInlineContentType,
+  storedContentType,
+} from "@/lib/inline-content-type";
 
 const region = env.UPLOAD_REGION;
 const endpoint = env.UPLOAD_ENDPOINT;
@@ -96,12 +101,28 @@ export const getPresignedPutUrl = async ({
   return { url, key: Key, bucketUrl: bucketUrl.toString() };
 };
 
-export const getPresignedGetUrl = async (key: string) => {
+/**
+ * A 10-minute presigned GET URL of a private object. With `file` (the
+ * Bucket row's `mimeType` and `name`), the response headers are set from the
+ * stored type, whatever the object was uploaded with: PDF and raster images
+ * are served with their type and `inline` (they open in the tab), anything
+ * else as `application/octet-stream` and `attachment` (downloaded, never
+ * rendered on the storage origin). See src/lib/inline-content-type.ts.
+ */
+export const getPresignedGetUrl = async (
+  key: string,
+  file?: { mimeType: string; name: string },
+) => {
+  const inline = file === undefined || isInlineContentType(file.mimeType);
   const getObjectCommand = new GetObjectCommand({
     Bucket: PrivateBucket,
     Key: key,
-    // ResponseContentDisposition: `attachment; filename="${key}"`,
-    ResponseContentDisposition: "inline",
+    ResponseContentDisposition: inline
+      ? "inline"
+      : attachmentDisposition(file?.name ?? "download"),
+    ...(file !== undefined && {
+      ResponseContentType: storedContentType(file.mimeType),
+    }),
   });
 
   const url = await getSignedUrl(S3, getObjectCommand, {
@@ -134,7 +155,11 @@ export const uploadFile = async (
   const res = await fetch(url, {
     method: "PUT",
     headers: {
-      "Content-Type": "application/octet-stream",
+      // The real type only for inline-safe files (src/lib/inline-content-type.ts).
+      "Content-Type":
+        bucketMode === "publicBucket"
+          ? "application/octet-stream"
+          : storedContentType(file.type),
     },
     body,
   });

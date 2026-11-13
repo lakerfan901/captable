@@ -20,6 +20,7 @@ import { guardedWrite } from "@/server/governance/guarded";
 import { sha256Hex } from "@/server/governance/hash";
 import { closeBooksThrough } from "@/server/llc/economics";
 import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
+import { assertMailDeliverable } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportSendSchema } from "../schema";
 import { deriveAudience } from "./audience";
@@ -64,6 +65,9 @@ export const sendProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
   .input(ZMemberReportSendSchema)
   .mutation(async ({ ctx, input }) => {
+    // Production with the bundled mail catcher: refused before anything
+    // is written (Members would not receive the email).
+    assertMailDeliverable("REPORT");
     const companyId = ctx.membership.companyId;
     const now = new Date();
     const zone = ctx.company.timezone || GOVERNANCE_TIME_ZONE;

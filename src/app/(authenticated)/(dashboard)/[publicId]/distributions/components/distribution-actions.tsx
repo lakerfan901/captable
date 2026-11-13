@@ -1,8 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
+import { Money } from "@/components/llc/money";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { type MailDeliveryState, TEST_MODE_TEXT } from "@/lib/mail-delivery";
 import { api } from "@/trpc/react";
 import type { DistributionStatusValue } from "./distribution-table";
 import { MarkPaidDialog } from "./mark-paid-dialog";
@@ -22,14 +35,21 @@ function downloadCsv(fileName: string, csv: string) {
 /**
  * E17: member notices, payment-list CSV and payment marking for a finalized,
  * non-reversal, non-reversed distribution. The server enforces RBAC
- * (`distributions: update` to send / mark paid, `read` to export).
+ * (`distributions: update` to send / mark paid, `read` to export); the page
+ * passes `canUpdate` so a read-only viewer sees the export only.
  */
 export function DistributionActions({
   distributionId,
   status,
+  canUpdate,
+  mailDelivery,
 }: {
   distributionId: string;
   status: DistributionStatusValue;
+  /** `distributions: update` (send notices, mark paid). */
+  canUpdate: boolean;
+  /** Test mode / refusal of member emails (src/lib/mail-delivery.ts). */
+  mailDelivery: MailDeliveryState;
 }) {
   const router = useRouter();
   const enabled = status === "FINALIZED";
@@ -39,6 +59,7 @@ export function DistributionActions({
   );
   const send = api.distribution.sendNotices.useMutation();
   const exportCsv = api.distribution.exportCsv.useMutation();
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const data = query.data;
   if (!enabled || !data || data.distribution.isReversal) return null;
@@ -69,6 +90,7 @@ export function DistributionActions({
       } else {
         toast.success(`${sent} notice(s) sent, ${skipped} skipped.`);
       }
+      setConfirmOpen(false);
       await query.refetch();
       router.refresh();
     } catch (e) {
@@ -87,18 +109,77 @@ export function DistributionActions({
     }
   };
 
+  const n = unsent.length;
+  const members = `${n} ${n === 1 ? "Member" : "Members"}`;
+
   return (
     <>
-      <Button
-        variant="outline"
-        onClick={onSend}
-        disabled={send.isPending || unsent.length === 0}
-        loading={send.isPending}
-      >
-        {unsent.length === 0
-          ? "Notices sent"
-          : `Send notices (${unsent.length})`}
-      </Button>
+      {canUpdate ? (
+        n === 0 ? (
+          <Button variant="outline" disabled>
+            Notices sent
+          </Button>
+        ) : (
+          <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">Send notices ({n})</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>
+                  Send distribution notices to {members}?
+                </DialogTitle>
+                <DialogDescription>
+                  Each Member below is emailed a notice of Distribution No.{" "}
+                  {data.distribution.number} with their gross amount, offsets
+                  and net payment. A notice cannot be recalled once sent.
+                  Members without a notice email are skipped.
+                </DialogDescription>
+              </DialogHeader>
+
+              {mailDelivery.blockedReason ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Sending is blocked</AlertTitle>
+                  <AlertDescription>
+                    {mailDelivery.blockedReason}
+                  </AlertDescription>
+                </Alert>
+              ) : mailDelivery.testMode ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Test mode</AlertTitle>
+                  <AlertDescription>{TEST_MODE_TEXT}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <ul className="max-h-56 space-y-1 overflow-y-auto rounded border p-2 text-sm">
+                {unsent.map((l) => (
+                  <li key={l.id} className="flex justify-between gap-2">
+                    <span>{l.name}</span>
+                    <span className="text-muted-foreground">
+                      gross <Money cents={l.grossCents} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={onSend}
+                  disabled={
+                    send.isPending || mailDelivery.blockedReason !== null
+                  }
+                  loading={send.isPending}
+                >
+                  Send to {members}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      ) : null}
       <Button
         variant="outline"
         onClick={onExport}
@@ -107,7 +188,7 @@ export function DistributionActions({
       >
         Export payment list (CSV)
       </Button>
-      {payable.length > 0 ? (
+      {canUpdate && payable.length > 0 ? (
         <MarkPaidDialog
           distributionId={distributionId}
           lines={payable}

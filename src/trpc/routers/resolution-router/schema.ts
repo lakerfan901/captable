@@ -44,6 +44,8 @@ export const ZResolutionPreviewSchema = z
     type: ZResolutionType,
     params: z.unknown(),
     recordDate: zIsoDate,
+    /** The draft being reviewed (its stored title is checked like `send` does). */
+    publicId: z.string().trim().min(1).max(64).optional(),
   })
   .strict();
 

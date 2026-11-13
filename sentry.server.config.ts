@@ -1,6 +1,9 @@
 import * as Sentry from "@sentry/nextjs";
 import { sentryDataCollection } from "@/constants/sentry-data-collection";
-import { sentryScrubbing } from "@/constants/sentry-scrub";
+import {
+  isSignedStorageRequest,
+  sentryScrubbing,
+} from "@/constants/sentry-scrub";
 import { env } from "@/env";
 
 Sentry.init({
@@ -8,6 +11,19 @@ Sentry.init({
   tracesSampleRate: 1,
   debug: false,
   dataCollection: sentryDataCollection,
-  // Emailed-link tokens never leave in an event, span or breadcrumb.
+  // Emailed-link tokens and presigned storage URLs never leave in an event,
+  // span or breadcrumb.
   ...sentryScrubbing,
+  integrations: [
+    // Never record a presigned storage URL (spans or breadcrumbs). This
+    // replaces the SDK's own Http integration, so its Next.js setting is
+    // kept: Next.js instruments incoming requests itself.
+    Sentry.httpIntegration({
+      disableIncomingRequestSpans: true,
+      ignoreOutgoingRequests: isSignedStorageRequest,
+    }),
+    Sentry.nativeNodeFetchIntegration({
+      ignoreOutgoingRequests: isSignedStorageRequest,
+    }),
+  ],
 });

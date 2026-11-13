@@ -143,6 +143,19 @@ export interface BasisTally {
   cannotPass: boolean; // for + notVoted < minimumFor, or denominator is 0
 }
 
+/**
+ * A vote share (`forBps`, already floored) as a percentage with two decimals,
+ * TRUNCATED, by integer arithmetic: 375 of 475 units = 78.947…% → "78.94".
+ * Deliberate: thresholds are decided on exact units (`meetsThreshold`), and a
+ * rounded-up display could show an "at least 67%" / "at least 70%" vote as
+ * met when it is not (69.996% would read "70.00%"). Every vote-share display
+ * (tally panel, resolution list, executed PDF) uses this one rule.
+ */
+export function formatVoteBps(bps: number): string {
+  const b = Math.max(0, Math.floor(bps));
+  return `${Math.floor(b / 100)}.${String(b % 100).padStart(2, "0")}`;
+}
+
 function indexVotes(votes: readonly CastVote[]): Map<string, Choice> {
   const map = new Map<string, Choice>();
   for (const v of votes) {

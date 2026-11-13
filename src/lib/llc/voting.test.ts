@@ -6,9 +6,11 @@ import {
   type Choice,
   denominator,
   evaluate,
+  formatVoteBps,
   fromMicro,
   type HolderSnapshot,
   MANAGER_ONLY,
+  meetsThreshold,
   minimumFor,
   type Requirement,
   tallyBasis,
@@ -409,5 +411,20 @@ describe("voting", () => {
     expect(() =>
       tallyBasis(REG, forVotes("alice", "alice"), "PREFERRED_MAJORITY"),
     ).toThrow("duplicate vote");
+  });
+});
+
+describe("formatVoteBps (display only, truncated)", () => {
+  test("375 of 475 units shows 78.94 (78.947…, never rounded up)", () => {
+    const bps = Number((toMicro("375") * 10_000n) / toMicro("475"));
+    expect(formatVoteBps(bps)).toBe("78.94");
+  });
+  test("a rounded-up display would show an unmet 70% vote as met", () => {
+    const den = toMicro("100000");
+    const forW = toMicro("69996");
+    expect(meetsThreshold(forW, den, "PREFERRED_SUPERMAJORITY")).toBe(false);
+    expect(formatVoteBps(Number((forW * 10_000n) / den))).toBe("69.99");
+    expect(formatVoteBps(10_000)).toBe("100.00");
+    expect(formatVoteBps(0)).toBe("0.00");
   });
 });

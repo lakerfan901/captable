@@ -270,16 +270,73 @@ export async function getTermClock(
   tx: Tx,
   companyId: string,
 ): Promise<TermClock> {
+  return (await getTermClockWithNextExtension(tx, companyId)).clock;
+}
+
+/**
+ * The term clock now, and the clock as it would be with one more approved
+ * extension (what an EFFECTIVE TERM_EXTENSION resolution does to it: the
+ * clock counts them, `countTermExtensions`).
+ */
+export async function getTermClockWithNextExtension(
+  tx: Tx,
+  companyId: string,
+): Promise<{ clock: TermClock; next: TermClock }> {
   const term = await getOrCreateLlcTerm(tx, companyId);
   // The clock reads only LlcTerm-derived fields, so it works before the
   // Preferred unit class terms (price per unit) are complete.
   const config: LlcEconomicsConfig = { ...OA_DEFAULTS, ...termConfig(term) };
-  return computeTermClock(
-    {
-      operationsCommencementDate: dateOrNull(term.operationsCommencementDate),
-      extensionsApproved: await countTermExtensions(tx, companyId),
-      loiExtensionDays: term.loiExtensionDays,
+  const input = {
+    operationsCommencementDate: dateOrNull(term.operationsCommencementDate),
+    extensionsApproved: await countTermExtensions(tx, companyId),
+    loiExtensionDays: term.loiExtensionDays,
+  };
+  return {
+    clock: computeTermClock(input, config),
+    next: computeTermClock(
+      { ...input, extensionsApproved: input.extensionsApproved + 1 },
+      config,
+    ),
+  };
+}
+
+/** A TERM_EXTENSION resolution that was sent and is not decided yet. */
+export async function findPendingTermExtension(
+  tx: Tx,
+  companyId: string,
+  excludeResolutionId?: string,
+): Promise<{ id: string; referenceCode: string | null } | null> {
+  return await tx.resolution.findFirst({
+    where: {
+      companyId,
+      type: "TERM_EXTENSION",
+      status: "SENT",
+      ...(excludeResolutionId ? { id: { not: excludeResolutionId } } : {}),
     },
-    config,
-  );
+    select: { id: true, referenceCode: true },
+  });
+}
+
+/**
+ * Refuses a change to the term clock's inputs (Operations Commencement Date,
+ * LOI extension, term length) while a term-extension consent is out: its
+ * frozen text states the current and the extended Target Sale Date, and
+ * approving it must move the clock to exactly the date the Members were
+ * asked about. Call under the company ledger lock (resolution.send takes it
+ * before it checks the clock).
+ */
+export async function assertNoPendingTermExtension(
+  tx: Tx,
+  companyId: string,
+  what: string,
+): Promise<void> {
+  const pending = await findPendingTermExtension(tx, companyId);
+  if (pending) {
+    const consent = pending.referenceCode
+      ? `the term-extension consent ${pending.referenceCode}`
+      : "a term-extension consent";
+    ruleViolation(
+      `${what} cannot change while ${consent} is open: it states the current and the extended Target Sale Date. Wait until it is decided, or withdraw it first (Section 2.5).`,
+    );
+  }
 }

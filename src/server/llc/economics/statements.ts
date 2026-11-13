@@ -10,7 +10,11 @@ import {
 } from "@/lib/llc/money";
 import type { TPrismaOrTransaction } from "@/server/db";
 import { unitsToWire } from "@/server/llc/serialize";
-import { getCommitmentStates, getLineStates } from "./call-notices";
+import {
+  getCapitalTotals,
+  getCommitmentStates,
+  getLineStates,
+} from "./call-notices";
 import { listDefaults } from "./defaults";
 import {
   getFinancialSummary,
@@ -76,15 +80,14 @@ async function loadCommitment(
   const states = (await getCommitmentStates(tx, companyId)).filter(
     (s) => s.stakeholderId === stakeholderId,
   );
-  if (states.length === 0) return null;
-  let committed = 0n;
-  let paid = 0n;
-  let uncalled = 0n;
+  // Committed, paid and uncalled include a Replacement Funder commitment of
+  // this member (getCommitmentStates lists the callable ones only).
+  const { committed, paid, uncalled } = await getCapitalTotals(tx, companyId, {
+    stakeholderId,
+  });
+  if (states.length === 0 && committed === 0n && paid === 0n) return null;
   let calledOutstanding = 0n;
   for (const s of states) {
-    committed += s.acceptedCents;
-    paid += s.totalPaid;
-    uncalled += s.uncalled;
     const lines = await getLineStates(tx, companyId, today, {
       commitmentId: s.commitmentId,
     });
@@ -139,6 +142,7 @@ export async function getMemberStatement(
       appliedOn: true,
       appliedCents: true,
       unitsIssued: true,
+      prefReturnStartDate: true,
     },
   });
   const receipts: StatementReceiptRow[] = [];
@@ -151,6 +155,11 @@ export async function getMemberStatement(
       on: toDateOnly(r.kind === "FORFEITURE" ? r.receivedOn : r.appliedOn),
       amount: r.appliedCents,
       units: microUnitsFromDecimal(unitsToWire(r.unitsIssued)),
+      receivedOn: toDateOnly(r.receivedOn),
+      accrualStartOn:
+        r.prefReturnStartDate === null
+          ? null
+          : toDateOnly(r.prefReturnStartDate),
     });
   }
 
@@ -329,5 +338,31 @@ export async function getFairValue(
       reserves: summary.reserves.total,
       availableCashRaw: summary.availableCash.raw,
     },
+  };
+}
+
+/**
+ * The calculator's prefill figures as of `asOf` alone (fetched for the date
+ * the user has selected, not the last calculated one), with that date.
+ */
+export async function getFairValuePrefill(
+  tx: Tx,
+  companyId: string,
+  asOf: IsoDate,
+): Promise<{
+  asOf: IsoDate;
+  unpaidManagementFee: Cents;
+  memberLoans: Cents;
+  reserves: Cents;
+  availableCashRaw: Cents;
+}> {
+  const summary = await getFinancialSummary(tx, companyId, asOf);
+  const memberLoans = memberLoansOwed(await getLoanStates(tx, companyId, asOf));
+  return {
+    asOf,
+    unpaidManagementFee: summary.fee.toDate.unpaid,
+    memberLoans,
+    reserves: summary.reserves.total,
+    availableCashRaw: summary.availableCash.raw,
   };
 }

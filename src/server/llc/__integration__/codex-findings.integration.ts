@@ -27,6 +27,16 @@
  * 5. The voting register snapshot serialises with admissions.
  * 7. A stale report-email job cannot undo a replaced link's email; a stale
  *    ballot-email claim is released without sending.
+ *
+ * Second review (R2-…, companies `zz-fix2-…`):
+ * R2-3. A term-extension consent states exactly the term clock's current and
+ *       extended Target Sale Date; one consent open at a time; the clock's
+ *       inputs are frozen while it is open.
+ * R2-5. The overview Capital tile and the member statement count a
+ *       Replacement Funder's commitment and receipt once, and reconcile with
+ *       the ledger's class totals.
+ * R2-6. In production with the bundled mail catcher, report and resolution
+ *       sending (and resend / remind) are refused before anything is written.
  * (6 is a unit test: src/lib/sensitive-redaction.test.ts.)
  */
 import { createServer, type Socket } from "node:net";
@@ -34,6 +44,8 @@ import type { Job } from "pg-boss";
 import { env } from "@/env";
 import { reportEmailWorker } from "@/jobs/governance-report-email";
 import { fromDateOnly } from "@/lib/date-only";
+import { todayInZone } from "@/lib/governance/dates";
+import { MAIL_BLOCKED_MESSAGE, mailBlockedReason } from "@/lib/mail-delivery";
 import { sendOnce } from "@/server/governance/events";
 import { takeRecordSnapshot } from "@/server/governance/snapshot";
 import {
@@ -44,6 +56,7 @@ import {
   setReceiptPrefReturnStart,
 } from "@/server/llc/commitments";
 import {
+  getCommitmentStates,
   reconcileCallNoticeLines,
   recordCallNoticePayment,
   saveCallNoticeDraft,
@@ -54,6 +67,7 @@ import {
   declareDefault,
   getDefaultView,
   reconcileBeforeDeclare,
+  recordDefaultFunding,
 } from "@/server/llc/economics/defaults";
 import {
   computeDistribution,
@@ -67,14 +81,23 @@ import {
   insertExpense,
 } from "@/server/llc/economics/financials";
 import { getPositions } from "@/server/llc/economics/ledger";
+import { getMemberStatement } from "@/server/llc/economics/statements";
 import {
   closeBooksThrough,
   getOrCreateLlcTerm,
+  getTermClock,
 } from "@/server/llc/economics/term";
+import { getClassTotals } from "@/server/llc/positions";
+import { createCallerFactory } from "@/trpc/api/trpc";
+import { llcEconomicsRouter } from "@/trpc/routers/llc-economics/router";
+import { llcTermRouter } from "@/trpc/routers/llc-term/router";
+import { memberReportRouter } from "@/trpc/routers/member-report-router/router";
+import { resolutionRouter } from "@/trpc/routers/resolution-router/router";
 import {
   actor,
   check,
   companyRef,
+  createAdmin,
   createCompany,
   db,
   eq,
@@ -1204,6 +1227,454 @@ async function finding7() {
   eq("exactly one send", sends, 1);
 }
 
+// ---------------------------------------------------------------------------
+// Second review (Codex review 2): server-side regression checks. Companies of
+// these checks are named `zz-fix2-…`.
+
+/** Today in the company time zone, as `resolution.send` measures it. */
+const realToday = (c: TestCompany) => todayInZone(new Date(), c.timezone);
+
+/** Members holding Preferred Units today (received and accepted before today). */
+async function governedCompany(label: string) {
+  setCompanyPrefix("zz-fix2-");
+  const c = await createCompany(label);
+  const A = await newMember(c, "A Holder");
+  const B = await newMember(c, "B Holder");
+  await subscribe(c, A.id, usd(100_000), {
+    cents: usd(100_000),
+    receivedOn: "2026-11-10",
+  });
+  await subscribe(c, B.id, usd(50_000), {
+    cents: usd(50_000),
+    receivedOn: "2026-11-10",
+  });
+  setToday(realToday(c));
+  const admin = await createAdmin(c);
+  return { c, A, B, admin };
+}
+
+async function setOcd(c: TestCompany, ocd: string) {
+  await getOrCreateLlcTerm(db, c.id);
+  await db.llcTerm.update({
+    where: { companyId: c.id },
+    data: { operationsCommencementDate: fromDateOnly(ocd) },
+  });
+}
+
+/** Finding 3: a term-extension consent states exactly the clock's dates. */
+async function review2TermExtension() {
+  section("R2-3: a term extension without an Operations Commencement Date");
+  const noOcd = await governedCompany("r2-3-noocd");
+  const noOcdCaller = createCallerFactory(resolutionRouter)(
+    noOcd.admin.context,
+  );
+  await expectRefused(
+    "creating a term-extension draft without an OCD is refused",
+    () =>
+      noOcdCaller.create({
+        type: "TERM_EXTENSION",
+        params: { currentTargetSaleDate: "2030-11-13", extensionNumber: 1 },
+      }),
+    /Operations Commencement Date/,
+    "BAD_REQUEST",
+  );
+
+  section("R2-3: the draft's dates come from the term clock, not the input");
+  const { c, admin } = await governedCompany("r2-3");
+  await setOcd(c, "2026-11-13");
+  const caller = createCallerFactory(resolutionRouter)(admin.context);
+  const termCaller = createCallerFactory(llcTermRouter)(admin.context);
+  eq(
+    "the clock's Target Sale Date is 2031-11-13",
+    (await getTermClock(db, c.id)).effectiveTargetSaleDate,
+    "2031-11-13",
+  );
+  const { publicId } = await caller.create({
+    type: "TERM_EXTENSION",
+    // The repro: a form that said 2030-11-13.
+    params: { currentTargetSaleDate: "2030-11-13", extensionNumber: 1 },
+  });
+  const stored = await db.resolution.findFirstOrThrow({
+    where: { publicId, companyId: c.id },
+  });
+  eq(
+    "stored current Target Sale Date is the clock's (2031-11-13)",
+    (stored.params as { currentTargetSaleDate: string }).currentTargetSaleDate,
+    "2031-11-13",
+  );
+  eq(
+    "stored title states the extended date",
+    stored.title,
+    "Extension of the operating term to November 13, 2032",
+  );
+
+  // A draft whose stored dates are not the clock's (an older draft, or one
+  // written around the form) is refused at send, before anything is frozen.
+  await db.resolution.update({
+    where: { id: stored.id },
+    data: {
+      params: { currentTargetSaleDate: "2030-11-13", extensionNumber: 1 },
+      title: "Extension of the operating term to November 13, 2031",
+    },
+  });
+  const today = realToday(c);
+  await expectRefused(
+    "send refuses a consent stating 2030-11-13 → 2031-11-13",
+    () => caller.send({ publicId, recordDate: today, autoReminders: false }),
+    /under the term clock the current Target Sale Date is Nov 13, 2031/,
+    "BAD_REQUEST",
+  );
+  const afterRefusal = await db.resolution.findFirstOrThrow({
+    where: { id: stored.id },
+  });
+  eq("the refused draft is still a DRAFT", afterRefusal.status, "DRAFT");
+  eq("no register was frozen", afterRefusal.snapshotId, null);
+
+  // A stale title alone is refused too.
+  await db.resolution.update({
+    where: { id: stored.id },
+    data: {
+      params: { currentTargetSaleDate: "2031-11-13", extensionNumber: 1 },
+      title: "Extension of the operating term to November 13, 2031",
+    },
+  });
+  await expectRefused(
+    "send refuses a title stating another date",
+    () => caller.send({ publicId, recordDate: today, autoReminders: false }),
+    /title of a term-extension consent/,
+    "BAD_REQUEST",
+  );
+  // Saving the draft again refreshes its dates and title from the clock.
+  const saved = await caller.update({
+    publicId,
+    title: "Anything typed",
+    params: { currentTargetSaleDate: "2029-01-01", extensionNumber: 7 },
+    body: [],
+  });
+  eq(
+    "update returns the clock's title",
+    saved.title,
+    "Extension of the operating term to November 13, 2032",
+  );
+  const preview = await caller.preview({
+    type: "TERM_EXTENSION",
+    params: { currentTargetSaleDate: "2030-11-13", extensionNumber: 1 },
+    recordDate: today,
+    publicId,
+  });
+  check(
+    "preview shows the date mismatch as a blocker",
+    preview.blockers.some((b) => /under the term clock/.test(b)),
+    preview.blockers.join(" | "),
+  );
+  // Body: one paragraph (send refuses an empty text).
+  await db.resolution.update({
+    where: { id: stored.id },
+    data: {
+      body: [
+        {
+          type: "paragraph",
+          props: {},
+          content: [
+            {
+              type: "text",
+              text: "Do you approve extending the operating term for one additional year?",
+              styles: {},
+            },
+          ],
+          children: [],
+        },
+      ],
+    },
+  });
+
+  // A second draft created now (same clock) for the concurrency check.
+  const second = await caller.create({
+    type: "TERM_EXTENSION",
+    params: { currentTargetSaleDate: "2031-11-13", extensionNumber: 1 },
+  });
+  await db.resolution.update({
+    where: { publicId: second.publicId },
+    data: {
+      body: [
+        {
+          type: "paragraph",
+          props: {},
+          content: [{ type: "text", text: "Extend?", styles: {} }],
+          children: [],
+        },
+      ],
+    },
+  });
+
+  const sent = await caller.send({
+    publicId,
+    recordDate: today,
+    autoReminders: false,
+  });
+  eq("the canonical consent is sent", sent.status, "SENT");
+  const frozen = await db.resolution.findFirstOrThrow({
+    where: { id: stored.id },
+  });
+  const clauses = (frozen.frozenContent as { lockedClauses: string[] })
+    .lockedClauses;
+  check(
+    "the frozen text extends November 13, 2031 to November 13, 2032",
+    clauses.some((t) =>
+      t.includes("extended from November 13, 2031 to November 13, 2032"),
+    ),
+    clauses.join(" | "),
+  );
+
+  await expectRefused(
+    "a second extension cannot be sent while one is open",
+    () =>
+      caller.send({
+        publicId: second.publicId,
+        recordDate: today,
+        autoReminders: false,
+      }),
+    /is still open/,
+    "BAD_REQUEST",
+  );
+  await expectRefused(
+    "the OCD cannot change while the consent is open",
+    () =>
+      termCaller.setOperationsCommencementDate({
+        date: "2026-11-01",
+        noticeSentOn: null,
+      }),
+    /term-extension consent .* is open/,
+    "BAD_REQUEST",
+  );
+  await expectRefused(
+    "the LOI extension cannot change while the consent is open",
+    () => termCaller.setLoiExtension({ days: 30, loiDocumentId: null }),
+    /term-extension consent .* is open/,
+    "BAD_REQUEST",
+  );
+
+  // Approval (the tally's transition, simulated): the clock moves to exactly
+  // the date the Members were asked about.
+  await db.resolution.update({
+    where: { id: stored.id },
+    data: { status: "EFFECTIVE", effectiveAt: new Date() },
+  });
+  eq(
+    "after approval the clock's Target Sale Date is 2032-11-13 (as stated)",
+    (await getTermClock(db, c.id)).effectiveTargetSaleDate,
+    "2032-11-13",
+  );
+  await expectRefused(
+    "the draft prepared before the approval is refused (dates moved)",
+    () =>
+      caller.send({
+        publicId: second.publicId,
+        recordDate: today,
+        autoReminders: false,
+      }),
+    /moves it to Nov 13, 2033/,
+    "BAD_REQUEST",
+  );
+}
+
+/** Finding 6: no report or resolution is sent in production to the mail catcher. */
+async function review2MailCatcher() {
+  section("R2-6: the decider (injected env)");
+  eq(
+    "production + catcher → refused",
+    mailBlockedReason({ nodeEnv: "production", mailCatcher: true }, "REPORT"),
+    MAIL_BLOCKED_MESSAGE.REPORT,
+  );
+  eq(
+    "development + catcher → allowed (test mode)",
+    mailBlockedReason({ nodeEnv: "development", mailCatcher: true }, "REPORT"),
+    null,
+  );
+  eq(
+    "production + real SMTP → allowed",
+    mailBlockedReason(
+      { nodeEnv: "production", mailCatcher: false },
+      "RESOLUTION",
+    ),
+    null,
+  );
+
+  section("R2-6: production with the mail catcher writes nothing");
+  const { c, admin } = await governedCompany("r2-6");
+  const resolutions = createCallerFactory(resolutionRouter)(admin.context);
+  const reports = createCallerFactory(memberReportRouter)(admin.context);
+  const draft = await resolutions.create({
+    type: "AUDIT_CALL",
+    params: { fiscalYear: 2026, scope: "REVIEW", periodDescription: "2026" },
+  });
+  const report = await reports.create({
+    type: "QUARTERLY",
+    fiscalYear: 2026,
+    fiscalQuarter: 3,
+  });
+  const termBefore = await getOrCreateLlcTerm(db, c.id);
+  const penv = process.env as Record<string, string | undefined>;
+  const previous = penv.NODE_ENV;
+  penv.NODE_ENV = "production";
+  try {
+    await expectRefused(
+      "memberReport.send is refused",
+      () => reports.send({ publicId: report.publicId }),
+      /closes the books .* local mail catcher/,
+      "BAD_REQUEST",
+    );
+    await expectRefused(
+      "resolution.send is refused",
+      () =>
+        resolutions.send({
+          publicId: draft.publicId,
+          recordDate: realToday(c),
+          autoReminders: false,
+        }),
+      /freezes the voting register .* local mail catcher/,
+      "BAD_REQUEST",
+    );
+    await expectRefused(
+      "memberReport.resend is refused",
+      () => reports.resend({ publicId: report.publicId }),
+      /local mail catcher/,
+      "BAD_REQUEST",
+    );
+    await expectRefused(
+      "resolution.remind is refused",
+      () => resolutions.remind({ publicId: draft.publicId }),
+      /local mail catcher/,
+      "BAD_REQUEST",
+    );
+  } finally {
+    penv.NODE_ENV = previous;
+  }
+  const reportAfter = await db.memberReport.findFirstOrThrow({
+    where: { publicId: report.publicId, companyId: c.id },
+  });
+  eq("the report is still a DRAFT", reportAfter.status, "DRAFT");
+  const termAfter = await getOrCreateLlcTerm(db, c.id);
+  eq(
+    "the books were not closed",
+    termAfter.booksClosedThrough?.toISOString() ?? null,
+    termBefore.booksClosedThrough?.toISOString() ?? null,
+  );
+  const resolutionAfter = await db.resolution.findFirstOrThrow({
+    where: { publicId: draft.publicId, companyId: c.id },
+  });
+  eq("the resolution is still a DRAFT", resolutionAfter.status, "DRAFT");
+  eq("no voting register was frozen", resolutionAfter.snapshotId, null);
+  eq(
+    "no ballot was created",
+    await db.resolutionBallot.count({
+      where: { resolutionId: resolutionAfter.id },
+    }),
+    0,
+  );
+  eq(
+    "no record snapshot was taken",
+    await db.recordSnapshot.count({ where: { companyId: c.id } }),
+    0,
+  );
+}
+
+/** Finding 5: the Capital tile reconciles with the ledger after replacement funding. */
+async function review2CapitalTile() {
+  section("R2-5: replacement funding counted once in the Capital tile");
+  setCompanyPrefix("zz-fix2-");
+  const c = await createCompany("r2-5");
+  const A = await newMember(c, "A Funder");
+  const B = await newMember(c, "B Holder");
+  const C = await newMember(c, "C Defaulter");
+  await subscribe(c, A.id, usd(100_000), {
+    cents: usd(100_000),
+    receivedOn: "2026-11-16",
+  });
+  await subscribe(c, B.id, usd(250_000), {
+    cents: usd(250_000),
+    receivedOn: "2026-11-23",
+  });
+  const cCommitment = await subscribe(c, C.id, usd(100_000), {
+    cents: usd(40_000),
+    receivedOn: "2026-11-30",
+  });
+  const call = await sendCall(
+    c,
+    cCommitment,
+    usd(60_000),
+    "2027-01-14",
+    "2027-01-20",
+  );
+  setToday("2027-01-21");
+  const d = await inTx((tx) =>
+    declareDefault(tx, {
+      ...input(c),
+      callNoticeLineId: call.lineId,
+      expectedUnpaidCents: usd(60_000),
+    }),
+  );
+  setToday("2027-01-25");
+  await inTx((tx) =>
+    recordDefaultFunding(tx, {
+      ...input(c),
+      id: d.id,
+      funderStakeholderId: A.id,
+      amountCents: usd(10_000),
+      fundedOn: "2027-01-25",
+    }),
+  );
+  const admin = await createAdmin(c);
+  const overview = await createCallerFactory(llcEconomicsRouter)(
+    admin.context,
+  ).overview();
+  const totals = await getClassTotals(db, c.id, c.preferredId);
+  // The repro: the callable commitments alone (what the tile used to sum)
+  // miss the Replacement Funder's commitment and receipt.
+  const callable = await getCommitmentStates(db, c.id);
+  eq(
+    "callable commitments alone: paid $390,000 (the old tile)",
+    callable.reduce((s, x) => s + x.totalPaid, 0n),
+    usd(390_000),
+  );
+  eq(
+    "Capital paid = the ledger's cash applied ($400,000)",
+    overview.capital.paid,
+    Number(totals.cashAppliedCents),
+  );
+  eq(
+    "Capital paid = FOUNDATION's Paid to date (no forfeiture here)",
+    overview.capital.paid,
+    Number(totals.capitalCents),
+  );
+  eq("paid is $400,000.00", overview.capital.paid, 40_000_000);
+  eq(
+    "Capital committed = the ledger's committed ($450,000)",
+    overview.capital.committed,
+    Number(totals.committedCents),
+  );
+  eq("committed is $450,000.00", overview.capital.committed, 45_000_000);
+  eq(
+    "uncalled Balance unchanged by the funding (A, B paid; C's Balance called)",
+    overview.capital.uncalled,
+    0,
+  );
+  const statement = await getMemberStatement(db, c.id, A.id, {
+    from: "2026-11-01",
+    to: "2027-01-25",
+  });
+  eq(
+    "A's statement commitment includes the replacement commitment",
+    statement.commitment?.committed,
+    usd(110_000),
+  );
+  eq(
+    "A's statement paid includes the replacement funding",
+    statement.commitment?.paid,
+    usd(110_000),
+  );
+}
+
 await runScenarios([
   ["F1", finding1],
   ["F2", finding2],
@@ -1211,4 +1682,7 @@ await runScenarios([
   ["F4", finding4],
   ["F5", finding5],
   ["F7", finding7],
+  ["R2-3", review2TermExtension],
+  ["R2-5", review2CapitalTile],
+  ["R2-6", review2MailCatcher],
 ]);

@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  isSignedStorageRequest,
   scrubBreadcrumb,
   scrubEvent,
   scrubSpan,
 } from "../constants/sentry-scrub";
-import { loggablePath, redactDeep, redactTokens } from "./token-redaction";
+import {
+  isPresignedUrl,
+  loggablePath,
+  redactDeep,
+  redactSignedUrls,
+  redactTokens,
+} from "./token-redaction";
 
 const JWT =
   "eyJhbGciOiJIUzI1NiJ9.eyJwIjoicmIiLCJiIjoiY2xhYmMxMjMiLCJ2IjoxfQ.c2lnbmF0dXJlLXNpZ25hdHVyZQ";
@@ -86,5 +93,97 @@ describe("Sentry hooks", () => {
     expect(out.url).toBe("/ballots/[token]");
     const d = new Date(0);
     expect(redactDeep({ d }).d).toBe(d);
+  });
+});
+
+// P1: presigned storage URLs are reusable write/read credentials.
+const SIGNED_QUERY =
+  "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=captable%2F20261113%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261113T120000Z&X-Amz-Expires=600&X-Amz-Signature=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef&X-Amz-SignedHeaders=host&x-id=PutObject";
+const SIGNED_URL = `http://127.0.0.1:9002/captable-private/c1/generic-documents-k1-abc.pdf?${SIGNED_QUERY}`;
+
+describe("presigned storage URLs", () => {
+  it("detects SigV4, SigV2, GCS, CloudFront and SAS signatures", () => {
+    expect(isPresignedUrl(SIGNED_URL)).toBe(true);
+    expect(isPresignedUrl(`?${SIGNED_QUERY}`)).toBe(true);
+    expect(isPresignedUrl(SIGNED_QUERY)).toBe(true);
+    expect(
+      isPresignedUrl(
+        "https://b.s3.amazonaws.com/k?AWSAccessKeyId=AKIA&Expires=1&Signature=abc",
+      ),
+    ).toBe(true);
+    expect(
+      isPresignedUrl("https://storage.googleapis.com/b/k?X-Goog-Signature=1"),
+    ).toBe(true);
+    expect(isPresignedUrl("https://cdn/k?Policy=p&Key-Pair-Id=K")).toBe(true);
+    expect(isPresignedUrl("https://acct.blob/k?sv=1&sig=abc")).toBe(true);
+    expect(isPresignedUrl("https://app/acme/resolutions?tab=x")).toBe(false);
+    expect(isPresignedUrl("https://app/x?design=1&signatures=2")).toBe(false);
+    expect(isSignedStorageRequest(SIGNED_URL)).toBe(true);
+  });
+
+  it("drops the whole query of a signed URL, keeps ordinary ones", () => {
+    const plain = SIGNED_URL.split("?")[0];
+    expect(redactSignedUrls(SIGNED_URL)).toBe(`${plain}?[Filtered]`);
+    expect(redactTokens(`PUT ${SIGNED_URL}`)).toBe(`PUT ${plain}?[Filtered]`);
+    expect(redactTokens(`fetch "${SIGNED_URL}" failed`)).toBe(
+      `fetch "${plain}?[Filtered]" failed`,
+    );
+    expect(redactTokens("/acme/resolutions/r1?tab=ballots")).toBe(
+      "/acme/resolutions/r1?tab=ballots",
+    );
+  });
+
+  it("redacts bare signed query strings (url.query, http.query)", () => {
+    const out = redactTokens(SIGNED_QUERY);
+    expect(out).not.toContain("0123456789abcdef");
+    expect(out).not.toContain("captable%2F");
+    expect(redactTokens(`?${SIGNED_QUERY}`)).toBe("?[Filtered]");
+  });
+
+  it("scrubs every URL-bearing field of a span, breadcrumb and event", () => {
+    const span = scrubSpan({
+      name: `PUT ${SIGNED_URL}`,
+      description: `PUT ${SIGNED_URL}`,
+      attributes: {
+        url: SIGNED_URL,
+        "http.url": SIGNED_URL,
+        "url.full": SIGNED_URL,
+        "http.query": `?${SIGNED_QUERY}`,
+        "url.query": SIGNED_QUERY,
+        "sentry.op": "http.client",
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: test double
+    } as any);
+    const crumb = scrubBreadcrumb(
+      {
+        category: "fetch",
+        data: { method: "PUT", url: SIGNED_URL, status_code: 200 },
+      },
+      undefined,
+    );
+    const event = scrubEvent(
+      {
+        request: {
+          url: SIGNED_URL,
+          query_string: [
+            ["X-Amz-Signature", "0123456789abcdef"],
+            ["X-Amz-Credential", "captable/20261113"],
+          ],
+        },
+        extra: { query: { "X-Amz-Signature": "0123456789abcdef" } },
+        exception: { values: [{ value: `Upload to ${SIGNED_URL} failed` }] },
+        // biome-ignore lint/suspicious/noExplicitAny: test double
+      } as any,
+      {},
+    );
+    for (const out of [span, crumb, event]) {
+      const text = JSON.stringify(out);
+      expect(text).not.toContain("0123456789abcdef");
+      expect(text).not.toContain("captable%2F");
+      expect(text).not.toContain("captable/20261113");
+    }
+    expect(JSON.stringify(span)).toContain(
+      "PUT http://127.0.0.1:9002/captable-private/c1/generic-documents-k1-abc.pdf?[Filtered]",
+    );
   });
 });

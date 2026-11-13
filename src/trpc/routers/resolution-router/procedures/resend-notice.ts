@@ -4,6 +4,7 @@ import {
   emitResolutionNotices,
   type ResolutionNoticeJobData,
 } from "@/jobs/governance-resolution-notice";
+import { assertMailDeliverable } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 
 // resolution.resendNotice (03-governance.md G9): re-sends the result notice
@@ -26,6 +27,9 @@ export const resendNoticeProcedure = withLlcAccessControl
       .strict(),
   )
   .mutation(async ({ ctx, input }) => {
+    // Production with the bundled mail catcher: refused before anything
+    // is written (Members would not receive the email).
+    assertMailDeliverable("MEMBER_EMAIL");
     const companyId = ctx.membership.companyId;
     const resolution = await ctx.db.resolution.findFirst({
       where: { publicId: input.publicId, companyId },

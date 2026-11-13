@@ -11,6 +11,7 @@ import {
   computeFairValue,
   memberLoansOwed,
   perPreferredUnit,
+  receiptDescription,
 } from "./statements.logic";
 
 const U = 1_000_000n;
@@ -307,5 +308,49 @@ describe("helpers", () => {
         0n,
       ),
     ).toBe(null);
+  });
+});
+
+describe("receiptDescription (money wired before acceptance)", () => {
+  const base = { id: "r1", amount: 4_000_000n, units: 40n * U };
+
+  it("states the receipt date and the accrual start when they differ from the ledger date", () => {
+    expect(
+      receiptDescription({
+        ...base,
+        kind: "INITIAL",
+        on: "2026-11-10",
+        receivedOn: "2026-11-09",
+        accrualStartOn: "2026-11-09",
+      }),
+    ).toBe(
+      "Initial Installment (received 2026-11-09; capital and Units from 2026-11-10 (acceptance); Preferred Return accrues from 2026-11-09)",
+    );
+  });
+
+  it("keeps the plain label when received on the ledger date", () => {
+    expect(
+      receiptDescription({
+        ...base,
+        kind: "INITIAL",
+        on: "2026-11-10",
+        receivedOn: "2026-11-10",
+        accrualStartOn: "2026-11-10",
+      }),
+    ).toBe("Initial Installment");
+  });
+
+  it("never prints a single accrual date for a Balance receipt", () => {
+    expect(
+      receiptDescription({
+        ...base,
+        kind: "BALANCE",
+        on: "2026-11-10",
+        receivedOn: "2026-11-09",
+        accrualStartOn: "2027-01-20",
+      }),
+    ).toBe(
+      "Balance payment (received 2026-11-09; capital and Units from 2026-11-10 (acceptance))",
+    );
   });
 });

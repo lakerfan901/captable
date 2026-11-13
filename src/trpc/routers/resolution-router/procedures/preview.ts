@@ -2,11 +2,14 @@ import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
 import {
   behaviour,
   buildRequirements,
+  buildTitle,
   type ResolutionType,
 } from "@/lib/governance/presets";
 import { eligibleRecipients } from "@/lib/governance/resolution-core";
 import { denominator, fromMicro, minimumFor, toMicro } from "@/lib/llc/voting";
 import { buildSnapshotDraft } from "@/server/governance/snapshot";
+import { termExtensionSendBlockers } from "@/server/governance/term-extension";
+import { currentMailDelivery } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZResolutionPreviewSchema } from "../schema";
 import { parseDraftParams } from "./create";
@@ -163,6 +166,29 @@ export const previewProcedure = withLlcAccessControl
       warnings.push("The record date cannot be in the future.");
     }
 
+    // Refusals of `send` that do not depend on the record date.
+    const mail = currentMailDelivery("RESOLUTION");
+    if (mail.blockedReason !== null) blockers.push(mail.blockedReason);
+    if (type === "TERM_EXTENSION") {
+      const stored = input.publicId
+        ? await ctx.db.resolution.findFirst({
+            where: { publicId: input.publicId, companyId },
+            select: { id: true, title: true },
+          })
+        : null;
+      for (const blocker of await termExtensionSendBlockers(ctx.db, companyId, {
+        id: stored?.id ?? "",
+        params,
+        // Without the draft, only the dates are checked here (send also
+        // checks the stored title).
+        title:
+          stored?.title ??
+          buildTitle(type, params, { companyName: ctx.company.name }),
+      })) {
+        blockers.push(blocker);
+      }
+    }
+
     return {
       requirements,
       recipients,
@@ -170,5 +196,7 @@ export const previewProcedure = withLlcAccessControl
       warnings,
       blockers,
       timeZone: zone,
+      /** Emails go to the local mail catcher (the dialog shows "Test mode"). */
+      mailTestMode: mail.testMode,
     };
   });

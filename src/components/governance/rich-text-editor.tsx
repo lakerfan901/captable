@@ -14,11 +14,14 @@ import "@blocknote/mantine/style.css";
 export interface RichTextEditorProps {
   initialBlocks: unknown[];
   onChange: (blocks: unknown[]) => void;
+  /** false: shown read-only (a viewer without the write permission). */
+  editable?: boolean;
 }
 
 export default function RichTextEditor({
   initialBlocks,
   onChange,
+  editable = true,
 }: RichTextEditorProps) {
   const editor = useCreateBlockNote({
     initialContent:
@@ -29,6 +32,7 @@ export default function RichTextEditor({
     <BlockNoteView
       className="py-5"
       editor={editor}
+      editable={editable}
       theme="light"
       onChange={() => onChange(editor.document)}
     />

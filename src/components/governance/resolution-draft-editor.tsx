@@ -89,6 +89,8 @@ export function ResolutionDraftEditor({
   const router = useRouter();
   const [title, setTitle] = useState(initialTitle);
   const [params, setParams] = useState<Params>(initialParams);
+  // Bumped when the server replaced the params (remounts the details form).
+  const [paramsVersion, setParamsVersion] = useState(0);
   const [paramsValid, setParamsValid] = useState(true);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
@@ -123,12 +125,19 @@ export function ResolutionDraftEditor({
       return false;
     }
     try {
-      await update.mutateAsync({
+      const saved = await update.mutateAsync({
         publicId,
         title: title.trim(),
         params,
         body: bodyRef.current,
       });
+      // A term extension's dates and title are set by the server from the
+      // term clock: show (and send) what it stored.
+      if (saved.title !== undefined) setTitle(saved.title);
+      if (saved.params !== undefined) {
+        setParams(saved.params as Params);
+        setParamsVersion((v) => v + 1);
+      }
       return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -171,7 +180,12 @@ export function ResolutionDraftEditor({
           className="max-w-2xl flex-1 font-medium"
           value={title}
           maxLength={200}
-          disabled={!canEdit}
+          disabled={!canEdit || type === "TERM_EXTENSION"}
+          title={
+            type === "TERM_EXTENSION"
+              ? "Set from the term clock: it states the extended Target Sale Date."
+              : undefined
+          }
           onChange={(e) => setTitle(e.target.value)}
         />
         <StatusBadge status="DRAFT" />
@@ -189,6 +203,7 @@ export function ResolutionDraftEditor({
             <RichTextEditorLazy
               initialBlocks={initialBody}
               onChange={onBodyChange}
+              editable={canEdit}
             />
           </CardContent>
         </Card>
@@ -208,8 +223,9 @@ export function ResolutionDraftEditor({
             {/* Kept mounted so edits survive collapsing. */}
             <CardContent className={detailsOpen ? undefined : "hidden"}>
               <ResolutionPresetForm
+                key={paramsVersion}
                 type={type}
-                defaultValues={initialParams}
+                defaultValues={paramsVersion === 0 ? initialParams : params}
                 members={members}
                 disabled={!canEdit}
                 onChange={onParamsChange}

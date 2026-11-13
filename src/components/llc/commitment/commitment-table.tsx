@@ -5,7 +5,6 @@ import { type ColumnDef, useTable } from "@tanstack/react-table";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Allow } from "@/components/rbac/allow";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table/data-table";
 import { DataTableBody } from "@/components/ui/data-table/data-table-body";
@@ -22,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAllowed } from "@/hooks/use-allowed";
 import { diffInDays, formatDateOnly, todayInTimeZone } from "@/lib/date-only";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -87,13 +87,23 @@ function RowActions({
   const [decideOpen, setDecideOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
-  const canRecord = row.status !== "REJECTED";
-  const canDecide = row.status === "PENDING";
-  const canRefund = row.refundOutstandingCents > 0;
+  const { isAllowed: canCreate } = useAllowed({
+    action: "create",
+    subject: "commitments",
+  });
+  const { isAllowed: canUpdate } = useAllowed({
+    action: "update",
+    subject: "commitments",
+  });
+  const canRecord = canCreate && row.status !== "REJECTED";
+  const canDecide = canUpdate && row.status === "PENDING";
+  const canRefund = canUpdate && row.refundOutstandingCents > 0;
   // A pending commitment has acceptedCents 0, so the class total is the rest.
   const otherAcceptedCents = acceptedTotalCents - row.acceptedCents;
 
-  if (!canRecord && !canRefund && !row.packetPublicId) return null;
+  if (!canRecord && !canDecide && !canRefund && !row.packetPublicId) {
+    return null;
+  }
 
   return (
     <>
@@ -106,28 +116,24 @@ function RowActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {canRecord ? (
-            <Allow action="create" subject="commitments">
-              <DropdownMenuItem onSelect={() => setReceiptOpen(true)}>
-                Record receipt
-              </DropdownMenuItem>
-            </Allow>
+            <DropdownMenuItem onSelect={() => setReceiptOpen(true)}>
+              Record receipt
+            </DropdownMenuItem>
           ) : null}
           {canDecide ? (
-            <Allow action="update" subject="commitments">
+            <>
               <DropdownMenuItem onSelect={() => setDecideOpen(true)}>
                 Accept or reduce
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setRejectOpen(true)}>
                 Reject
               </DropdownMenuItem>
-            </Allow>
+            </>
           ) : null}
           {canRefund ? (
-            <Allow action="update" subject="commitments">
-              <DropdownMenuItem onSelect={() => setRefundOpen(true)}>
-                Record refund
-              </DropdownMenuItem>
-            </Allow>
+            <DropdownMenuItem onSelect={() => setRefundOpen(true)}>
+              Record refund
+            </DropdownMenuItem>
           ) : null}
           {row.packetPublicId ? (
             <DropdownMenuItem asChild>

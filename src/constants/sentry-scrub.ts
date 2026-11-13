@@ -2,7 +2,11 @@ import {
   redactSensitive,
   redactSensitiveText,
 } from "../lib/sensitive-redaction";
-import { redactDeep, redactTokens } from "../lib/token-redaction";
+import {
+  isPresignedUrl,
+  redactDeep,
+  redactTokens,
+} from "../lib/token-redaction";
 
 // Sentry hooks that keep emailed-link credentials out of every event (M4),
 // shared by the server, edge and browser configs. They apply the SAME token
@@ -38,15 +42,34 @@ export const scrubBreadcrumb: BeforeBreadcrumb = (breadcrumb) =>
   redactSensitive(redactDeep(breadcrumb));
 
 export const scrubSpan = ((span: Parameters<BeforeSendSpan>[0]) => {
-  const s = span as unknown as { name?: unknown; attributes?: unknown };
-  if (typeof s.name === "string") {
-    s.name = redactSensitiveText(redactTokens(s.name));
-  }
-  if (s.attributes && typeof s.attributes === "object") {
-    s.attributes = redactSensitive(redactDeep(s.attributes));
+  // Every string field (`name` of a streamed span, `description` / `op` of
+  // a static one: "PUT https://bucket/key?X-Amz-Signature=…") and every
+  // attribute bag (`attributes`, `data`), in place: the SDK expects the same
+  // object back.
+  const s = span as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(s)) {
+    if (typeof value === "string") {
+      s[key] = redactSensitiveText(redactTokens(value));
+    } else if (
+      (key === "attributes" || key === "data") &&
+      value &&
+      typeof value === "object"
+    ) {
+      s[key] = redactSensitive(redactDeep(value));
+    }
   }
   return span;
 }) as BeforeSendSpan;
+
+/**
+ * Outgoing-request filter for the HTTP / fetch integrations of every runtime
+ * (P1): no span and no breadcrumb is created for a presigned storage URL (an
+ * S3 PUT or GET whose query carries `X-Amz-Signature` & co.), so the
+ * reusable signed URL is never recorded at all. The scrubbers above still
+ * drop the query of any presigned URL that reaches an event another way.
+ */
+export const isSignedStorageRequest = (url: string): boolean =>
+  isPresignedUrl(url);
 
 /** Every Sentry hook above, to spread into `Sentry.init`. */
 export const sentryScrubbing = {
