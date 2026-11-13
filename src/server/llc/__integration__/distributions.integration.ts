@@ -24,8 +24,10 @@ import {
 import { recordCallNoticePayment } from "@/server/llc/economics/call-notices";
 import {
   confirmCredit,
+  confirmCure,
   confirmForfeiture,
   declareDefault,
+  getDefaultView,
   recordDefaultFunding,
   recordDefaultPayment,
 } from "@/server/llc/economics/defaults";
@@ -623,11 +625,26 @@ async function finalizeVsReverse(c: TestCompany) {
     r2.second.ok ? "" : r2.second.message,
   );
   if (r2.second.ok) {
+    // Its frozen lines must carry the positions after the reverse (D1 only),
+    // not the ones reviewed while D2 still stood.
     const recomputed = await inTx((tx) => getDistribution(tx, c.id, d3.id));
-    eq(
-      "the late finalize got the next number",
+    const ledger = (await inTx((tx) => getPositions(tx, c.id, P))).ledger;
+    const event = ledger.events.find(
+      (e) => e.kind === "DISTRIBUTION" && e.distributionId === d3.id,
+    );
+    const atD3 = event
+      ? (await inTx((tx) => getPositions(tx, c.id, P, { untilSeq: event.seq })))
+          .positions
+      : null;
+    check(
+      "the late finalize froze the recomputed unreturned capital",
+      atD3 !== null &&
+        recomputed.lines.every(
+          (l) =>
+            (atD3.holders.get(l.stakeholderId)?.unreturned ?? 0n) ===
+            l.unreturnedBeforeCents,
+        ),
       recomputed.distribution.status,
-      "FINALIZED",
     );
     await inTx(reverse(c, d3.id));
   } else {
@@ -1280,6 +1297,82 @@ async function excessHeld() {
     "blocker DEFAULT_EXCESS_HELD",
     codes.includes("DEFAULT_EXCESS_HELD"),
     codes.join(","),
+  );
+
+  section(
+    "Cure by replacement funding (R37 route 2), then interest-only netting (R18)",
+  );
+  // Hand-derived: poolA = 30,000 × 50% × 60,000 / 60,000 = 15,000; poolB =
+  // 30,000 − 15,000 = 15,000. Interest = (60,000 × 5 + 30,000 × 9) × 12% / 365
+  // = 187.397… → $187.40.
+  await inTx((tx) =>
+    confirmCredit(tx, {
+      ...input(c),
+      id: d.id,
+      expectedPoolACents: usd(15_000),
+      expectedPoolBCents: usd(15_000),
+      expectedCreditDate: "2027-02-03",
+    }),
+  );
+  const view = (asOf: string) =>
+    inTx((tx) => getDefaultView(tx, c.id, d.id, asOf));
+  const v = await view("2027-02-03");
+  eq("cure method REPLACEMENT_FUNDED", v.cure.method, "REPLACEMENT_FUNDED");
+  eq(
+    "cured on 2027-02-03 (funded in full and credited)",
+    v.cure.curedOn,
+    "2027-02-03",
+  );
+  eq("interest owed $187.40", v.interestOwed, usd(187.4));
+  await inTx((tx) =>
+    confirmCure(tx, { ...input(c), id: d.id, expectedCuredOn: "2027-02-03" }),
+  );
+  const cured = await view("2027-02-03");
+  eq("status CURED", cured.status, "CURED");
+  eq(
+    "interest still owed after the cure (R18)",
+    cured.interestOwed,
+    usd(187.4),
+  );
+  // A payment dated on the Credit Date is refused once the credit is
+  // confirmed (E11 date order), so the run is paid the next day.
+  const sameDay = await compute(c, id);
+  check(
+    "a run paid on the confirmed Credit Date is blocked (OFFSET_DATE_ORDER)",
+    sameDay.blockers.some((b) => b.code === "OFFSET_DATE_ORDER"),
+    sameDay.blockers.map((b) => b.code).join(","),
+  );
+  await inTx((tx) => deleteDistributionDraft(tx, { ...input(c), id }));
+  setToday("2027-02-04");
+  const next = await draft(
+    c,
+    { type: "RETURN_OF_UNUSED_CAPITAL", amountCents: 10_000_000 },
+    { periodEnd: "2027-02-04", paymentDate: "2027-02-04" },
+  );
+  const after = await compute(c, next.id);
+  eq("no blockers once cured", after.blockers.map((b) => b.code).join(","), "");
+  const cLine = lineOf(after.lines, C.id);
+  eq("C's line nets the interest", cLine?.defaultOffsetInterest, usd(187.4));
+  eq("nothing is applied to Balance", cLine?.defaultOffsetBalance, 0n);
+  eq("C is paid the rest", cLine?.net, (cLine?.gross ?? 0n) - usd(187.4));
+  await inTx(finalize(c, next.id, after.hash));
+  eq(
+    "no offset receipt (interest only)",
+    await db.capitalReceipt.count({
+      where: { companyId: c.id, sourceType: "distribution" },
+    }),
+    0,
+  );
+  eq(
+    "interest owed $0.00 after the distribution",
+    (await view("2027-02-04")).interestOwed,
+    0n,
+  );
+  await inTx(reverse(c, next.id));
+  eq(
+    "interest owed $187.40 again after the reverse",
+    (await view("2027-02-04")).interestOwed,
+    usd(187.4),
   );
 }
 

@@ -620,8 +620,13 @@ async function deleteCompanies(ids: string[]): Promise<number> {
 
 /** Companies left behind by an earlier crashed run of these scripts. */
 export async function sweepLeftovers(): Promise<void> {
+  // Only companies older than an hour: a concurrent run of these scripts
+  // (another session) keeps its own companies.
   const rows = await db.company.findMany({
-    where: { name: { startsWith: COMPANY_PREFIX } },
+    where: {
+      name: { startsWith: COMPANY_PREFIX },
+      createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) },
+    },
     select: { id: true },
   });
   const left = await deleteCompanies(rows.map((r) => r.id));
@@ -642,9 +647,9 @@ export async function cleanup(): Promise<number> {
     where: { name: { startsWith: COMPANY_PREFIX } },
   });
   console.log(
-    `cleanup: ${left} rows left for the ${createdCompanyIds.length} test companies; ${stray} ${COMPANY_PREFIX} companies in the database`,
+    `cleanup: ${left} rows and ${users} users left for this run's ${createdCompanyIds.length} test companies; ${stray} ${COMPANY_PREFIX} companies in the database (other runs included)`,
   );
-  return left + stray + users;
+  return left + users;
 }
 
 /** Runs the scenarios, cleans up, prints the summary and sets the exit code. */

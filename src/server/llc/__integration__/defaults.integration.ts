@@ -15,7 +15,10 @@
  * row created is deleted at the end (see harness.ts).
  */
 import { formatCents } from "@/lib/money";
-import { recordCapitalReceipt } from "@/server/llc/commitments";
+import {
+  recordCapitalReceipt,
+  voidCapitalReceipt,
+} from "@/server/llc/commitments";
 import {
   getCommitmentStates,
   getLineStates,
@@ -903,6 +906,156 @@ async function declareAfterReconcile() {
 }
 
 // ---------------------------------------------------------------------------
+// Balance money recorded on the Commitments page after the declaration (a
+// FOUNDATION receipt no line is matched to), racing the forfeiture.
+
+async function unappliedMoneyOnDefault() {
+  section(
+    "Commitments-page receipt on a declared default, racing confirmForfeiture",
+  );
+  const c = await createCompany("e11-unapplied");
+  const A = await newMember(c, "A Holder");
+  const C = await newMember(c, "C Defaulter");
+  await subscribe(c, A.id, $(100_000), {
+    cents: $(100_000),
+    receivedOn: "2026-11-16",
+  });
+  const cCommitment = await subscribe(c, C.id, $(100_000), {
+    cents: $(40_000),
+    receivedOn: "2026-11-30",
+  });
+  const call = await sendCall(
+    c,
+    cCommitment,
+    $(60_000),
+    "2027-01-14",
+    "2027-01-20",
+  );
+  setToday("2027-01-21");
+  const d = await inTx((tx) =>
+    declareDefault(tx, {
+      ...input(c),
+      callNoticeLineId: call.lineId,
+      expectedUnpaidCents: $(60_000),
+    }),
+  );
+  setToday("2027-01-28");
+  const v = await inTx((tx) => getDefaultView(tx, c.id, d.id, "2027-01-28"));
+  eq(
+    "proposal: Forfeited Amount $30,000.00",
+    v.forfeiture.proposal?.forfeited,
+    $(30_000),
+  );
+  const pageReceipt = (tx: Parameters<typeof recordCapitalReceipt>[0]) =>
+    recordCapitalReceipt(
+      tx,
+      {
+        companyId: c.id,
+        commitmentId: cCommitment,
+        receivedOn: "2027-01-26",
+        amountCents: $(5_000),
+      },
+      actor,
+    );
+  const forfeit = (tx: Parameters<typeof confirmForfeiture>[0]) =>
+    confirmForfeiture(tx, {
+      ...input(c),
+      id: d.id,
+      expectedForfeitedCents: $(30_000),
+      expectedUnitsAfter: 10n * U,
+    });
+  const r = await race(pageReceipt, forfeit);
+  check(
+    "receipt first: recorded",
+    r.first.ok,
+    r.first.ok ? "" : r.first.message,
+  );
+  check("receipt first: the forfeiture waited for it", r.secondWaited);
+  check(
+    "receipt first: the forfeiture is refused as a rule violation (not an internal error)",
+    !r.second.ok && r.second.code === "BAD_REQUEST",
+    r.second.ok ? "it was confirmed" : `${r.second.code}: ${r.second.message}`,
+  );
+  eq(
+    "no FORFEITURE receipt",
+    await db.capitalReceipt.count({
+      where: { companyId: c.id, kind: "FORFEITURE" },
+    }),
+    0,
+  );
+  await expectRefused(
+    "the forfeiture is refused while that money is not applied",
+    () => inTx(forfeit),
+    /not applied to any Call Notice line/,
+    "BAD_REQUEST",
+  );
+  await expectRefused(
+    "a Replacement Funder funding is refused while that money is not applied",
+    () =>
+      inTx((tx) =>
+        recordDefaultFunding(tx, {
+          ...input(c),
+          id: d.id,
+          funderStakeholderId: A.id,
+          amountCents: $(1_000),
+          fundedOn: "2027-01-28",
+        }),
+      ),
+    /not applied to any Call Notice line/,
+    "BAD_REQUEST",
+  );
+  // The remedy the message gives: void it, record it on the default page.
+  if (r.first.ok) {
+    const receiptId = r.first.value.id;
+    await inTx((tx) =>
+      voidCapitalReceipt(
+        tx,
+        { companyId: c.id, receiptId, reason: "re-record on the default page" },
+        actor,
+      ),
+    );
+  }
+  await inTx((tx) =>
+    recordDefaultPayment(tx, {
+      ...input(c),
+      id: d.id,
+      paidOn: "2027-01-26",
+      amountCents: $(5_000),
+      expected: {
+        toBalanceCents: $(5_000),
+        toInterestCents: 0n,
+        toCostsCents: 0n,
+      },
+    }),
+  );
+  const v2 = await inTx((tx) => getDefaultView(tx, c.id, d.id, "2027-01-28"));
+  eq(
+    "unpaid at the Forfeiture Date now $55,000.00",
+    v2.forfeiture.proposal?.unpaidAtForfeiture,
+    $(55_000),
+  );
+  eq(
+    "Forfeited Amount now $27,500.00",
+    v2.forfeiture.proposal?.forfeited,
+    $(27_500),
+  );
+  eq("units 45 → 17.5", v2.forfeiture.proposal?.unitsAfter, 17_500_000n);
+  check(
+    "the forfeiture is confirmed on the corrected figures",
+    (await errorOf(() =>
+      inTx((tx) =>
+        confirmForfeiture(tx, {
+          ...input(c),
+          id: d.id,
+          expectedForfeitedCents: $(27_500),
+          expectedUnitsAfter: 17_500_000n,
+        }),
+      ),
+    )) === null,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // A distribution paid ON the Forfeiture Date (PENDING_DEFAULT_STEP blocks
 // only when the Forfeiture Date is before the payment date).
 
@@ -1183,4 +1336,5 @@ void runScenarios([
   ["$0 forfeiture", zeroForfeiture],
   ["B2 declare reconcile", declareAfterReconcile],
   ["Forfeiture Date = payment date", forfeitureOnPaymentDate],
+  ["unapplied money on a declared default", unappliedMoneyOnDefault],
 ]);

@@ -29,14 +29,17 @@ export interface ReceiptSource {
  * when `source` names one of this company's distributions paid on
  * `appliedOn`; the receipt then sorts immediately after it in the ledger
  * (ledger.logic.ts `assignSeq`). The string is not trusted on its own: the
- * row must exist in the company with that payment date. Any status: when a
- * distribution is reversed its status changes before its receipts are voided.
+ * row must exist in the company with that payment date. Recording requires
+ * it to be FINALIZED (finalize writes its offsets after the status change);
+ * voiding accepts any status, because a reversal marks the distribution
+ * REVERSED before it voids the offset receipts.
  */
 async function offsetSourceDistribution(
   tx: Tx,
   companyId: string,
   appliedOn: Date,
   source: ReceiptSource,
+  requireFinalized: boolean,
 ): Promise<{ id: string; number: number } | null> {
   if (source.sourceType !== "distribution" || !source.sourceId) return null;
   const row = await tx.distribution.findFirst({
@@ -45,6 +48,7 @@ async function offsetSourceDistribution(
       companyId,
       isReversal: false,
       paymentDate: appliedOn,
+      ...(requireFinalized ? { status: "FINALIZED" as const } : {}),
     },
     select: { id: true, number: true },
   });
@@ -99,7 +103,7 @@ export async function assertLedgerDateOpenForReceipt(
   source: ReceiptSource = {},
 ): Promise<void> {
   const on = fromDateOnly(appliedOn);
-  const own = await offsetSourceDistribution(tx, companyId, on, source);
+  const own = await offsetSourceDistribution(tx, companyId, on, source, true);
   const later = await distributionDependingOn(tx, companyId, on, own);
   if (later) {
     const paidOn = toDateOnly(later.paymentDate);
@@ -146,6 +150,7 @@ export async function beforeVoidReceipt(
       companyId,
       receipt.appliedOn,
       receipt,
+      false,
     );
     const later = await distributionDependingOn(
       tx,

@@ -1036,6 +1036,29 @@ async function closeLineIfPaid(
 }
 
 /**
+ * Refuses while the commitment holds Balance money that is applied to no
+ * Call Notice line: a receipt recorded on FOUNDATION's Commitments page
+ * (plain `recordCapitalReceipt`) instead of through "Record payment". The
+ * default figures count only allocations, so such money would be ignored and
+ * the member treated as not having paid (declaring, forfeiting on the full
+ * unpaid Balance, or a Replacement Funder funding money already paid).
+ */
+async function assertNoUnappliedBalanceMoney(
+  tx: Reader,
+  companyId: string,
+  commitmentId: string,
+  declared: boolean,
+): Promise<void> {
+  const [state] = await getCommitmentStates(tx, companyId, {
+    commitmentIds: [commitmentId],
+  });
+  if (!state || state.prepaidUnallocated <= 0n) return;
+  ruleViolation(
+    `${state.name} has ${formatCents(state.prepaidUnallocated)} of Balance money recorded that is not applied to any Call Notice line, so this Balance may already be paid in part (Section 4.9). Void that receipt on the member's Commitments tab and record it again with "Record payment" on ${declared ? "the default page" : "the Call Notice"}, then review again.`,
+  );
+}
+
+/**
  * Before a line is judged overdue, applies the member's Balance money that a
  * failed post-send match left unapplied (`reconcileCallNoticeLines`, under
  * the advisory and Preferred class locks). The `declare` procedure runs this
@@ -1119,14 +1142,7 @@ export async function declareDefault(
   // Balance money recorded outside the Call Notice flow (FOUNDATION's
   // Commitments page) is not matched to any line, so the line looks unpaid
   // although the member paid. Refuse until it is applied to the line.
-  const [state] = await getCommitmentStates(tx, companyId, {
-    commitmentIds: [line.commitmentId],
-  });
-  if (state && state.prepaidUnallocated > 0n) {
-    ruleViolation(
-      `${state.name} has ${formatCents(state.prepaidUnallocated)} of Balance money recorded that is not applied to any Call Notice line, so this line may already be paid (Section 4.9). Void that receipt on the member's Commitments tab and record it again with "Record payment" on the Call Notice, so it is applied to the line, then review the default again.`,
-    );
-  }
+  await assertNoUnappliedBalanceMoney(tx, companyId, line.commitmentId, false);
   if (unpaidAtDue !== i.expectedUnpaidCents) {
     conflict(
       `The amount unpaid at the due date is now ${formatCents(unpaidAtDue)}, not ${formatCents(i.expectedUnpaidCents)}; review and confirm again.`,
@@ -1326,6 +1342,9 @@ export async function recordDefaultFunding(
   });
   if (errors.length > 0) ruleViolation(errors.join(" "));
   await assertLedgerDateOpen(tx, companyId, i.fundedOn);
+  // A funding reduces the Defaulting Member's commitment for good: it must
+  // not fund Balance the member has already paid.
+  await assertNoUnappliedBalanceMoney(tx, companyId, record.commitmentId, true);
 
   const names = await stakeholderNames(tx, companyId, [record.stakeholderId]);
   const memberName = names.get(record.stakeholderId) ?? "the Defaulting Member";
@@ -1637,6 +1656,9 @@ export async function confirmForfeiture(
     );
   }
   await assertLedgerDateOpen(tx, companyId, fd);
+  // The Forfeited Amount is irreversible: money the member paid must be in
+  // the figures (it reduces the unpaid Balance at the Forfeiture Date).
+  await assertNoUnappliedBalanceMoney(tx, companyId, record.commitmentId, true);
   await assertEarlierStepsConfirmed(
     tx,
     companyId,
