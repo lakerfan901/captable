@@ -130,7 +130,10 @@ function PercentField({
               decimalScale={2}
               suffix="%"
               disabled={disabled}
-              value={field.value}
+              // An emptied field shows empty (placeholder 0), never a
+              // leftover "0" that typed digits would attach to.
+              placeholder="0"
+              value={field.value || ""}
               onValueChange={(v) => field.onChange(v.floatValue ?? 0)}
             />
           </FormControl>
@@ -197,7 +200,10 @@ function DaysField({
               customInput={Input}
               decimalScale={0}
               allowNegative={false}
-              value={field.value}
+              // An emptied field shows empty (placeholder 0), never a
+              // leftover "0" that typed digits would attach to.
+              placeholder="0"
+              value={field.value || ""}
               onValueChange={(v) => field.onChange(v.floatValue ?? 0)}
             />
           </FormControl>

@@ -226,7 +226,9 @@ export function RecordReceiptDialog({
                       decimalScale={2}
                       allowNegative={false}
                       prefix="$"
-                      value={field.value}
+                      // An emptied field must show empty, not "$0": digits
+                      // typed next to a leftover 0 record ten times the amount.
+                      value={field.value || ""}
                       onValueChange={(v) => field.onChange(v.floatValue ?? 0)}
                     />
                   </FormControl>
