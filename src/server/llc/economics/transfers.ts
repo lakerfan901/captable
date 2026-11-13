@@ -11,11 +11,17 @@ import type { TPrismaOrTransaction } from "@/server/db";
 import { getMemberPositions } from "@/server/llc/positions";
 import { trimUnits, unitsToWire } from "@/server/llc/serialize";
 import { ruleViolation } from "./scope";
-import { assertLedgerDateOpen } from "./term";
+import { assertBooksOpen, assertLedgerDateOpen } from "./term";
 
 type Tx = TPrismaOrTransaction;
 
-/** COMPLETED Preferred transfers (GOVERNANCE `UnitTransfer`), oldest first. Read only; R39. */
+/**
+ * COMPLETED Preferred transfers (GOVERNANCE `UnitTransfer`), oldest first.
+ * Read only; R39. `createdAt` carries the completion time (`completedAt`,
+ * else `createdAt`): `assignSeq` orders same-day events by it, so transfers
+ * apply in the order of FOUNDATION's `getMemberPositions` fold-in
+ * (`effectiveOn`, completion time, id).
+ */
 export async function loadCompletedTransfers(
   tx: Tx,
   companyId: string,
@@ -37,13 +43,14 @@ export async function loadCompletedTransfers(
       effectiveOn: { not: null },
       toStakeholderId: { not: null },
     },
-    orderBy: [{ effectiveOn: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ effectiveOn: "asc" }, { completedAt: "asc" }, { id: "asc" }],
     select: {
       id: true,
       effectiveOn: true,
       fromStakeholderId: true,
       toStakeholderId: true,
       units: true,
+      completedAt: true,
       createdAt: true,
     },
   });
@@ -57,7 +64,7 @@ export async function loadCompletedTransfers(
       fromStakeholderId: r.fromStakeholderId,
       toStakeholderId: r.toStakeholderId,
       units: microUnitsFromDecimal(unitsToWire(r.units)),
-      createdAt: r.createdAt,
+      createdAt: r.completedAt ?? r.createdAt,
     });
   }
   return out;
@@ -66,8 +73,9 @@ export async function loadCompletedTransfers(
 /**
  * Validation only (GOVERNANCE calls it inside the transaction that completes
  * the transfer): economics stores nothing for a transfer. Throws BAD_REQUEST
- * when `effectiveOn` is before a finalized distribution's payment date or the
- * transferor holds fewer than `units` of the class as of `effectiveOn`.
+ * when `effectiveOn` is on or before a finalized distribution's payment date
+ * or inside closed books, or the transferor holds fewer than `units` of the
+ * class as of `effectiveOn`.
  */
 export async function applyUnitTransfer(
   tx: Tx,
@@ -83,6 +91,10 @@ export async function applyUnitTransfer(
 ): Promise<void> {
   const effectiveOn = toDateOnly(input.effectiveOn);
   await assertLedgerDateOpen(tx, input.companyId, effectiveOn);
+  const term = await tx.llcTerm.findUnique({
+    where: { companyId: input.companyId },
+  });
+  if (term) assertBooksOpen(term, effectiveOn);
   const requested = microUnitsFromDecimal(input.units);
   if (requested <= 0n) {
     ruleViolation("A transfer must move more than zero units (Section 7).");

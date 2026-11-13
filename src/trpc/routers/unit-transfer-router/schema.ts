@@ -100,6 +100,14 @@ export const ZUnitTransferCancelSchema = z
   .object({ publicId: zPublicId, reason: z.string().trim().min(1).max(500) })
   .strict();
 
+export const ZUnitTransferCompleteSchema = z
+  .object({ publicId: zPublicId })
+  .strict();
+
+export const ZUnitTransferAdmitSchema = z
+  .object({ publicId: zPublicId, admittedOn: ZDateOnly })
+  .strict();
+
 /** The four admission fields `update` accepts after COMPLETED (C3.8). */
 export const ADMISSION_FIELDS = [
   "admissionSignaturePage",
