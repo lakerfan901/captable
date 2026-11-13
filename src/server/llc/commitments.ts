@@ -1141,6 +1141,7 @@ export async function recordCapitalReceipt(
       tx,
       companyId,
       dateToWire(appliedOn) as string,
+      { sourceType: input.sourceType, sourceId: input.sourceId },
     );
   const receipt = await tx.capitalReceipt.create({
     data: {

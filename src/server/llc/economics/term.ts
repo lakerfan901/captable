@@ -172,25 +172,43 @@ export function assertBooksOpen(term: LlcTerm, date: IsoDate): void {
   }
 }
 
-/** Rejects a date earlier than the payment date of a finalized distribution (same day is allowed). */
+/**
+ * Rejects a ledger entry dated on or before the payment date of a finalized,
+ * non-reversal distribution. On one date the ledger orders receipts,
+ * forfeitures and transfers before the distributions (ledger.logic.ts
+ * `assignSeq`), so an entry dated on the payment date would change the
+ * positions the distribution was computed on. Receipts are checked by
+ * `assertLedgerDateOpenForReceipt` (receipt-guards.ts), which applies the same
+ * rule and exempts a distribution's own offset receipts.
+ *
+ * `allowSameDay` is for entries that are not ledger events (a default payment
+ * of interest or costs only; its Balance part is a receipt and is checked by
+ * the receipt guard): they may be dated on a payment date.
+ */
 export async function assertLedgerDateOpen(
   tx: Tx,
   companyId: string,
   date: IsoDate,
+  opts: { allowSameDay?: boolean } = {},
 ): Promise<void> {
+  const on = fromDateOnly(date);
   const later = await tx.distribution.findFirst({
     where: {
       companyId,
       status: "FINALIZED",
       isReversal: false,
-      paymentDate: { gt: fromDateOnly(date) },
+      paymentDate: opts.allowSameDay ? { gt: on } : { gte: on },
     },
     orderBy: { paymentDate: "desc" },
     select: { number: true, paymentDate: true },
   });
   if (later) {
+    const paidOn = toDateOnly(later.paymentDate);
+    const no = later.number === null ? "" : `No. ${later.number} `;
     ruleViolation(
-      `Distribution ${later.number === null ? "" : `#${later.number} `}was paid on ${formatDateOnly(toDateOnly(later.paymentDate))}, after ${formatDateOnly(date)}. Reverse it before recording anything dated earlier.`,
+      paidOn === date
+        ? `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, the same date; this entry would change the positions that distribution was computed on. Reverse it first, or date the entry after ${formatDateOnly(paidOn)}.`
+        : `Distribution ${no}was paid on ${formatDateOnly(paidOn)}, after ${formatDateOnly(date)}. Reverse it before recording anything dated on or before its payment date.`,
     );
   }
 }
