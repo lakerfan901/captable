@@ -190,7 +190,7 @@ export const getProcedure = withLlcAccessControl
       copyDueOn: ymdOrNull(row.copyDueOn),
     };
 
-    const [events, executedDocument] = await Promise.all([
+    const [events, executedDocument, emails] = await Promise.all([
       ctx.db.resolutionEvent.findMany({
         where: { resolutionId: row.id, companyId },
         orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
@@ -201,6 +201,20 @@ export const getProcedure = withLlcAccessControl
             select: { publicId: true, name: true },
           })
         : Promise.resolve(null),
+      // G11: delivery log of this resolution's emails, newest first.
+      ctx.db.emailLog.findMany({
+        where: { companyId, relatedType: "resolution", relatedId: row.id },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          id: true,
+          stakeholderId: true,
+          toAddress: true,
+          kind: true,
+          status: true,
+          sentAt: true,
+          bounceState: true,
+        },
+      }),
     ]);
 
     const preset = behaviour(type);
@@ -225,6 +239,7 @@ export const getProcedure = withLlcAccessControl
         snapshot: null,
         events,
         executedDocument,
+        emails,
         starter: { doc, lockedClauses },
       };
     }
@@ -285,6 +300,7 @@ export const getProcedure = withLlcAccessControl
       snapshot,
       events,
       executedDocument,
+      emails,
       starter: {
         doc: frozen.doc ?? [],
         lockedClauses: frozen.lockedClauses ?? [],
