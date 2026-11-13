@@ -466,3 +466,326 @@ export function behaviour(type: ResolutionType): PresetBehaviour {
       : "Action by Written Consent of the Members",
   };
 }
+
+// ---------------------------------------------------------------------------
+// Pre-approved related-party transactions (R15 (1)–(6))
+
+export const PRE_APPROVED_RELATED_PARTY: readonly string[] = [
+  "The management arrangement and the Management Fee (Section 6.18)",
+  "Purchasing-agent acquisition of servers at vendor cost without markup, subject to Section 6.16(i)(A)–(D)",
+  "Capital Contributions by, and Preferred Units issued to, insiders on the same terms",
+  "Reimbursement of documented expenses (Sections 3.6 and 6.21)",
+  "Activities permitted by Section 6.19",
+  "The Manager or its designee exercising a Section 7 right of first refusal or purchase option, or a Section 7.3 purchase at an agreed price",
+];
+
+// ---------------------------------------------------------------------------
+// Text helpers
+
+/** Trim a value and strip ONE trailing full stop before it goes into a sentence. */
+function v(value: string): string {
+  const t = value.trim();
+  return t.endsWith(".") ? t.slice(0, -1) : t;
+}
+
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+interface Ymd {
+  y: number;
+  m: number; // 1–12
+  d: number;
+}
+
+function parseYmd(s: string): Ymd {
+  const [y, m, d] = s.split("-").map(Number) as [number, number, number];
+  return { y, m, d };
+}
+
+/** Add calendar months, clamping the day to the end of the target month. */
+function addMonthsYmd(date: Ymd, months: number): Ymd {
+  const index = date.y * 12 + (date.m - 1) + months;
+  const y = Math.floor(index / 12);
+  const m = (index % 12) + 1;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { y, m, d: Math.min(date.d, lastDay) };
+}
+
+function longDate(date: Ymd): string {
+  return `${MONTHS[date.m - 1]} ${date.d}, ${date.y}`;
+}
+
+function proposedDate(currentTargetSaleDate: string): Ymd {
+  return addMonthsYmd(parseYmd(currentTargetSaleDate), 12);
+}
+
+/** "412500.00" → "412,500.00" (keeps the decimals as entered). */
+function withThousands(amount: string): string {
+  const [whole = "", fraction] = amount.split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction === undefined ? grouped : `${grouped}.${fraction}`;
+}
+
+// ---------------------------------------------------------------------------
+// Titles
+
+export function buildTitle(
+  type: ResolutionType,
+  params: unknown,
+  _ctx: PresetContext,
+): string {
+  switch (type) {
+    case "GENERAL_CONSENT": {
+      const p = parseParams(type, params);
+      return `Written consent: ${(MATTERS[p.matterKey] as Matter).label}`;
+    }
+    case "RELATED_PARTY": {
+      const p = parseParams(type, params);
+      return `Approval of related-party transaction with ${p.counterparty}`;
+    }
+    case "PURCHASE_ORDER": {
+      const p = parseParams(type, params);
+      return `Manager resolution: purchase order — ${p.vendor}`;
+    }
+    case "TERM_EXTENSION": {
+      const p = parseParams(type, params);
+      return `Extension of the operating term to ${longDate(proposedDate(p.currentTargetSaleDate))}`;
+    }
+    case "MANAGER_REMOVAL": {
+      const p = parseParams(type, params);
+      return `Removal of ${p.managerName} as Manager`;
+    }
+    case "SUCCESSOR_MANAGER": {
+      const p = parseParams(type, params);
+      return `Appointment of ${p.successorName} as successor Manager`;
+    }
+    case "AMENDMENT":
+      parseParams(type, params);
+      return "Amendment to the Operating Agreement";
+    case "AUDIT_CALL": {
+      const p = parseParams(type, params);
+      const kind = p.scope === "REVIEW" ? "Review" : "Audit";
+      return `${kind} of the books and records for fiscal year ${p.fiscalYear}`;
+    }
+    case "MEMBER_LOAN": {
+      const p = parseParams(type, params);
+      return `Approval of a loan from ${p.lenderName}`;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Starter bodies (editable)
+
+function starterParagraph(
+  type: ResolutionType,
+  params: unknown,
+  ctx: PresetContext,
+): string {
+  const company = v(ctx.companyName);
+  switch (type) {
+    case "GENERAL_CONSENT":
+      parseParams(type, params);
+      return "RESOLVED, that the Members approve the following: [describe the action].";
+    case "RELATED_PARTY":
+      parseParams(type, params);
+      return "RESOLVED, that the transaction described below is approved.";
+    case "PURCHASE_ORDER":
+      parseParams(type, params);
+      return "The Manager adopts the resolution set out below.";
+    case "TERM_EXTENSION":
+      parseParams(type, params);
+      return "Do you approve extending the operating term for one additional year?";
+    case "MANAGER_REMOVAL": {
+      const p = parseParams(type, params);
+      return `RESOLVED, that ${v(p.managerName)} is removed as Manager of ${company}.`;
+    }
+    case "SUCCESSOR_MANAGER": {
+      const p = parseParams(type, params);
+      return `RESOLVED, that ${v(p.successorName)} is appointed successor Manager of ${company}.`;
+    }
+    case "AMENDMENT":
+      parseParams(type, params);
+      return "RESOLVED, that the Operating Agreement is amended as follows: [insert the full text of the amendment].";
+    case "AUDIT_CALL": {
+      const p = parseParams(type, params);
+      const kind = p.scope === "REVIEW" ? "review" : "audit";
+      return `RESOLVED, that a ${kind} is required as described below.`;
+    }
+    case "MEMBER_LOAN":
+      parseParams(type, params);
+      return "RESOLVED, that the loan described below is approved.";
+  }
+}
+
+export function buildStarterBody(
+  type: ResolutionType,
+  params: unknown,
+  ctx: PresetContext,
+): StarterBlock[] {
+  return [
+    { type: "heading", text: "Resolved" },
+    { type: "paragraph", text: starterParagraph(type, params, ctx) },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Locked clauses (never editable)
+
+function typeClauses(
+  type: ResolutionType,
+  params: unknown,
+  ctx: PresetContext,
+): string[] {
+  const company = v(ctx.companyName);
+  switch (type) {
+    case "GENERAL_CONSENT": {
+      const p = parseParams(type, params);
+      const m = MATTERS[p.matterKey] as Matter;
+      return [
+        `Matter: ${v(m.label)} (Section ${m.section} of the Operating Agreement).`,
+      ];
+    }
+    case "RELATED_PARTY": {
+      const p = parseParams(type, params);
+      let first = `Counterparty: ${v(p.counterparty)} (${v(p.relationship)}). Transaction: ${v(p.description)}.`;
+      if (p.amount) first += ` Amount: USD ${v(p.amount)}.`;
+      return [
+        first,
+        "Under Section 6.16(i) of the Operating Agreement this transaction may not be entered into unless first approved by the holders of a majority of the Disinterested Preferred Units. Preferred Units held by the Manager, Isaac Reid, Karl Schoen, their Affiliates and related persons are not counted.",
+      ];
+    }
+    case "PURCHASE_ORDER": {
+      const p = parseParams(type, params);
+      let order = `Purchase order. Vendor: ${v(p.vendor)}. Equipment: ${v(p.equipment)}. Price: ${v(p.currency)} ${withThousands(v(p.price))}.`;
+      if (p.poReference) order += ` Reference: ${v(p.poReference)}.`;
+      return [
+        `This written resolution is made by ${v(p.managerName)}, the Manager of ${company} (the "LLC"), under Section 6.16(i) of the LLC's Operating Agreement, before any LLC funds are paid for the purchase order described below.`,
+        order,
+        `Agent and nominee. ${v(p.purchasingAgentName)} (the "Purchasing Agent"), being the Manager or an Affiliate of the Manager, acts solely as agent and nominee for the LLC in connection with this purchase order.`,
+        "No beneficial interest; trust. The Purchasing Agent has no beneficial interest in the purchase order, any deposit, or the equipment, and holds each of them in trust for the LLC.",
+        "Assignment. The Purchasing Agent assigns to the LLC its rights under the purchase order to the extent assignable.",
+        "Delivery. A copy of this resolution will be delivered to the Members within ten (10) business days after it is signed.",
+      ];
+    }
+    case "TERM_EXTENSION": {
+      const p = parseParams(type, params);
+      const current = longDate(parseYmd(p.currentTargetSaleDate));
+      const proposed = longDate(proposedDate(p.currentTargetSaleDate));
+      return [
+        `Under Section 2.5 of the Operating Agreement, the Manager asks the Preferred Members whether to extend the operating term of ${company} for one (1) additional year.`,
+        `If the extension is approved, the Target Sale Date will be extended from ${current} to ${proposed}, and the Management Fee will continue to accrue during the extension.`,
+        "A Preferred Member who does not respond within thirty (30) days after this request is deemed to have voted against the extension.",
+      ];
+    }
+    case "MANAGER_REMOVAL":
+      parseParams(type, params);
+      return [
+        "Under Section 6.20 of the Operating Agreement the Manager may be removed by the vote of the holders of at least sixty-seven percent (67%) of the Disinterested Preferred Units. Removal does not affect the Common Units, any accrued and unpaid Management Fee, or the removed Manager's rights to indemnification, and the removed Manager shall be released from any guarantee of LLC obligations as a condition of removal.",
+      ];
+    case "SUCCESSOR_MANAGER": {
+      const p = parseParams(type, params);
+      const name = v(p.successorName);
+      return [
+        `Under Section 6.20 of the Operating Agreement the holders of a majority of the Disinterested Preferred Units appoint ${name} as successor Manager, effective when ${name} accepts the appointment in writing.`,
+      ];
+    }
+    case "AMENDMENT": {
+      const p = parseParams(type, params);
+      const clauses = [`Summary of the amendment: ${p.summary.trim()}`];
+      if (p.touchesProtectedProvision)
+        clauses.push(
+          `This amendment changes the following provisions listed in Section 12.1(c): ${p.protectedSections.join("; ")}.`,
+        );
+      clauses.push(
+        "Under Section 13.1 an amendment adopted in accordance with Section 12.1 binds every Member whether or not that Member signed or consented to it.",
+      );
+      return clauses;
+    }
+    case "AUDIT_CALL": {
+      const p = parseParams(type, params);
+      const kind = p.scope === "REVIEW" ? "review" : "audit";
+      return [
+        `Under Section 8.3 of the Operating Agreement a Preferred Majority requires a ${kind} of the books, records and reports of ${company} for ${v(p.periodDescription)}, at the LLC's expense. This right may be exercised not more than once in any fiscal year.`,
+      ];
+    }
+    case "MEMBER_LOAN": {
+      const p = parseParams(type, params);
+      return [
+        `Lender: ${v(p.lenderName)}. Principal: USD ${v(p.principal)}. Interest rate: ${v(p.interestRate)}. Maturity: ${v(p.maturity)}. Under Section 4.6 the advance is not a Capital Contribution, shall be documented by a promissory note, and shall be repaid in accordance with that note before distributions are made under Section 5.6.`,
+      ];
+    }
+  }
+}
+
+export function buildLockedClauses(
+  type: ResolutionType,
+  params: unknown,
+  ctx: PresetContext,
+): string[] {
+  return [
+    ...typeClauses(type, params, ctx),
+    describeRequirements(buildRequirements(type, params)),
+  ];
+}
+
+const BASIS_WORDING: Record<VoteBasis, string> = {
+  PREFERRED_MAJORITY:
+    "the holders of more than 50% of the outstanding Preferred Units",
+  PREFERRED_SUPERMAJORITY:
+    "the holders of at least 70% of the outstanding Preferred Units",
+  DISINTERESTED_MAJORITY:
+    "the holders of more than 50% of the outstanding Disinterested Preferred Units",
+  DISINTERESTED_67:
+    "the holders of at least 67% of the outstanding Disinterested Preferred Units",
+  DISINTERESTED_70:
+    "the holders of at least 70% of the outstanding Disinterested Preferred Units",
+};
+
+/**
+ * Sentence used as the last locked clause. The ballot sentence is appended
+ * when any requirement is decided by Members (anything other than
+ * MANAGER_APPROVAL): only PURCHASE_ORDER has no ballots, and its sole
+ * requirement is MANAGER_APPROVAL.
+ */
+export function describeRequirements(specs: RequirementSpec[]): string {
+  const parts: string[] = [];
+  let affectedListed = false;
+  for (const { requirement } of specs) {
+    switch (requirement.kind) {
+      case "MANAGER_APPROVAL":
+        parts.push("the approval of the Manager");
+        break;
+      case "COMMON_MEMBER_APPROVAL":
+        parts.push("the approval of the Common Member");
+        break;
+      case "AFFECTED_MEMBER_CONSENT":
+        if (!affectedListed)
+          parts.push(
+            "the consent of each Member disproportionately and adversely affected",
+          );
+        affectedListed = true;
+        break;
+      case "UNIT_VOTE":
+        parts.push(BASIS_WORDING[requirement.basis]);
+        break;
+    }
+  }
+  let sentence = `Approval required: ${parts.join("; ")}.`;
+  if (specs.some((s) => s.requirement.kind !== "MANAGER_APPROVAL"))
+    sentence +=
+      " This consent is effective under Section 6.12 when signed by Members holding the required Preferred Units.";
+  return sentence;
+}
