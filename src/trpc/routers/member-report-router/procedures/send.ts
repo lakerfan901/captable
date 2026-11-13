@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { emitReportEmails } from "@/jobs/governance-report-email";
+import { emitReportFile } from "@/jobs/governance-report-file";
+import { formatDateOnly } from "@/lib/date-only";
 import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
 import {
   EMPTY_FIGURES,
@@ -50,6 +52,11 @@ import {
 // After commit: one `governance.report-email` job per recipient (seq 0). A
 // failed emit is logged, never an error (the report IS sent);
 // `memberReport.resend` re-queues it.
+
+/** Shown by `send` and by the review dialog when the period has not ended. */
+export function periodNotEndedMessage(periodEnd: string): string {
+  return `This period has not ended yet. A report can be sent, and the books closed, only after ${formatDateOnly(periodEnd)}.`;
+}
 
 export const sendProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
@@ -109,6 +116,16 @@ export const sendProcedure = withLlcAccessControl
         const periodEnd = ymdOrNull(report.periodEnd);
         if (usesFigures(type) && (periodStart === null || periodEnd === null)) {
           badRequest("This report has no period.");
+        }
+        // Owner ruling (G13): sending closes the books through the period
+        // end, so the period must have ended (strictly before today in the
+        // company time zone).
+        if (
+          usesFigures(type) &&
+          periodEnd !== null &&
+          !(periodEnd < todayInZone(now, zone))
+        ) {
+          badRequest(periodNotEndedMessage(periodEnd));
         }
 
         // 2. Recipients.
@@ -274,7 +291,13 @@ export const sendProcedure = withLlcAccessControl
           result.recipientIds.map((recipientId) => ({ recipientId, seq: 0 })),
         ),
     );
-    // G13 adds the filing job emit here.
+    // G13: file the PDF in Documents. A lost emit is recovered by the
+    // resolution sweep (SENT reports without a filed document).
+    await emitAfterCommit(
+      "member report filing",
+      { reportId: result.reportId },
+      () => emitReportFile(result.reportId),
+    );
 
     return {
       publicId: result.publicId,
