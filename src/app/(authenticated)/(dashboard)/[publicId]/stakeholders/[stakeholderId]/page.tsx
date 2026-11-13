@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { EconomicsTab } from "@/components/llc/economics/member-economics-tab";
 import { CommitmentsTab } from "@/components/llc/member/commitments-tab";
 import { EmailsTab } from "@/components/llc/member/emails-tab";
 import { MemberDocumentsTab } from "@/components/llc/member/member-documents-tab";
@@ -81,6 +82,7 @@ export default async function MemberPage(props: {
         <TabsList>
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="commitments">Commitments</TabsTrigger>
+          <TabsTrigger value="economics">Economics</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="emails">Emails</TabsTrigger>
         </TabsList>
@@ -89,6 +91,9 @@ export default async function MemberPage(props: {
         </TabsContent>
         <TabsContent value="commitments">
           <CommitmentsTab stakeholderId={member.id} />
+        </TabsContent>
+        <TabsContent value="economics">
+          <EconomicsTab stakeholderId={member.id} />
         </TabsContent>
         <TabsContent value="documents">
           {documents ? (
