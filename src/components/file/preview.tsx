@@ -1,8 +1,8 @@
 import { RiFileUnknowFill as UnknownFileIcon } from "@remixicon/react";
 import EmptyState from "@/components/common/empty-state";
 import { OfficeViewer } from "@/components/file/office-viewer";
+import { PdfPreview } from "@/components/file/pdf-preview";
 import { Button } from "@/components/ui/button";
-import { PdfViewer } from "@/components/ui/pdf-viewer";
 import { fileType } from "@/lib/mime";
 
 type FilePreviewProps = {
@@ -56,7 +56,7 @@ const FilePreview = ({ url, name, mimeType }: FilePreviewProps) => {
 
   switch (type) {
     case "pdf":
-      return <PdfViewer file={url} />;
+      return <PdfPreview file={url} />;
     case "image":
       return <ImagePreview url={url} name={name} />;
     case "audio":
