@@ -144,6 +144,16 @@ export interface BalanceReduction {
   by: "MEMBER" | "REPLACEMENT_FUNDER";
 }
 
+const REDUCTION_KIND_ORDER: Record<BalanceReduction["by"], number> = {
+  MEMBER: 0,
+  REPLACEMENT_FUNDER: 1,
+};
+
+/**
+ * The one ordering of reductions every consumer uses: by date; on the same
+ * date MEMBER before REPLACEMENT_FUNDER; then input index. Results never
+ * depend on the input order.
+ */
 function sortedReductions(
   reductions: readonly BalanceReduction[],
 ): BalanceReduction[] {
@@ -155,7 +165,15 @@ function sortedReductions(
       );
     }
   }
-  return [...reductions].sort((a, b) => compareIso(a.on, b.on));
+  return reductions
+    .map((r, index) => ({ r, index }))
+    .sort(
+      (a, b) =>
+        compareIso(a.r.on, b.r.on) ||
+        REDUCTION_KIND_ORDER[a.r.by] - REDUCTION_KIND_ORDER[b.r.by] ||
+        a.index - b.index,
+    )
+    .map(({ r }) => r);
 }
 
 /** Unpaid Balance after the reductions dated on or before asOf (never negative). */
@@ -172,7 +190,7 @@ export function outstandingBalance(
   return maxBig(0n, bal);
 }
 
-/** First date the running balance reaches 0, if the reduction that reached 0 was by a Replacement Funder; else null. */
+/** First date the running balance reaches 0, if the reduction that reached 0 was by a Replacement Funder; else null (same-day order: MEMBER first). */
 export function fullyFundedOn(
   unpaidAtDue: Cents,
   reductions: readonly BalanceReduction[],
@@ -328,7 +346,26 @@ export function computeCreditAllocation(
   if (i.forfeited < 0n || i.unpaidAtForfeiture < 0n) {
     throw new LlcMathError("NEGATIVE", "Amounts must not be negative");
   }
-  const fundedTotal = i.fundings.reduce((s, f) => s + f.amount, 0n);
+  // One funder may fund in several tranches: sum per holder (first-appearance order).
+  const byHolder = new Map<
+    string,
+    { holderId: string; amount: Cents; isInsider: boolean }
+  >();
+  for (const f of i.fundings) {
+    const prev = byHolder.get(f.holderId);
+    if (!prev) {
+      byHolder.set(f.holderId, { ...f });
+    } else if (prev.isInsider !== f.isInsider) {
+      throw new LlcMathError(
+        "INCONSISTENT_INSIDER",
+        `Fundings by ${f.holderId} disagree on whether it is an insider`,
+      );
+    } else {
+      prev.amount += f.amount;
+    }
+  }
+  const fundings = [...byHolder.values()];
+  const fundedTotal = fundings.reduce((s, f) => s + f.amount, 0n);
   const fundedCounted = minBig(fundedTotal, i.unpaidAtForfeiture);
   const poolA =
     i.unpaidAtForfeiture === 0n
@@ -346,9 +383,9 @@ export function computeCreditAllocation(
   if (poolA > 0n) {
     const shares = allocateProRata(
       poolA,
-      i.fundings.map((f) => ({ key: f.holderId, weight: f.amount })),
+      fundings.map((f) => ({ key: f.holderId, weight: f.amount })),
     );
-    for (const f of i.fundings) {
+    for (const f of fundings) {
       const amount = shares.get(f.holderId) ?? 0n;
       if (f.isInsider) redirected += amount;
       else if (amount > 0n)
@@ -392,7 +429,13 @@ export function computeCreditAllocation(
   return { fundedCounted, poolA, redirected, poolB, blocked: null, credits };
 }
 
-/** R37. */
+/**
+ * R37. PAID_IN_FULL when the Balance, interest and costs are all 0 and the last
+ * reduction was the member's, even if a Replacement Funder earlier funded part
+ * (that part reduced the commitment, §4.9(ii)); REPLACEMENT_FUNDED when a
+ * Replacement Funder's reduction brought the Balance to 0 and the forfeiture and
+ * credit are confirmed.
+ */
 export function cureStatus(i: {
   outstandingBalance: Cents;
   interestOwed: Cents;
