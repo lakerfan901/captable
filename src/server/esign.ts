@@ -58,6 +58,7 @@ export function getEsignTemplate({ tx, templateId }: getEsignTemplateOptions) {
       },
       companyId: true,
       id: true,
+      publicId: true,
       name: true,
       orderedDelivery: true,
       uploader: {

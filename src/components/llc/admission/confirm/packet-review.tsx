@@ -1,11 +1,14 @@
 "use client";
 
+import { RiCheckboxCircleFill } from "@remixicon/react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { InstantTime } from "@/components/common/instant-time";
 import { PacketStageBadge } from "@/components/llc/admission/packet-stage-badge";
 import { Allow } from "@/components/rbac/allow";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -116,6 +119,32 @@ function Header() {
   );
 }
 
+/**
+ * Shown when the Manager comes back from countersigning (`?countersigned=1`,
+ * set by the signing page). What it says comes from the packet's stage, so a
+ * reload or a stale link never claims more than the data shows.
+ */
+function CountersignedBanner() {
+  const { view } = useReview();
+  const params = useSearchParams();
+  const stage = view.packet.stage;
+  if (params.get("countersigned") !== "1") return null;
+  if (stage !== "FINALISING" && stage !== "COMPLETE") return null;
+  return (
+    <Alert className="border-green-600/40 bg-green-50 text-green-900">
+      <RiCheckboxCircleFill className="h-5 w-5 text-green-700!" />
+      <AlertTitle>
+        You countersigned {view.stakeholder.name}&apos;s subscription
+      </AlertTitle>
+      <AlertDescription>
+        {stage === "COMPLETE"
+          ? "The subscription is complete. The signed Exhibit B is filed on the member's Documents tab and has been emailed to both signers."
+          : "The signed Exhibit B is being finalized; this page updates when it is ready, and both signers receive it by email."}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function Sections() {
   const { view } = useReview();
   const c = view.commitment;
@@ -164,6 +193,7 @@ export function PacketReview({
     >
       <div className="flex flex-col gap-y-6">
         <Header />
+        <CountersignedBanner />
         <Sections />
       </div>
     </ReviewProvider>
