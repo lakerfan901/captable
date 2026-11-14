@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { InstantTime } from "@/components/common/instant-time";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -153,11 +154,8 @@ export function BooksFileDialog({
                         onClick={() => setSelected(d.publicId)}
                       >
                         <span className="break-all">{d.name}</span>
-                        <span
-                          className="shrink-0 text-xs text-muted-foreground"
-                          suppressHydrationWarning
-                        >
-                          {new Date(d.createdAt).toLocaleDateString()}
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          <InstantTime at={d.createdAt} dateOnly />
                         </span>
                       </button>
                     </li>

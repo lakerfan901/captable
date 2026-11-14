@@ -9,6 +9,11 @@ import {
   Text,
   View,
 } from "@react-pdf/renderer";
+import {
+  formatInstant,
+  stripBakedTime,
+  timeZoneNote,
+} from "@/lib/company-time";
 import type { TEsignAuditSchema } from "@/server/audit/schema";
 import type { TGetEsignAudits } from "@/server/esign";
 
@@ -35,6 +40,11 @@ const styles = StyleSheet.create({
 
   text: {
     fontSize: 12,
+  },
+  note: {
+    fontSize: 9,
+    color: "#52525b",
+    marginTop: 2,
   },
   table: {
     display: "flex",
@@ -102,12 +112,16 @@ const humanizedStatus: Record<TEsignAuditSchema["action"], string> = {
 export interface AuditLogTemplateProps {
   audits: TGetEsignAudits;
   templateName: string;
+  /** The company's IANA time zone; every time in the log is shown in it. */
+  timeZone: string;
 }
 
 export function AuditLogTemplate({
   audits,
   templateName,
+  timeZone,
 }: AuditLogTemplateProps) {
+  const zoneNote = timeZoneNote(timeZone, audits[0]?.occurredAt ?? new Date());
   return (
     <Document>
       <Page style={styles.body}>
@@ -135,6 +149,7 @@ export function AuditLogTemplate({
 
         <View style={styles.divider} />
         <Text style={styles.title}>Document history</Text>
+        <Text style={styles.note}>{zoneNote}</Text>
         {audits.map((item) => (
           <View style={styles.container} key={item.id}>
             <View style={styles.column}>
@@ -143,9 +158,12 @@ export function AuditLogTemplate({
                   item.action as keyof typeof humanizedStatus
                 ] ?? "unknown action"}
               </Text>
+              <Text style={styles.note}>
+                {formatInstant(item.occurredAt, timeZone)}
+              </Text>
             </View>
             <View style={styles.column}>
-              <Text style={styles.text}>{item.summary}</Text>
+              <Text style={styles.text}>{stripBakedTime(item.summary)}</Text>
             </View>
           </View>
         ))}

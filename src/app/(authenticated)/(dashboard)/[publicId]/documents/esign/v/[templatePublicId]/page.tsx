@@ -3,9 +3,11 @@ import { PdfCanvas } from "@/components/template/pdf-canvas";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatInstant, stripBakedTime } from "@/lib/company-time";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import type { TemplateStatus } from "@/prisma/enums";
 import { TemplateSigningFieldProvider } from "@/providers/template-signing-field-provider";
+import { getSessionEntity } from "@/server/entity";
 import { api } from "@/trpc/server";
 
 type BadgeVariant =
@@ -31,20 +33,23 @@ export default async function TemplateDetailViewPage(props: {
 
   const { allow } = await serverAccessControl();
 
-  const [{ name, status, url, fields }, auditsData] = await Promise.all([
-    api.template.get({
-      publicId: templatePublicId,
-      isDraftOnly: false,
-    }),
-
-    allow(
-      api.audit.allEsignAudits({
-        templatePublicId: templatePublicId,
+  const [{ name, status, url, fields }, auditsData, entity] = await Promise.all(
+    [
+      api.template.get({
+        publicId: templatePublicId,
+        isDraftOnly: false,
       }),
-      ["audits", "read"],
-      undefined,
-    ),
-  ]);
+
+      allow(
+        api.audit.allEsignAudits({
+          templatePublicId: templatePublicId,
+        }),
+        ["audits", "read"],
+        undefined,
+      ),
+      getSessionEntity(),
+    ],
+  );
 
   return (
     <TemplateSigningFieldProvider fields={fields}>
@@ -83,9 +88,17 @@ export default async function TemplateDetailViewPage(props: {
                             <RiCheckFill className="h-5 w-5 text-white" />
                           </div>
                         </div>
-                        <p className="wrap-break-word text-sm font-medium text-primary/80">
-                          {item.summary}
-                        </p>
+                        <div>
+                          <p className="wrap-break-word text-sm font-medium text-primary/80">
+                            {stripBakedTime(item.summary)}
+                          </p>
+                          <time
+                            className="text-xs text-muted-foreground"
+                            dateTime={item.occurredAt.toISOString()}
+                          >
+                            {formatInstant(item.occurredAt, entity.timezone)}
+                          </time>
+                        </div>
                       </div>
                     ))}
                   </div>

@@ -12,6 +12,7 @@ import { ReportStatusBadge } from "@/components/governance/report-table";
 import { ReportView } from "@/components/governance/report-view";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
+import { formatInstant } from "@/lib/company-time";
 import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { requireLlc } from "@/server/entity";
@@ -22,16 +23,6 @@ export const metadata: Metadata = { title: "Report" };
 // Member report (03-governance.md G13 page 2). A DRAFT shows the editor; a
 // SENT report shows the frozen content, the recipients, the attachments and
 // the filed PDF.
-
-function formatInstant(at: Date | string | null, timeZone: string): string {
-  if (at === null) return "—";
-  const d = typeof at === "string" ? new Date(at) : at;
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    dateStyle: "long",
-    timeStyle: "short",
-  }).format(d);
-}
 
 export default async function ReportPage({
   params,

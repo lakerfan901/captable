@@ -34,6 +34,7 @@ export async function getEsignAudits({
       occurredAt: true,
       action: true,
     },
+    orderBy: { occurredAt: "asc" },
   });
   return audits;
 }
@@ -129,6 +130,8 @@ export interface GenerateEsignSignPdfOptionsType {
   audits: TGetEsignAudits;
   templateName: string;
   dateFormat?: EsignDateFormat;
+  /** The company's time zone, for the audit log's times. */
+  timeZone: string;
 }
 
 export async function generateEsignPdf({
@@ -138,6 +141,7 @@ export async function generateEsignPdf({
   audits,
   templateName,
   dateFormat = "DD/MM/YYYY",
+  timeZone,
 }: GenerateEsignSignPdfOptionsType) {
   const docBuffer = await getFileFromS3(bucketKey);
   const pdfDoc = await PDFDocument.load(docBuffer);
@@ -203,7 +207,7 @@ export async function generateEsignPdf({
 
   if (audits.length) {
     const audit = await renderToBuffer(
-      AuditLogTemplate({ audits, templateName }),
+      AuditLogTemplate({ audits, templateName, timeZone }),
     );
     const auditPDFDoc = await PDFDocument.load(audit);
     const indices = auditPDFDoc.getPageIndices();

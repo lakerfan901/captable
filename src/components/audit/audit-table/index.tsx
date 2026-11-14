@@ -8,7 +8,7 @@ import {
   useTable,
 } from "@tanstack/react-table";
 import * as React from "react";
-import { dayjsExt } from "@/common/dayjs";
+import { InstantTime } from "@/components/common/instant-time";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable } from "@/components/ui/data-table/data-table";
@@ -81,11 +81,11 @@ export const columns: ColumnDef<DataTableFeatures, Audit[number]>[] = [
         />
       );
     },
-    cell: ({ row }) => {
-      const date = new Date(row.getValue("occurredAt"));
-      const formattedDate = dayjsExt(date).format("lll");
-      return <time dateTime={date.toISOString()}>{formattedDate}</time>;
-    },
+    cell: ({ row }) => (
+      <span className="whitespace-nowrap">
+        <InstantTime at={row.getValue<Date | string>("occurredAt")} />
+      </span>
+    ),
   },
 
   {

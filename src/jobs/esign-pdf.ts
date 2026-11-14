@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { dayjsExt } from "@/common/dayjs";
+import { resolveTimeZone } from "@/lib/company-time";
 import { EsignAudit } from "@/server/audit";
 import { db } from "@/server/db";
 import {
@@ -50,7 +51,11 @@ export const eSignPdfWorker = defineWorker(config, async (job) => {
 
   const template = await db.template.findUnique({
     where: { id: templateId },
-    select: { status: true, workflow: true },
+    select: {
+      status: true,
+      workflow: true,
+      company: { select: { timezone: true } },
+    },
   });
 
   // Already completed (a retried job): nothing to stamp, upload or audit.
@@ -81,6 +86,7 @@ export const eSignPdfWorker = defineWorker(config, async (job) => {
     templateName,
     // Subscription packets are US documents (A3.13).
     dateFormat: template.workflow === "SUBSCRIPTION" ? "MM/DD/YYYY" : undefined,
+    timeZone: resolveTimeZone(template.company.timezone),
   });
   const { fileUrl: _fileUrl, ...bucketData } = await uploadEsignDocuments({
     buffer: Buffer.from(modifiedPdfBytes),
