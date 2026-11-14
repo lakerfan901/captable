@@ -22,6 +22,7 @@ import type {
   MemberAdvanceKindEnum,
   ReserveKindEnum,
 } from "@/prisma/enums";
+import { api } from "@/trpc/react";
 
 export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategoryEnum, string> = {
   COLOCATION: "Colocation",
@@ -213,6 +214,75 @@ export function OptionSelect({
         {options.map((o) => (
           <SelectItem key={o.id} value={o.id}>
             {o.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+const NO_RESOLUTION = "__none__";
+const RESOLUTION_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "draft",
+  SENT: "voting",
+  EFFECTIVE: "effective",
+  FAILED: "failed",
+  WITHDRAWN: "withdrawn",
+  EXPIRED: "expired",
+};
+
+/**
+ * Picker of the company's resolutions (`resolution.options`), sending the
+ * resolution's id. Only an EFFECTIVE resolution can approve anything; the
+ * others are listed disabled so the user sees why theirs is not offered. The
+ * server (`assertResolutionAuthorizes`) stays the authority.
+ */
+export function ResolutionSelect({
+  value,
+  onChange,
+  enabled,
+}: {
+  value: string | null;
+  onChange: (value: string | null) => void;
+  /** Load only while the dialog is open. */
+  enabled: boolean;
+}) {
+  const resolutions = api.resolution.options.useQuery(
+    { statuses: ["EFFECTIVE", "SENT"] },
+    { enabled, retry: false },
+  );
+  if (resolutions.isError) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Resolutions could not be loaded: {resolutions.error.message}
+      </p>
+    );
+  }
+  const rows = [...(resolutions.data ?? [])].sort(
+    (a, b) =>
+      Number(b.status === "EFFECTIVE") - Number(a.status === "EFFECTIVE"),
+  );
+  return (
+    <Select
+      value={value ?? NO_RESOLUTION}
+      onValueChange={(v) => onChange(v === NO_RESOLUTION ? null : v)}
+      disabled={resolutions.isLoading}
+    >
+      <SelectTrigger>
+        <SelectValue
+          placeholder={resolutions.isLoading ? "Loading…" : "None"}
+        />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_RESOLUTION}>None</SelectItem>
+        {rows.map((r) => (
+          <SelectItem
+            key={r.id}
+            value={r.id}
+            disabled={r.status !== "EFFECTIVE"}
+          >
+            {[r.referenceCode, r.title].filter(Boolean).join(" ")} (
+            {RESOLUTION_STATUS_LABELS[r.status] ?? r.status.toLowerCase()})
           </SelectItem>
         ))}
       </SelectContent>

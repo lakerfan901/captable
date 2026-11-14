@@ -36,6 +36,7 @@ import {
   MANAGER_PAYMENT_CATEGORY_LABELS,
   type NamedOption,
   OptionSelect,
+  ResolutionSelect,
   useLedgerForm,
 } from "./shared";
 
@@ -70,7 +71,7 @@ export function ManagerPaymentDialog({
     category: "MANAGEMENT_FEE" as ManagerPaymentCategoryEnum,
     memo: "",
     documentId: null as string | null,
-    resolutionId: "",
+    resolutionId: null as string | null,
     countsTowardOrgCap: false,
     withExpense: false,
     expenseCategory: "OTHER" as ExpenseCategoryEnum,
@@ -102,7 +103,7 @@ export function ManagerPaymentDialog({
       category: v.category,
       memo: v.memo.trim() === "" ? null : v.memo,
       documentId: v.documentId,
-      resolutionId: v.resolutionId.trim() === "" ? null : v.resolutionId.trim(),
+      resolutionId: v.resolutionId,
       countsTowardOrgCap:
         !hasExpense && mode === "optional" && v.countsTowardOrgCap,
       expense: hasExpense
@@ -290,7 +291,7 @@ export function ManagerPaymentDialog({
                   {overCap ? (
                     <span className="block text-destructive">
                       This payment would exceed the cap. It needs a Preferred
-                      Supermajority resolution: enter its id below.
+                      Supermajority resolution: choose it below.
                     </span>
                   ) : null}
                 </>
@@ -301,13 +302,14 @@ export function ManagerPaymentDialog({
           ) : null}
 
           <Field
-            label="Resolution id (optional)"
+            label="Approving resolution (optional)"
             error={errors.resolutionId}
-            hint="A Governance resolution approving this payment, if any."
+            hint="An effective Governance resolution approving this payment, if any."
           >
-            <Input
+            <ResolutionSelect
               value={v.resolutionId}
-              onChange={(e) => set("resolutionId", e.target.value)}
+              onChange={(id) => set("resolutionId", id)}
+              enabled={open}
             />
           </Field>
           <Field label="Memo" error={errors.memo} className="sm:col-span-2">
