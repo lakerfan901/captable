@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { InstantTime } from "@/components/common/instant-time";
 import { PacketStageBadge } from "@/components/llc/admission/packet-stage-badge";
 import { Allow } from "@/components/rbac/allow";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatDateOnly } from "@/lib/date-only";
 import { api } from "@/trpc/react";
 import { AnswersPanel } from "./answers-panel";
 import { CountersignSection } from "./countersign-section";
@@ -100,7 +100,7 @@ function Header() {
         </div>
         <p className="text-sm text-muted-foreground">
           {packet.sourceMasterName ?? packet.name} · sent{" "}
-          {formatDateOnly(packet.createdAt.slice(0, 10))} ·{" "}
+          <InstantTime at={packet.createdAt} dateOnly /> ·{" "}
           <Link
             href={`/${companyPublicId}/stakeholders/${stakeholder.id}`}
             className="underline"
