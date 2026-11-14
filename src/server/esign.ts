@@ -2,7 +2,6 @@
 
 import { renderToBuffer } from "@react-pdf/renderer";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import sharp from "sharp";
 import { dayjsExt } from "@/common/dayjs";
 import { fitSignature, inkBounds } from "@/lib/esign/signature-fit";
 import { logger } from "@/lib/logger";
@@ -136,6 +135,9 @@ async function cropSignatureToInk(value: string): Promise<Uint8Array | string> {
   const comma = value.indexOf(",");
   if (!value.startsWith("data:image/") || comma < 0) return value;
   try {
+    // Loaded lazily: if the native image library is missing from the server
+    // image, signing still works and the signature is left uncropped.
+    const { default: sharp } = await import("sharp");
     const input = Buffer.from(value.slice(comma + 1), "base64");
     const { data, info } = await sharp(input)
       .ensureAlpha()
