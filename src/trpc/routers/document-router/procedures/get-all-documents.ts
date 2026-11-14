@@ -23,6 +23,7 @@ export const getAllDocumentsProcedure = withAccessControl
               },
             },
           },
+          stakeholder: { select: { name: true } },
           bucket: {
             select: {
               id: true,
