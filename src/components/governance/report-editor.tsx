@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDateOnly } from "@/lib/date-only";
+import { lastEndedQuarter } from "@/lib/governance/last-ended-quarter";
 import {
   NOTICE_KINDS,
   type NoticeKind,
@@ -94,13 +95,6 @@ export function periodNotEnded(
 
 // ---------------------------------------------------------------------------
 // New report menu
-
-function lastEndedQuarter(today: string): { year: number; quarter: number } {
-  const year = Number(today.slice(0, 4));
-  const month = Number(today.slice(5, 7));
-  const q = Math.floor((month - 1) / 3) + 1;
-  return q === 1 ? { year: year - 1, quarter: 4 } : { year, quarter: q - 1 };
-}
 
 export function NewReportMenu({
   base,
