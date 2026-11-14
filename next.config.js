@@ -38,6 +38,20 @@ const SECURITY_HEADERS = [
     : []),
 ];
 
+/** Public pages opened from an emailed link that carries a credential. */
+const TOKEN_LINK_PREFIXES = [
+  "/ballots",
+  "/member-reports",
+  "/w9",
+  "/esign",
+  "/verify-member",
+  "/verify-email",
+  "/reset-password",
+  "/set-password",
+  "/data-rooms",
+  "/updates",
+];
+
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   headers() {
@@ -49,21 +63,14 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },
-      // The emailed-link pages carry a credential in the path: no Referer
-      // ever leaves them. Listed after the catch-all: for the same key the
-      // last matching entry wins.
-      {
-        source: "/ballots/:path*",
+      // The emailed-link pages carry a credential in the path (or, for data
+      // rooms and updates, in the `token` query): no Referer ever leaves
+      // them. Listed after the catch-all: for the same key the last matching
+      // entry wins.
+      ...TOKEN_LINK_PREFIXES.map((prefix) => ({
+        source: `${prefix}/:path*`,
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
-      },
-      {
-        source: "/member-reports/:path*",
-        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
-      },
-      {
-        source: "/w9/:path*",
-        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
-      },
+      })),
     ]);
   },
   output: process.env.DOCKER_OUTPUT ? "standalone" : undefined,
