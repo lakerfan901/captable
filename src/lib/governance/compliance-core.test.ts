@@ -292,6 +292,35 @@ describe("ledger rows that leave, move or come back (coordinator rulings)", () =
     ]);
   });
 
+  it("R2: a moved Final Closing Date supersedes the old row; a recorded refund or decision completes its row", () => {
+    const plan = planDeadlineSync(
+      [
+        row({
+          dedupeKey: "E:FINAL_CLOSING_DATE:2026-11-30",
+          dueOn: "2026-11-30",
+        }),
+        row({ dedupeKey: "E:REFUND_DUE:c1", dueOn: "2026-12-07" }),
+        row({ dedupeKey: "E:ACCEPTANCE_DEADLINE:c2", dueOn: "2026-11-27" }),
+      ],
+      [
+        econ("E:FINAL_CLOSING_DATE:2026-12-15", "2026-12-15"),
+        econ("E:REFUND_DUE:c3", "2026-12-10"),
+        econ("E:ACCEPTANCE_DEADLINE:c4", "2026-12-01"),
+      ],
+      { from: "2026-11-01", to: "2027-02-28" },
+    );
+    expect(plan.supersede).toEqual([
+      {
+        id: "id-E:FINAL_CLOSING_DATE:2026-11-30",
+        note: "Superseded: date changed to 2026-12-15",
+      },
+    ]);
+    expect(plan.closeMissing).toEqual([
+      "id-E:REFUND_DUE:c1",
+      "id-E:ACCEPTANCE_DEADLINE:c2",
+    ]);
+  });
+
   it("R2: without a replacement of the same kind the row is completed (R1)", () => {
     const plan = planDeadlineSync(
       [row({ dedupeKey: "E:OCD_NOTICE_DUE:2027-01-10", dueOn: "2027-01-10" })],

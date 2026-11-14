@@ -61,6 +61,8 @@ export async function getComplianceDates(
     defaults,
     defaultRows,
     loans,
+    pendingCommitments,
+    refundCommitments,
   ] = await Promise.all([
     shared?.cashLedger ?? loadCashLedger(tx, companyId),
     getTermClock(tx, companyId),
@@ -81,6 +83,36 @@ export async function getComplianceDates(
       },
     }),
     getLoanStates(tx, companyId, today),
+    // Section 4.8 clock: signed subscriptions waiting for a decision...
+    tx.commitment.findMany({
+      where: {
+        companyId,
+        status: "PENDING",
+        acceptanceDeadline: { not: null },
+      },
+      select: {
+        id: true,
+        acceptanceDeadline: true,
+        stakeholder: { select: { name: true } },
+        unitClass: { select: { finalClosingDate: true } },
+      },
+    }),
+    // ...and decided ones with part of the refund still to pay.
+    tx.commitment.findMany({
+      where: {
+        companyId,
+        status: { not: "PENDING" },
+        refundDueCents: { gt: 0 },
+        refundDueBy: { not: null },
+      },
+      select: {
+        id: true,
+        refundDueCents: true,
+        refundPaidCents: true,
+        refundDueBy: true,
+        stakeholder: { select: { name: true } },
+      },
+    }),
   ]);
 
   const firstReceiptOn = firstReceipt?.appliedOn
@@ -106,6 +138,12 @@ export async function getComplianceDates(
     });
 
   const confirmed = new Map(defaultRows.map((r) => [r.id, r]));
+  // Lines with a declared (not voided) default: the default's dates take over.
+  const defaultedLines = new Set(
+    defaults
+      .filter((x) => x.status !== "VOIDED")
+      .map((x) => x.callNoticeLineId),
+  );
 
   return buildComplianceDates({
     today,
@@ -120,6 +158,7 @@ export async function getComplianceDates(
         id: l.lineId,
         dueOn: l.dueOn,
         outstanding: l.outstanding,
+        defaultDeclared: defaultedLines.has(l.lineId),
       })),
     anyUncalledBalance: commitmentStates.some((c) => c.uncalled > 0n),
     defaults: defaults.map((x) => ({
@@ -139,5 +178,35 @@ export async function getComplianceDates(
     })),
     ocdNoticeSentOn:
       term.ocdNoticeSentOn === null ? null : toDateOnly(term.ocdNoticeSentOn),
+    finalClosingDate: config.finalClosingDate,
+    pendingDecisions: pendingCommitments.flatMap((c) => {
+      if (c.acceptanceDeadline === null) return [];
+      const acceptBy = toDateOnly(c.acceptanceDeadline);
+      const closing = c.unitClass.finalClosingDate
+        ? toDateOnly(c.unitClass.finalClosingDate)
+        : null;
+      return [
+        {
+          id: c.id,
+          decideBy:
+            closing !== null && compareIso(closing, acceptBy) < 0
+              ? closing
+              : acceptBy,
+          memberName: c.stakeholder.name,
+        },
+      ];
+    }),
+    refunds: refundCommitments.flatMap((c) =>
+      c.refundDueBy === null
+        ? []
+        : [
+            {
+              id: c.id,
+              dueBy: toDateOnly(c.refundDueBy),
+              outstanding: c.refundDueCents - c.refundPaidCents,
+              memberName: c.stakeholder.name,
+            },
+          ],
+    ),
   });
 }

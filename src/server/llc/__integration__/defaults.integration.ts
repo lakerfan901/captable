@@ -24,6 +24,7 @@ import {
   getLineStates,
   recordCallNoticePayment,
 } from "@/server/llc/economics/call-notices";
+import { getComplianceDates } from "@/server/llc/economics/compliance-dates";
 import {
   addDefaultCharge,
   confirmCredit,
@@ -671,12 +672,31 @@ async function zeroForfeiture() {
     "2027-01-20",
   );
   setToday("2027-01-21");
+  const feed = () =>
+    inTx((tx) =>
+      getComplianceDates(tx, c.id, { from: "2027-01-01", to: "2027-06-30" }),
+    );
+  const callDue = `CALL_NOTICE_DUE:${call.lineId}`;
+  eq(
+    "before the default the call's due date is in the compliance feed, overdue",
+    (await feed()).find((x) => x.key === callDue)?.status,
+    "OVERDUE",
+  );
   const d = await inTx((tx) =>
     declareDefault(tx, {
       ...input(c),
       callNoticeLineId: call.lineId,
       expectedUnpaidCents: $(60_000),
     }),
+  );
+  const declaredFeed = await feed();
+  check(
+    "once declared the call's due date leaves the feed",
+    !declaredFeed.some((x) => x.key === callDue),
+  );
+  check(
+    "and the default's Forfeiture Date takes over",
+    declaredFeed.some((x) => x.key === `FORFEITURE_DATE:${d.id}`),
   );
   setToday("2027-01-22");
   const pay = await inTx((tx) =>

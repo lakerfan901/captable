@@ -51,6 +51,7 @@ export const DATE_KEYED_KINDS: readonly string[] = [
   "OCD_NOTICE_DUE",
   "EXTENSION_REQUEST_DUE",
   "TARGET_SALE_DATE",
+  "FINAL_CLOSING_DATE",
 ];
 
 /**
