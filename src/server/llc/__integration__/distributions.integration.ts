@@ -32,6 +32,10 @@ import {
   recordDefaultPayment,
 } from "@/server/llc/economics/defaults";
 import {
+  resendDistributionNotices,
+  sendDistributionNotices,
+} from "@/server/llc/economics/distribution-export";
+import {
   computeDistribution,
   type DistributionInputs,
   deleteDistributionDraft,
@@ -389,6 +393,8 @@ async function dr1() {
     usd(2_483.58),
   );
 
+  await noticeResend(c, id, { A, B, C, M });
+
   section("B1: anything dated on the payment date of a finalized distribution");
   await expectRefused(
     "a same-day unit transfer is refused (it would sort before the distribution)",
@@ -447,6 +453,181 @@ async function dr1() {
   await blockers(c, { A, B, C, M });
   await finalizeVsReverse(c);
   await tenantIsolation(c, id);
+}
+
+/**
+ * E17 notices, then re-sends (a bounced or corrected address): same notice to
+ * the current address, an audit row naming it, one email per double click,
+ * and no economic column touched.
+ */
+async function noticeResend(
+  c: TestCompany,
+  distributionId: string,
+  h: Record<"A" | "B" | "C" | "M", { id: string }>,
+) {
+  section("E17: notices sent once, then re-sent to a corrected address");
+  const manager = { name: "Integration Manager", email: "manager@example.com" };
+  const who = { company: companyRef(c), actor, manager };
+  const money = async () =>
+    JSON.stringify(
+      (
+        await db.distributionLine.findMany({
+          where: { distributionId },
+          orderBy: { id: "asc" },
+        })
+      ).map(
+        ({
+          noticeSentAt: _a,
+          noticeEmailLogId: _b,
+          noticeSendCount: _c,
+          noticeResendingAt: _d,
+          noticeLastSentAt: _e,
+          updatedAt: _f,
+          ...economic
+        }) => economic,
+      ),
+      (_k, v) => (typeof v === "bigint" ? v.toString() : v),
+    ) +
+    JSON.stringify(
+      await db.distribution.findFirstOrThrow({ where: { id: distributionId } }),
+      (_k, v) => (typeof v === "bigint" ? v.toString() : v),
+    );
+  const positions = fingerprint(await positionsAt(c, P));
+  const before = await money();
+  const lineFor = async (stakeholderId: string) =>
+    db.distributionLine.findFirstOrThrow({
+      where: { distributionId, stakeholderId },
+    });
+  const logsFor = async (lineId: string) =>
+    db.emailLog.findMany({
+      where: { relatedType: "distributionLine", relatedId: lineId },
+      orderBy: { createdAt: "asc" },
+    });
+
+  const first = await sendDistributionNotices(db, {
+    ...who,
+    id: distributionId,
+  });
+  eq(
+    "first send: A, B, C sent; M (nothing distributed) skipped",
+    first.results
+      .map((r) => r.status)
+      .sort()
+      .join(","),
+    "SENT,SENT,SENT,SKIPPED",
+  );
+  const a1 = await lineFor(h.A.id);
+  eq("A: one accepted notice", a1.noticeSendCount, 1);
+  check("A: first email logged", a1.noticeEmailLogId !== null);
+
+  const resend = (lines: { lineId: string; sendCount: number }[]) =>
+    resendDistributionNotices(db, { ...who, id: distributionId, lines });
+
+  const m = await lineFor(h.M.id);
+  eq(
+    "re-send of a line never sent is skipped (M)",
+    (await resend([{ lineId: m.id, sendCount: 0 }])).results[0]?.reason,
+    "No notice was sent for this line yet; use Send notices.",
+  );
+
+  // The address bounced: the Manager corrects it, then re-sends.
+  const corrected = `corrected-${c.id.slice(-6)}@example.com`;
+  await db.stakeholder.update({
+    where: { id: h.A.id },
+    data: { noticeEmail: corrected },
+  });
+  const [r1, r2] = await Promise.all([
+    resend([{ lineId: a1.id, sendCount: 1 }]),
+    resend([{ lineId: a1.id, sendCount: 1 }]),
+  ]);
+  eq(
+    "double click: exactly one re-send sent, the other skipped",
+    [r1.results[0]?.status, r2.results[0]?.status].sort().join(","),
+    "SENT,SKIPPED",
+  );
+  const a2 = await lineFor(h.A.id);
+  eq("A: two accepted notices", a2.noticeSendCount, 2);
+  eq(
+    "A: the first send stays on record (noticeSentAt)",
+    a2.noticeSentAt?.toISOString(),
+    a1.noticeSentAt?.toISOString(),
+  );
+  eq(
+    "A: the first email log id stays",
+    a2.noticeEmailLogId,
+    a1.noticeEmailLogId,
+  );
+  check("A: last re-send time set", a2.noticeLastSentAt !== null);
+  eq("A: no claim left", a2.noticeResendingAt, null);
+  const logs = await logsFor(a1.id);
+  eq("A: two emails logged for the line", logs.length, 2);
+  eq(
+    "A: the re-send went to the corrected address",
+    logs[1]?.toAddress,
+    corrected,
+  );
+  const audits = await db.audit.findMany({
+    where: { companyId: c.id, action: "distribution.notice-resent" },
+  });
+  eq("one re-send audit row", audits.length, 1);
+  check(
+    "the audit row names the address",
+    audits[0]?.summary?.includes(corrected) === true,
+    audits[0]?.summary ?? "",
+  );
+
+  const stale = await resend([{ lineId: a1.id, sendCount: 1 }]);
+  eq(
+    "a later request with the old count sends nothing",
+    stale.results[0]?.status,
+    "SKIPPED",
+  );
+  eq("A: still two emails", (await logsFor(a1.id)).length, 2);
+
+  const [b, cl] = [await lineFor(h.B.id), await lineFor(h.C.id)];
+  const all = await resend([
+    { lineId: a1.id, sendCount: 2 },
+    { lineId: b.id, sendCount: b.noticeSendCount },
+    { lineId: cl.id, sendCount: cl.noticeSendCount },
+  ]);
+  eq(
+    "re-send of the whole distribution: three sent",
+    all.results.map((r) => r.status).join(","),
+    "SENT,SENT,SENT",
+  );
+  eq(
+    "re-send audit rows: four",
+    await db.audit.count({
+      where: { companyId: c.id, action: "distribution.notice-resent" },
+    }),
+    4,
+  );
+
+  const penv = process.env as Record<string, string | undefined>;
+  const previous = penv.NODE_ENV;
+  penv.NODE_ENV = "production";
+  try {
+    await expectRefused(
+      "production with the mail catcher: re-send refused",
+      () => resend([{ lineId: b.id, sendCount: 2 }]),
+      /Set EMAIL_SERVER and EMAIL_FROM before sending distribution notices/,
+      "BAD_REQUEST",
+    );
+  } finally {
+    penv.NODE_ENV = previous;
+  }
+  eq(
+    "B: count unchanged after the refusal",
+    (await lineFor(h.B.id)).noticeSendCount,
+    2,
+  );
+
+  eq(
+    "no economic column of the lines or the distribution changed",
+    await money(),
+    before,
+  );
+  eq("positions unchanged", fingerprint(await positionsAt(c, P)), positions);
 }
 
 async function blockers(

@@ -46,7 +46,9 @@ import { reportEmailWorker } from "@/jobs/governance-report-email";
 import { fromDateOnly } from "@/lib/date-only";
 import { todayInZone } from "@/lib/governance/dates";
 import { MAIL_BLOCKED_MESSAGE, mailBlockedReason } from "@/lib/mail-delivery";
+import { syncComplianceDeadlines } from "@/server/governance/compliance";
 import { sendOnce } from "@/server/governance/events";
+import { loadK1Coverage } from "@/server/governance/k1-coverage";
 import { takeRecordSnapshot } from "@/server/governance/snapshot";
 import {
   createCommitment,
@@ -1579,6 +1581,218 @@ async function review2MailCatcher() {
   );
 }
 
+/**
+ * K-1 deadlines (R25 "Schedule K-1 to each Member", R22a): sending a K-1
+ * report for SOME holders leaves K1_TARGET / K1_FINAL open; they are done
+ * once every holder of Units during the year has its K-1 (late K-1 + resend).
+ */
+async function k1DeadlinesFollowCoverage() {
+  section("K-1: the year's deadlines close only when every holder has a K-1");
+  const { c, A, B, admin } = await governedCompany("k1");
+  // A Financial-Interest-only holder also needs a K-1 (R22a).
+  const F = await newMember(c, "F Interest");
+  await subscribe(c, F.id, usd(50_000), {
+    cents: usd(50_000),
+    receivedOn: "2026-11-10",
+  });
+  setToday(realToday(c));
+  await db.stakeholder.update({
+    where: { id: F.id },
+    data: { memberStatus: "FINANCIAL_INTEREST_ONLY" },
+  });
+  const P = await newMember(c, "P Prospect"); // never held Units
+  await inTx((tx) => syncComplianceDeadlines(tx, c.id, new Date()));
+  const k1Rows = () =>
+    db.complianceDeadline.findMany({
+      where: { companyId: c.id, ruleKey: { in: ["K1_TARGET", "K1_FINAL"] } },
+      orderBy: { dedupeKey: "asc" },
+      select: { dedupeKey: true, status: true, satisfiedById: true },
+    });
+  eq(
+    "K1_TARGET:2026 and K1_FINAL:2026 exist and are OPEN",
+    (await k1Rows()).map((r) => `${r.dedupeKey}=${r.status}`).join(","),
+    "K1_FINAL:2026=OPEN,K1_TARGET:2026=OPEN",
+  );
+
+  const cov2025 = await inTx((tx) => loadK1Coverage(tx, c.id, 2025));
+  eq(
+    "FY2025: nobody needs a K-1 (all admitted in 2026)",
+    cov2025.needed.length,
+    0,
+  );
+  const cov = await inTx((tx) => loadK1Coverage(tx, c.id, 2026));
+  eq(
+    "FY2026: A, B and F need a K-1; the prospect does not",
+    cov.needed
+      .map((h) => h.stakeholderId)
+      .sort()
+      .join(","),
+    [A.id, B.id, F.id].sort().join(","),
+  );
+  check(
+    "the prospect is not listed",
+    !cov.needed.some((h) => h.stakeholderId === P.id),
+  );
+
+  const reports = createCallerFactory(memberReportRouter)(admin.context);
+  // Created from the K1_TARGET row, as the compliance page's "Create report"
+  // does: that row follows the same rule (not closed by a partial send).
+  const target = await db.complianceDeadline.findFirstOrThrow({
+    where: { companyId: c.id, dedupeKey: "K1_TARGET:2026" },
+    select: { id: true },
+  });
+  const { publicId } = await reports.create({
+    type: "TAX_K1",
+    fiscalYear: 2026,
+    relatedType: "COMPLIANCE_DEADLINE",
+    relatedId: target.id,
+  });
+  const bucketIds: string[] = [];
+  const attachK1 = async (holderId: string) => {
+    const bucket = await db.bucket.create({
+      data: {
+        name: `k1-${holderId}.pdf`,
+        key: `${c.id}/zz-k1/${holderId}.pdf`,
+        mimeType: "application/pdf",
+        size: 1,
+        tags: [],
+      },
+    });
+    bucketIds.push(bucket.id);
+    await reports.addAttachment({
+      publicId,
+      bucketId: bucket.id,
+      name: `K-1 ${holderId}.pdf`,
+      kind: "K1",
+      stakeholderId: holderId,
+    });
+  };
+  await attachK1(A.id);
+  const draftView = await reports.get({ publicId });
+  eq(
+    "the old checklist item is satisfied by one K-1 (send is allowed)",
+    draftView.checklist.every((i) => i.ok),
+    true,
+  );
+  eq("coverage: not complete", draftView.k1Coverage?.complete, false);
+
+  const sendErr = await errorOf(() => reports.send({ publicId }));
+  check("partial K-1 send succeeds", sendErr === null, sendErr?.message ?? "");
+  eq(
+    "after sending A's K-1 only, both K-1 deadlines are still OPEN (was: DONE)",
+    (await k1Rows()).map((r) => r.status).join(","),
+    "OPEN,OPEN",
+  );
+  const sentAudit = await db.audit.findFirst({
+    where: { companyId: c.id, action: "memberReport.sent" },
+    orderBy: { occurredAt: "desc" },
+  });
+  check(
+    "the send audit says the K-1 deadlines stay open and for whom",
+    /K-1 deadlines stay open, no K-1 delivered yet to: .*B Holder.*F Interest/.test(
+      sentAudit?.summary ?? "",
+    ),
+    sentAudit?.summary ?? "",
+  );
+
+  const report = await db.memberReport.findFirstOrThrow({
+    where: { publicId, companyId: c.id },
+    select: { id: true },
+  });
+  const recipientOf = (holderId: string) =>
+    db.memberReportRecipient.findFirst({
+      where: { reportId: report.id, stakeholderId: holderId },
+    });
+  // The email job really sends (the local mail catcher) and stamps sentAt.
+  const deliver = async (holderId: string) => {
+    const r = await recipientOf(holderId);
+    if (!r) throw new Error(`no recipient row for ${holderId}`);
+    await runReportJob(r.id, r.sendCount);
+    return recipientOf(holderId);
+  };
+  const aDone = await deliver(A.id);
+  check("A's K-1 email accepted (sentAt)", aDone?.sentAt != null);
+  eq(
+    "A delivered, B and F not: still OPEN",
+    (await k1Rows()).map((r) => r.status).join(","),
+    "OPEN,OPEN",
+  );
+
+  // Late K-1 for B: the re-send adds B's row; queued is not delivered.
+  await attachK1(B.id);
+  await errorOf(() => reports.resend({ publicId }));
+  eq("B became a recipient", (await recipientOf(B.id)) !== null, true);
+  const queuedView = await reports.get({ publicId });
+  eq(
+    "get: B's K-1 is queued, not delivered",
+    JSON.stringify(
+      queuedView.k1Coverage?.holders
+        .filter((h) => h.stakeholderId === B.id)
+        .map((h) => [h.delivered, h.queued]),
+    ),
+    "[[false,true]]",
+  );
+  eq(
+    "B queued, not emailed: still OPEN",
+    (await k1Rows()).map((r) => r.status).join(","),
+    "OPEN,OPEN",
+  );
+  await deliver(B.id);
+  eq(
+    "B delivered, F still missing: still OPEN",
+    (await k1Rows()).map((r) => r.status).join(","),
+    "OPEN,OPEN",
+  );
+
+  // F's late K-1, but the Manager re-sends to A only: F's row is created and
+  // F was never emailed, so the year is NOT complete.
+  await attachK1(F.id);
+  const aRow = await recipientOf(A.id);
+  await errorOf(() =>
+    reports.resend({ publicId, recipientId: aRow?.id ?? "" }),
+  );
+  check("F's recipient row exists", (await recipientOf(F.id)) !== null);
+  eq(
+    "single-recipient re-send to A: F not emailed, still OPEN",
+    (await k1Rows()).map((r) => r.status).join(","),
+    "OPEN,OPEN",
+  );
+
+  // F's email goes out: every holder of 2026 has its K-1 -> done (by the job).
+  await deliver(F.id);
+  const rows = await k1Rows();
+  eq(
+    "every holder delivered: both deadlines DONE",
+    rows.map((r) => r.status).join(","),
+    "DONE,DONE",
+  );
+  check(
+    "satisfied by the K-1 report",
+    rows.every((r) => r.satisfiedById === report.id),
+  );
+  const jobAudit = await db.audit.findFirst({
+    where: { companyId: c.id, action: "compliance.completed" },
+    orderBy: { occurredAt: "desc" },
+  });
+  check(
+    "a system audit row records the completion",
+    /has received its Schedule K-1; deadlines done: K1_/.test(
+      jobAudit?.summary ?? "",
+    ),
+    jobAudit?.summary ?? "",
+  );
+  eq(
+    "get: coverage complete",
+    (await reports.get({ publicId })).k1Coverage?.complete,
+    true,
+  );
+
+  await db.memberReportAttachment.deleteMany({
+    where: { reportId: report.id },
+  });
+  await db.bucket.deleteMany({ where: { id: { in: bucketIds } } });
+}
+
 /** Finding 5: the Capital tile reconciles with the ledger after replacement funding. */
 async function review2CapitalTile() {
   section("R2-5: replacement funding counted once in the Capital tile");
@@ -1738,5 +1952,6 @@ await runScenarios([
   ["R2-3", review2TermExtension],
   ["R2-5", review2CapitalTile],
   ["R2-6", review2MailCatcher],
+  ["K-1 deadlines", k1DeadlinesFollowCoverage],
   ["starter placeholder", starterPlaceholder],
 ]);

@@ -19,7 +19,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { addDays, compareIso, quarterOf } from "@/lib/llc/dates";
+import { addDays } from "@/lib/llc/dates";
+import {
+  STATEMENT_BEGINNING,
+  statementAsOf,
+  statementQuarters,
+} from "@/lib/llc/statement-as-of";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { getSessionEntity } from "@/server/entity";
 import { economicsToday } from "@/server/llc/economics/clock";
@@ -27,9 +32,6 @@ import { api } from "@/trpc/server";
 import type { RouterOutputs } from "@/trpc/shared";
 
 type Statement = RouterOutputs["llcEconomics"]["memberStatement"];
-
-/** Everything since the start of the ledger. */
-const BEGINNING = "2000-01-01";
 
 const KIND_LABEL: Record<Statement["activity"][number]["kind"], string> = {
   CONTRIBUTION: "Contribution",
@@ -156,15 +158,50 @@ function StatementTable({ s }: { s: Statement }) {
   );
 }
 
+/** GET form: reloads the member page on the Economics tab as of the date. */
+function AsOfForm({ asOf, today }: { asOf: string; today: string }) {
+  return (
+    <form method="get" className="flex flex-wrap items-end gap-2 text-sm">
+      <input type="hidden" name="tab" value="economics" />
+      <label className="flex flex-col gap-1">
+        <span className="text-muted-foreground">Figures as of</span>
+        <input
+          type="date"
+          name="asOf"
+          defaultValue={asOf}
+          min={STATEMENT_BEGINNING}
+          max={today}
+          className="h-9 rounded-md border bg-background px-2"
+        />
+      </label>
+      <Button type="submit" variant="outline" size="sm">
+        Show
+      </Button>
+      {asOf !== today && (
+        <Button asChild variant="ghost" size="sm">
+          <Link href="?tab=economics">Today</Link>
+        </Button>
+      )}
+    </form>
+  );
+}
+
 /**
  * Member economics (E18) for FOUNDATION's member detail page: headline cards,
  * default banner, quarterly statements, link to the fair-value page.
- * Returns null when the caller lacks `distributions: read`.
+ * Every figure is as of `asOf` (default today): the cards are the statement
+ * from the beginning to `asOf` (E18: closing balances "as of to"), and the
+ * quarter tabs are the four quarters up to the one containing `asOf`, the
+ * last one cut at `asOf`. Returns null when the caller lacks
+ * `distributions: read`.
  */
 export async function EconomicsTab({
   stakeholderId,
+  asOf: requestedAsOf,
 }: {
   stakeholderId: string;
+  /** `?asOf=` of the page, validated here; today when absent or invalid. */
+  asOf?: string;
 }) {
   const { allow } = await serverAccessControl();
   const canRead = allow(true, ["distributions", "read"], false);
@@ -172,28 +209,17 @@ export async function EconomicsTab({
 
   const entity = await getSessionEntity();
   const today = economicsToday(entity.timezone);
+  const asOf = statementAsOf(requestedAsOf, today);
 
-  const quarters: { key: string; label: string; from: string; to: string }[] =
-    [];
-  let cursor = today;
-  for (let i = 0; i < 4; i++) {
-    const q = quarterOf(cursor);
-    quarters.push({
-      key: `${q.year}-Q${q.quarter}`,
-      label: `Q${q.quarter} ${q.year}`,
-      from: q.start,
-      to: compareIso(q.end, today) > 0 ? today : q.end,
-    });
-    cursor = addDays(q.start, -1);
-  }
+  const quarters = statementQuarters(asOf);
 
   let toDate: Statement;
   let byQuarter: Statement[];
   try {
     toDate = await api.llcEconomics.memberStatement({
       stakeholderId,
-      from: BEGINNING,
-      to: today,
+      from: STATEMENT_BEGINNING,
+      to: asOf,
     });
     byQuarter = await Promise.all(
       quarters.map((q) =>
@@ -222,9 +248,12 @@ export async function EconomicsTab({
 
   return (
     <div className="flex flex-col gap-3">
+      <AsOfForm asOf={asOf} today={today} />
       {openDefaults.length > 0 && (
         <Alert variant="destructive">
-          <AlertTitle>In default</AlertTitle>
+          <AlertTitle>
+            {asOf === today ? "In default" : `In default on ${asOf}`}
+          </AlertTitle>
           <AlertDescription>
             {openDefaults.map((d) => (
               <span key={d.memberDefaultId} className="block">
@@ -250,13 +279,19 @@ export async function EconomicsTab({
             ({c.preferredPct}%)
           </span>
         </Stat>
-        <Stat label={`Preferred Return accrued as of ${today}`}>
+        <Stat label={`Preferred Return accrued as of ${asOf}`}>
           <Money cents={c.accruedReturn} />
         </Stat>
-        <Stat label={`Preferred Return unpaid as of ${today}`}>
+        <Stat label={`Preferred Return unpaid as of ${asOf}`}>
           <Money cents={c.unpaidReturn} />
         </Stat>
-        <Stat label="Distributions received to date">
+        <Stat
+          label={
+            asOf === today
+              ? "Distributions received to date"
+              : `Distributions received through ${asOf}`
+          }
+        >
           <Money cents={toDate.period.grossDistributions} />
           <span className="block text-xs font-normal text-muted-foreground">
             Tier (c) <Money cents={toDate.period.returnPaid} /> · tier (d){" "}

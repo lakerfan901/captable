@@ -53,6 +53,7 @@ import { TEST_MODE_TEXT } from "@/lib/mail-delivery";
 import { api } from "@/trpc/react";
 import type { MemberReportTypeValue } from "@/trpc/routers/member-report-router/schema";
 import type { RouterOutputs } from "@/trpc/shared";
+import { K1CoverageCard, k1CompletionText } from "./k1-coverage-card";
 import { ReportAttachments } from "./report-attachments";
 import { ReportFiguresForm } from "./report-figures-form";
 import { RichTextEditorLazy } from "./rich-text-editor-lazy";
@@ -331,6 +332,11 @@ function ReviewSendDialog({
             ? "Each holder receives only its own Schedule K-1."
             : "Reports go to admitted Members only. Holders of a Financial Interest only are not sent this report (Sections 1.8, 7.9.2)."}
         </p>
+        {data.k1Coverage ? (
+          <p className="font-medium">
+            {k1CompletionText(data.k1Coverage, report.status)}
+          </p>
+        ) : null}
         {isTransferCopy ? (
           <p>
             Sent to the other Preferred Members only (Section{" "}
@@ -619,6 +625,10 @@ export function ReportEditor({
               </ul>
             </CardContent>
           </Card>
+
+          {data.k1Coverage ? (
+            <K1CoverageCard coverage={data.k1Coverage} status={report.status} />
+          ) : null}
 
           <Card>
             <CardHeader>

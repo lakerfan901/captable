@@ -6,10 +6,13 @@ import MemberReportEmail, {
   memberReportAddressChangedSubject,
   memberReportEmailSubject,
 } from "@/emails/MemberReportEmail";
+import { Audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { loadLlcCompany } from "@/server/governance/guards";
 import { sha256Hex } from "@/server/governance/hash";
+import { completeK1DeadlinesIfCovered } from "@/server/governance/k1-coverage";
 import { reportUrl, signReportToken } from "@/server/governance/tokens";
+import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { sendMail } from "@/server/mailer";
 import { readFrozenContent } from "@/trpc/routers/member-report-router/procedures/shared";
 import { defineJob, defineWorker, defineWorkerConfig } from "../lib/queue";
@@ -134,8 +137,22 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
   const { report } = recipient;
   if (report.status !== "SENT") return;
   if (recipient.tokenRevokedAt !== null) return;
-  // Already sent for this seq (or superseded by a later one): nothing to do.
-  if (recipient.sendCount > seq) return;
+  // Already sent for this seq (or superseded by a later one): nothing to do,
+  // except finishing a K-1 completion that failed after the email (a retry).
+  if (recipient.sendCount > seq) {
+    if (
+      report.type === "TAX_K1" &&
+      report.fiscalYear !== null &&
+      recipient.sentAt !== null
+    ) {
+      await completeK1AfterDelivery(
+        report.companyId,
+        report.id,
+        report.fiscalYear,
+      );
+    }
+    return;
+  }
 
   const company = await loadLlcCompany(db, report.companyId);
   const zone = governanceZone(company.timezone);
@@ -205,7 +222,55 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
         "emailLogId" = COALESCE(${emailLogId}, "emailLogId"),
         "updatedAt" = ${now}
     WHERE "id" = ${recipient.id}`;
+
+  // R25: a K-1 delivered; when every holder of Units during the fiscal year
+  // has now received its K-1, the year's K-1 deadlines are done.
+  if (report.type === "TAX_K1" && report.fiscalYear !== null) {
+    await completeK1AfterDelivery(
+      report.companyId,
+      report.id,
+      report.fiscalYear,
+    );
+  }
 });
+
+/**
+ * Closes the year's K-1 deadlines when covered (lock order: ledger, then the
+ * unit classes). A failure here is retried with the job; the email itself is
+ * already recorded and is not sent again (the claim stays).
+ */
+async function completeK1AfterDelivery(
+  companyId: string,
+  reportId: string,
+  fiscalYear: number,
+) {
+  await db.$transaction(
+    async (tx) => {
+      await lockCompanyLedgerAndUnitClasses(tx, companyId);
+      const { done } = await completeK1DeadlinesIfCovered(tx, {
+        companyId,
+        fiscalYear,
+        reportId,
+        memberId: null,
+        now: new Date(),
+      });
+      if (done.length > 0) {
+        await Audit.create(
+          {
+            action: "compliance.completed",
+            companyId,
+            actor: { type: "system", id: null },
+            context: { requestIp: "system", userAgent: `job:${JOB_NAME}` },
+            target: [{ type: "memberReport", id: reportId }],
+            summary: `Every holder of Units during ${fiscalYear} has received its Schedule K-1; deadlines done: ${done.join(", ")}`,
+          },
+          tx,
+        );
+      }
+    },
+    { maxWait: 10_000, timeout: 30_000 },
+  );
+}
 
 async function sendAddressChangedNotice(data: ReportEmailJobData) {
   const address = data.address?.trim();

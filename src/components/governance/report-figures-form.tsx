@@ -235,7 +235,7 @@ export function ReportFiguresForm({
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="text-muted-foreground">
           {f.source
-            ? `From the ledger as of ${new Date(f.source.fetchedAt).toLocaleString("en-US", { timeZone, dateStyle: "medium", timeStyle: "short" })} (period ${formatDateOnly(f.source.periodStart)} – ${formatDateOnly(f.source.periodEnd)}).`
+            ? `From the ledger, as of the period end ${formatDateOnly(f.source.periodEnd)} (period ${formatDateOnly(f.source.periodStart)} – ${formatDateOnly(f.source.periodEnd)}; read ${new Date(f.source.fetchedAt).toLocaleString("en-US", { timeZone, dateStyle: "medium", timeStyle: "short" })}).`
             : "Not loaded from the ledger yet."}
         </span>
         <Button

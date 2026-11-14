@@ -20,6 +20,7 @@ import {
   voidCapitalReceipt,
 } from "@/server/llc/commitments";
 import {
+  getCapitalTotals,
   getCommitmentStates,
   getLineStates,
   recordCallNoticePayment,
@@ -33,6 +34,7 @@ import {
   declareDefault,
   getDefaultView,
   getOverdueUndeclared,
+  listDefaults,
   previewDefaultPayment,
   recordDefaultFunding,
   recordDefaultPayment,
@@ -44,8 +46,11 @@ import {
   reverseDistribution,
   saveDistributionDraft,
 } from "@/server/llc/economics/distributions";
+import { getTaxAdvancesOutstanding } from "@/server/llc/economics/financials";
 import { getPositions } from "@/server/llc/economics/ledger";
 import { lockCompanyLedger } from "@/server/llc/economics/scope";
+import { getMemberStatement } from "@/server/llc/economics/statements";
+import { toWire } from "@/server/llc/economics/wire";
 import { createCallerFactory } from "@/trpc/api/trpc";
 import { memberDefaultRouter } from "@/trpc/routers/member-default/router";
 import {
@@ -641,8 +646,154 @@ async function workedCase() {
     (await errorOf(() => holdings(c, "2027-03-31"))) === null,
   );
 
+  await statementAsOf(c, { A, C });
+
   await tenantIsolation(c, md.id, call.lineId, A.id);
   await ledgerLock(c);
+}
+
+// ---------------------------------------------------------------------------
+// Member statement "as of" (E18: closing balances as of `to`). Run at the end
+// of the worked case, "today" = 2027-02-25. As of today the statement's
+// commitment, defaults and tax advances equal what the readers give without
+// a date (what the statement showed before it had an as-of date); as of an
+// earlier day they are that day's figures.
+
+async function statementAsOf(
+  c: TestCompany,
+  holders: { A: { id: string }; C: { id: string } },
+) {
+  section("Member statement figures as of a date (E18)");
+  const today = "2027-02-25";
+  setToday(today);
+  const { A, C } = holders;
+  const statement = (id: string, to: string) =>
+    inTx((tx) => getMemberStatement(tx, c.id, id, { from: "2026-11-01", to }));
+
+  for (const holder of [A, C]) {
+    const s = await statement(holder.id, today);
+    const totals = await inTx((tx) =>
+      getCapitalTotals(tx, c.id, { stakeholderId: holder.id }),
+    );
+    let calledOutstanding = 0n;
+    for (const st of (await inTx((tx) => getCommitmentStates(tx, c.id))).filter(
+      (x) => x.stakeholderId === holder.id,
+    )) {
+      for (const l of await inTx((tx) =>
+        getLineStates(tx, c.id, today, { commitmentId: st.commitmentId }),
+      )) {
+        if (
+          (l.status === "SENT" || l.status === "SENDING") &&
+          l.outstanding > 0n
+        )
+          calledOutstanding += l.outstanding;
+      }
+    }
+    const defaults = (await inTx((tx) => listDefaults(tx, c.id, today)))
+      .filter((d) => d.stakeholderId === holder.id && d.status !== "VOIDED")
+      .map((d) => ({
+        memberDefaultId: d.id,
+        status: d.status,
+        outstandingBalance: d.outstandingBalance,
+        interestOwed: d.interestOwed,
+        costsOwed: d.costsOwed,
+      }));
+    const advances =
+      (await inTx((tx) => getTaxAdvancesOutstanding(tx, c.id))).get(
+        holder.id,
+      ) ?? 0n;
+    eq(
+      "as of today: commitment = the undated readers",
+      JSON.stringify(toWire(s.commitment)),
+      JSON.stringify(toWire({ ...totals, calledOutstanding })),
+    );
+    eq(
+      "as of today: defaults = the undated readers",
+      JSON.stringify(toWire(s.defaults)),
+      JSON.stringify(toWire(defaults)),
+    );
+    eq("as of today: tax advances", s.taxAdvanceOutstanding, advances);
+  }
+
+  // C: accepted 100,000 (40,000 paid at subscription); called 60,000 on
+  // 2027-01-14, due 2027-01-20; A funded 30,000 on 01-25 and K 15,000 on
+  // 02-01 (each reducing C's commitment); C paid 5,000 on 02-22 and the rest
+  // on 02-25 (cured).
+  const c19 = await statement(C.id, "2027-01-19");
+  eq(
+    "C as of 01-19: committed $100,000",
+    c19.commitment?.committed,
+    $(100_000),
+  );
+  eq("C as of 01-19: paid $40,000", c19.commitment?.paid, $(40_000));
+  eq("C as of 01-19: uncalled 0", c19.commitment?.uncalled, 0n);
+  eq(
+    "C as of 01-19: called and outstanding $60,000",
+    c19.commitment?.calledOutstanding,
+    $(60_000),
+  );
+  eq("C as of 01-19: no default yet (due 01-20)", c19.defaults.length, 0);
+  eq("C as of 01-19: closing 40 units", c19.closing.preferredUnits, 40n * U);
+
+  const c26 = await statement(C.id, "2027-01-26");
+  eq(
+    "C as of 01-26: committed $70,000 (K's funding of 02-01 not yet made)",
+    c26.commitment?.committed,
+    $(70_000),
+  );
+  eq(
+    "C as of 01-26: outstanding $30,000 after A's funding",
+    c26.commitment?.calledOutstanding,
+    $(30_000),
+  );
+  eq("C as of 01-26: one default", c26.defaults.length, 1);
+  eq("C as of 01-26: default OPEN", c26.defaults[0]?.status, "OPEN");
+  eq(
+    "C as of 01-26: default balance $30,000",
+    c26.defaults[0]?.outstandingBalance,
+    $(30_000),
+  );
+
+  const c24 = await statement(C.id, "2027-02-24");
+  eq("C as of 02-24: committed $55,000", c24.commitment?.committed, $(55_000));
+  eq("C as of 02-24: paid $45,000", c24.commitment?.paid, $(45_000));
+  eq(
+    "C as of 02-24: outstanding $10,000",
+    c24.commitment?.calledOutstanding,
+    $(10_000),
+  );
+  eq(
+    "C as of 02-24: default still OPEN (cured 02-25)",
+    c24.defaults[0]?.status,
+    "OPEN",
+  );
+  eq(
+    "C as of 02-24: default balance $10,000",
+    c24.defaults[0]?.outstandingBalance,
+    $(10_000),
+  );
+  eq("C as of 02-24: costs $500 owed", c24.defaults[0]?.costsOwed, $(500));
+  const c25 = await statement(C.id, today);
+  eq("C as of 02-25: default CURED", c25.defaults[0]?.status, "CURED");
+  eq(
+    "C as of 02-25: nothing outstanding",
+    c25.commitment?.calledOutstanding,
+    0n,
+  );
+
+  const a24 = await statement(A.id, "2027-01-24");
+  const a25 = await statement(A.id, "2027-01-25");
+  eq(
+    "A as of 01-24: committed $100,000 (before funding)",
+    a24.commitment?.committed,
+    $(100_000),
+  );
+  eq(
+    "A as of 01-25: committed $130,000 (Replacement Funder commitment)",
+    a25.commitment?.committed,
+    $(130_000),
+  );
+  eq("A as of 01-25: paid $130,000", a25.commitment?.paid, $(130_000));
 }
 
 // ---------------------------------------------------------------------------

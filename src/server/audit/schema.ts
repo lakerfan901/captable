@@ -175,6 +175,7 @@ export const AuditSchema = z.object({
     "distribution.finalized",
     "distribution.reversed",
     "distribution.notices-sent",
+    "distribution.notice-resent",
     "distribution.exported",
     "distribution.line-paid",
   ]),

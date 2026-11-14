@@ -30,11 +30,27 @@ const rethrowUnlessNotFound = (error: unknown): never => {
   throw error;
 };
 
+const TABS = [
+  "profile",
+  "commitments",
+  "economics",
+  "documents",
+  "emails",
+  "governance",
+] as const;
+
 export default async function MemberPage(props: {
   params: Promise<{ stakeholderId: string }>;
+  searchParams: Promise<{ tab?: string | string[]; asOf?: string | string[] }>;
 }) {
   await requireLlc();
   const { stakeholderId } = await props.params;
+  const search = await props.searchParams;
+  // `?tab=economics&asOf=YYYY-MM-DD` (the Economics tab's date form).
+  const tab = (TABS as readonly string[]).includes(String(search.tab))
+    ? String(search.tab)
+    : "profile";
+  const asOf = typeof search.asOf === "string" ? search.asOf : undefined;
   const { allow } = await serverAccessControl();
 
   // Thunks so a procedure the caller may not use is never called.
@@ -82,7 +98,7 @@ export default async function MemberPage(props: {
         </Allow>
       </div>
 
-      <Tabs defaultValue="profile">
+      <Tabs defaultValue={tab}>
         <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="commitments">Commitments</TabsTrigger>
@@ -98,7 +114,7 @@ export default async function MemberPage(props: {
           <CommitmentsTab stakeholderId={member.id} />
         </TabsContent>
         <TabsContent value="economics">
-          <EconomicsTab stakeholderId={member.id} />
+          <EconomicsTab stakeholderId={member.id} asOf={asOf} />
         </TabsContent>
         <TabsContent value="documents">
           {documents ? (

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   exportDistributionCsv,
   markDistributionLinesPaid,
+  resendDistributionNotices,
   sendDistributionNotices,
 } from "@/server/llc/economics/distribution-export";
 import { actorFrom } from "@/server/llc/economics/scope";
@@ -14,6 +15,20 @@ import { ZDistributionIdSchema } from "../schema";
 export const ZSendNoticesSchema = z.object({
   id: zId,
   lineIds: z.array(zId).max(500).optional(),
+});
+
+export const ZResendNoticesSchema = z.object({
+  id: zId,
+  /** Each line with the notice count the page showed (idempotency: a double click sends once). */
+  lines: z
+    .array(
+      z.object({ lineId: zId, sendCount: z.number().int().min(0).max(10_000) }),
+    )
+    .min(1)
+    .max(500)
+    .refine((l) => new Set(l.map((x) => x.lineId)).size === l.length, {
+      message: "A line is listed twice.",
+    }),
 });
 
 export const ZMarkPaidSchema = z.object({
@@ -48,6 +63,26 @@ export const deliveryProcedures = {
           manager: managerFrom(ctx),
           id: input.id,
           lineIds: input.lineIds,
+        }),
+      ),
+    ),
+
+  /**
+   * Re-sends sent notices (bounced or corrected address) to each member's
+   * current notice address; figures are the stored line's, nothing economic
+   * changes. Not one transaction, as sendNotices (see distribution-export.ts).
+   */
+  resendNotices: withLlcAccessControl
+    .meta({ policies: { distributions: { allow: ["update"] } } })
+    .input(ZResendNoticesSchema)
+    .mutation(async ({ ctx, input }) =>
+      toWire(
+        await resendDistributionNotices(ctx.db, {
+          company: { id: ctx.membership.companyId, name: ctx.company.name },
+          actor: actorFrom(ctx),
+          manager: managerFrom(ctx),
+          id: input.id,
+          lines: input.lines,
         }),
       ),
     ),

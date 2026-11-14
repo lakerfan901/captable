@@ -5,11 +5,18 @@ import {
 } from "@/jobs/governance-report-email";
 import { reportTokenExpiry } from "@/lib/governance/token-payload";
 import { Audit } from "@/server/audit";
+import { completeK1DeadlinesIfCovered } from "@/server/governance/k1-coverage";
+import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { assertMailDeliverable } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportResendSchema } from "../schema";
 import { k1Holders } from "./audience";
-import { auditContext, badRequest, loadLockedReport } from "./shared";
+import {
+  auditContext,
+  badRequest,
+  findReportRef,
+  loadLockedReport,
+} from "./shared";
 
 // memberReport.resend (03-governance.md G12): SENT only.
 //
@@ -37,6 +44,13 @@ export const resendProcedure = withLlcAccessControl
 
     const items = await ctx.db.$transaction(
       async (tx) => {
+        // TAX_K1 may close the year's K-1 deadlines (it reads holdings):
+        // ECONOMICS' ledger and unit-class locks first, as `send`, then the
+        // report lock; other types take the report lock only.
+        const ref = await findReportRef(tx, companyId, input.publicId);
+        if (ref.type === "TAX_K1") {
+          await lockCompanyLedgerAndUnitClasses(tx, companyId);
+        }
         const report = await loadLockedReport(tx, companyId, input.publicId);
         if (report.status !== "SENT") {
           badRequest("Only a sent report can be re-sent.");
@@ -71,6 +85,19 @@ export const resendProcedure = withLlcAccessControl
           }
         }
 
+        // R25: once every holder of the year has its K-1, the year's K-1
+        // deadlines are done (they stayed open after a partial send).
+        let k1Done: string[] = [];
+        if (report.type === "TAX_K1" && report.fiscalYear) {
+          ({ done: k1Done } = await completeK1DeadlinesIfCovered(tx, {
+            companyId,
+            fiscalYear: report.fiscalYear,
+            reportId: report.id,
+            memberId: ctx.membership.memberId,
+            now,
+          }));
+        }
+
         const recipients = await tx.memberReportRecipient.findMany({
           where: {
             reportId: report.id,
@@ -102,7 +129,7 @@ export const resendProcedure = withLlcAccessControl
               added.length > 0
                 ? ` (new K-1 recipients: ${added.join(", ")})`
                 : ""
-            }`,
+            }${k1Done.length > 0 ? `; deadlines done: ${k1Done.join(", ")}` : ""}`,
           },
           tx,
         );

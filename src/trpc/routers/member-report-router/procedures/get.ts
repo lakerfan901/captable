@@ -11,6 +11,7 @@ import {
   type RichDoc,
 } from "@/lib/governance/rich-doc";
 import { isInlineContentType } from "@/lib/inline-content-type";
+import { loadK1Coverage } from "@/server/governance/k1-coverage";
 import { currentMailDelivery } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportGetSchema } from "../schema";
@@ -203,7 +204,43 @@ export const getProcedure = withLlcAccessControl
       }
     }
 
+    // TAX_K1: who needs a K-1 for the fiscal year and who has one (R25,
+    // R22a). The year's K-1 deadlines are done only when `complete`.
+    let k1Coverage: {
+      fiscalYear: number;
+      complete: boolean;
+      missing: string[];
+      holders: {
+        stakeholderId: string;
+        name: string;
+        /** Recipient of a SENT K-1 report of the year, email accepted. */
+        delivered: boolean;
+        /** Recipient whose K-1 email has not gone out yet. */
+        queued: boolean;
+        /** A K-1 for this holder is attached to THIS report. */
+        attachedHere: boolean;
+      }[];
+    } | null = null;
+    if (type === "TAX_K1" && row.fiscalYear) {
+      const coverage = await loadK1Coverage(ctx.db, companyId, row.fiscalYear);
+      const attachedHere = new Set(
+        attachments.flatMap((a) =>
+          a.kind === "K1" && a.stakeholderId ? [a.stakeholderId] : [],
+        ),
+      );
+      k1Coverage = {
+        fiscalYear: coverage.fiscalYear,
+        complete: coverage.complete,
+        missing: coverage.missing,
+        holders: coverage.needed.map((h) => ({
+          ...h,
+          attachedHere: attachedHere.has(h.stakeholderId),
+        })),
+      };
+    }
+
     return {
+      k1Coverage,
       // Production with the mail catcher: `send` refuses; elsewhere "Test mode".
       mailDelivery: currentMailDelivery("REPORT"),
       report: {

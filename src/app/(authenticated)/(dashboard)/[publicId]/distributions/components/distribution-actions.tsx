@@ -19,6 +19,7 @@ import { type MailDeliveryState, TEST_MODE_TEXT } from "@/lib/mail-delivery";
 import { api } from "@/trpc/react";
 import type { DistributionStatusValue } from "./distribution-table";
 import { MarkPaidDialog } from "./mark-paid-dialog";
+import { ResendNoticesDialog } from "./resend-notices-dialog";
 
 function downloadCsv(fileName: string, csv: string) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -66,6 +67,21 @@ export function DistributionActions({
 
   const unsent = data.lines.filter(
     (l) => l.noticeSentAt === null && l.grossCents > 0,
+  );
+  // Lines whose notice went out (re-send: a bounced or corrected address).
+  const sentNotices = data.lines.flatMap((l) =>
+    l.noticeSentAt !== null && l.grossCents > 0
+      ? [
+          {
+            id: l.id,
+            name: l.name,
+            noticeAddress: l.noticeAddress,
+            noticeSentAt: l.noticeSentAt,
+            noticeSendCount: l.noticeSendCount,
+            noticeLastSentAt: l.noticeLastSentAt,
+          },
+        ]
+      : [],
   );
   const payable = data.lines
     .filter((l) => l.netCents > 0)
@@ -179,6 +195,18 @@ export function DistributionActions({
             </DialogContent>
           </Dialog>
         )
+      ) : null}
+      {canUpdate && sentNotices.length > 0 ? (
+        <ResendNoticesDialog
+          distributionId={distributionId}
+          distributionNumber={data.distribution.number}
+          lines={sentNotices}
+          mailDelivery={mailDelivery}
+          onDone={async () => {
+            await query.refetch();
+            router.refresh();
+          }}
+        />
       ) : null}
       <Button
         variant="outline"

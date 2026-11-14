@@ -18,6 +18,11 @@ import { Audit } from "@/server/audit";
 import { emitAfterCommit } from "@/server/governance/emit";
 import { guardedWrite } from "@/server/governance/guarded";
 import { sha256Hex } from "@/server/governance/hash";
+import {
+  K1_RULE_KEYS,
+  k1DedupeKeys,
+  loadK1Coverage,
+} from "@/server/governance/k1-coverage";
 import { closeBooksThrough } from "@/server/llc/economics";
 import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { assertMailDeliverable } from "@/server/mail-delivery";
@@ -49,6 +54,8 @@ import {
 // 4. Frozen content + hash; DRAFT -> SENT by a single-row guarded update.
 // 5. Open compliance deadlines satisfied by this report -> DONE, one guarded
 //    single-row update each (rows are created by G14; none may exist yet).
+//    TAX_K1: K1_TARGET / K1_FINAL only once every holder of the fiscal year
+//    has a delivered K-1 (server/governance/k1-coverage.ts).
 // 6. QUARTERLY / ANNUAL: `closeBooksThrough(periodEnd)`. Not caught: if it
 //    throws, the whole send rolls back (fail closed).
 // 7. Audit.
@@ -220,16 +227,44 @@ export const sendProcedure = withLlcAccessControl
         if (type === "ANNUAL" && report.fiscalYear) {
           dedupeKeys.push(`ANNUAL_FINANCIALS:${report.fiscalYear}`);
         }
+        // TAX_K1 (R25 "to each Member", R22a): the year's K-1 deadlines are
+        // done only when EVERY holder of Units during the fiscal year is a
+        // recipient of a sent K-1 report of that year (this one included:
+        // its recipient rows and SENT status are written above). A partial
+        // delivery leaves them OPEN; `memberReport.resend` closes them when
+        // the late K-1s go out.
+        let k1Missing: string[] = [];
+        let k1KeysOpen: string[] = [];
         if (type === "TAX_K1" && report.fiscalYear) {
-          dedupeKeys.push(
-            `K1_TARGET:${report.fiscalYear}`,
-            `K1_FINAL:${report.fiscalYear}`,
+          const coverage = await loadK1Coverage(
+            tx,
+            companyId,
+            report.fiscalYear,
           );
+          if (coverage.complete) {
+            dedupeKeys.push(...k1DedupeKeys(report.fiscalYear));
+          } else {
+            k1Missing = coverage.missing;
+            k1KeysOpen = k1DedupeKeys(report.fiscalYear);
+          }
         }
-        const relatedDeadlineId =
+        let relatedDeadlineId =
           report.relatedType === "COMPLIANCE_DEADLINE" && report.relatedId
             ? report.relatedId
             : null;
+        if (relatedDeadlineId !== null && k1KeysOpen.length > 0) {
+          // A K-1 deadline the report was created from follows the same rule.
+          const related = await tx.complianceDeadline.findFirst({
+            where: { id: relatedDeadlineId, companyId },
+            select: { ruleKey: true },
+          });
+          if (
+            related &&
+            (K1_RULE_KEYS as readonly string[]).includes(related.ruleKey)
+          ) {
+            relatedDeadlineId = null;
+          }
+        }
         const or = [
           ...(dedupeKeys.length > 0 ? [{ dedupeKey: { in: dedupeKeys } }] : []),
           ...(relatedDeadlineId ? [{ id: relatedDeadlineId }] : []),
@@ -276,7 +311,11 @@ export const sendProcedure = withLlcAccessControl
               usesFigures(type) && periodEnd !== null
                 ? `; books closed through ${periodEnd}`
                 : ""
-            }${deadlinesDone.length > 0 ? `; deadlines done: ${deadlinesDone.join(", ")}` : ""}`,
+            }${deadlinesDone.length > 0 ? `; deadlines done: ${deadlinesDone.join(", ")}` : ""}${
+              k1Missing.length > 0
+                ? `; FY${report.fiscalYear} K-1 deadlines stay open, no K-1 delivered yet to: ${k1Missing.join(", ")}`
+                : ""
+            }`,
           },
           tx,
         );
