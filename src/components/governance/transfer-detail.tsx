@@ -492,7 +492,11 @@ function TermsCard({
       <Field
         label="Transferee"
         htmlFor="terms-to"
-        hint="Add the transferee as a prospect on the Members page first."
+        hint={
+          editable && toId === NONE
+            ? "Not in the list? Add the transferee as a prospect on the Members page first."
+            : undefined
+        }
       >
         <Select value={toId} onValueChange={setToId} disabled={!editable}>
           <SelectTrigger id="terms-to" className="max-w-md">
@@ -971,9 +975,14 @@ function CommonUnitsCard({
         label="Approving resolution"
         htmlFor="common-resolution"
         hint={
-          linked
-            ? `Linked: ${linked.title} (${linked.status === "EFFECTIVE" ? "effective" : linked.status.toLowerCase()}). Only an effective resolution on this matter allows the transfer.`
-            : "Resolutions on the transfer of Common Units or a change of control of the Manager."
+          // Follows the selection: the saved link only while it is selected.
+          resolution === NONE
+            ? linked
+              ? "Not saved yet: save to remove the linked resolution."
+              : "Resolutions on the transfer of Common Units or a change of control of the Manager."
+            : linked && resolution === linked.publicId
+              ? `Linked: ${linked.title} (${linked.status === "EFFECTIVE" ? "effective" : linked.status.toLowerCase()}). Only an effective resolution on this matter allows the transfer.`
+              : "Not saved yet: save to link this resolution. Only an effective resolution on this matter allows the transfer."
         }
       >
         <Select

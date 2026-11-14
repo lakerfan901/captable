@@ -374,9 +374,12 @@ export function TransferForm({
                   ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Add the transferee as a prospect on the Members page first.
-            </p>
+            {toId === NO_TRANSFEREE ? (
+              <p className="text-xs text-muted-foreground">
+                Not in the list? Add the transferee as a prospect on the Members
+                page first.
+              </p>
+            ) : null}
           </div>
 
           <div className="grid gap-1">
