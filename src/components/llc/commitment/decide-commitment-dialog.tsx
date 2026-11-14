@@ -22,6 +22,7 @@ import {
   defaultKeepCents,
   type HeldReceipt,
   heldOnOrBefore,
+  keptRangeNote,
   type OfferingTerms,
   planAcceptance,
   prefReturnStartDate,
@@ -250,9 +251,7 @@ function computePreview(input: {
     }
   }
   if (held >= required && max >= required) {
-    notes.push(
-      `The amount kept may be between ${formatCents(required)} and ${formatCents(max)}; default ${formatCents(defaultKeep)} (pro rata).`,
-    );
+    notes.push(keptRangeNote(required, max, defaultKeep));
   }
 
   return { errors, notes, rows, defaultKeep };

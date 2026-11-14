@@ -8,6 +8,7 @@ import {
   defaultKeepCents,
   deriveReceiptKind,
   heldOnOrBefore,
+  keptRangeNote,
   type OfferingTerms,
   outstandingBalanceCents,
   planAcceptance,
@@ -686,5 +687,19 @@ describe("H2: acceptance date versus receipt dates", () => {
         }
       }
     }
+  });
+});
+
+describe("keptRangeNote", () => {
+  it("shows a range when the ends differ", () => {
+    expect(keptRangeNote(4_000_000n, 10_000_000n, 10_000_000n)).toBe(
+      "The amount kept may be between $40,000.00 and $100,000.00; default $100,000.00 (pro rata).",
+    );
+  });
+
+  it("shows the single amount when both ends are equal", () => {
+    expect(keptRangeNote(4_000_000n, 4_000_000n, 4_000_000n)).toBe(
+      "The amount kept is $40,000.00.",
+    );
   });
 });

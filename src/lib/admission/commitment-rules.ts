@@ -5,6 +5,21 @@
  */
 import { formatCents, mulBpsCeil, mulDivRoundHalfUp } from "../money";
 
+/**
+ * The note under the "amount kept" input: a range, or the single amount when
+ * both ends are equal ("between $X and $X" reads as a mistake).
+ */
+export function keptRangeNote(
+  minCents: bigint,
+  maxCents: bigint,
+  defaultCents: bigint,
+): string {
+  if (minCents === maxCents) {
+    return `The amount kept is ${formatCents(minCents)}.`;
+  }
+  return `The amount kept may be between ${formatCents(minCents)} and ${formatCents(maxCents)}; default ${formatCents(defaultCents)} (pro rata).`;
+}
+
 export type RuleCode =
   | "TERMS_INCOMPLETE"
   | "AMOUNT_INVALID"
@@ -197,7 +212,10 @@ export function validateAcceptance(input: AcceptanceInput): RuleError[] {
     if (input.keepCents < required || input.keepCents > max) {
       errors.push({
         code: "KEEP_OUT_OF_RANGE",
-        message: `The amount kept must be between ${formatCents(required)} and ${formatCents(max)}.`,
+        message:
+          required === max
+            ? `The amount kept must be ${formatCents(required)}.`
+            : `The amount kept must be between ${formatCents(required)} and ${formatCents(max)}.`,
       });
     }
   }

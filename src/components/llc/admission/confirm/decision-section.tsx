@@ -34,6 +34,7 @@ import {
   computeSubscriptionClock,
   defaultKeepCents,
   heldOnOrBefore,
+  keptRangeNote,
   planAcceptance,
   requiredInitialInstallmentCents,
   validateAcceptance,
@@ -216,9 +217,7 @@ function acceptancePreview(input: {
     // bigint: Math.min does not apply.
     let max = accepted;
     if (held < max) max = held;
-    notes.push(
-      `The amount kept may be between ${formatCents(required)} and ${formatCents(max)}; default ${formatCents(defaultKeep)} (pro rata).`,
-    );
+    notes.push(keptRangeNote(required, max, defaultKeep));
   }
   return { rows, errors, notes, keep, defaultKeep };
 }
