@@ -12,13 +12,17 @@ import {
 
 import type { TSchema } from "../jobs/esign-confirmation-email";
 
-type Payload = Omit<TSchema, "fileUrl">;
+type Payload = Omit<TSchema, "fileUrl"> & {
+  /** A SUBSCRIPTION packet's sentence; omitted keeps the standard text. */
+  body?: string | null;
+};
 
 const ESignConfirmationEmail = ({
   documentName,
   recipient,
   senderName,
   company,
+  body,
 }: Payload) => {
   return (
     <Html>
@@ -38,11 +42,17 @@ const ESignConfirmationEmail = ({
               Hello {recipient?.name} ,
             </Text>
 
-            <Text className="mt-5 text-[14px] leading-[24px] text-black">
-              All parties have completed and signed the document -{" "}
-              <strong>{documentName}</strong>. Please find the attached
-              document.
-            </Text>
+            {body ? (
+              <Text className="mt-5 text-[14px] leading-[24px] text-black">
+                {body}
+              </Text>
+            ) : (
+              <Text className="mt-5 text-[14px] leading-[24px] text-black">
+                All parties have completed and signed the document -{" "}
+                <strong>{documentName}</strong>. Please find the attached
+                document.
+              </Text>
+            )}
 
             <Text className="mt-[20px] text-[14px]! leading-[24px] text-black">
               - {senderName}

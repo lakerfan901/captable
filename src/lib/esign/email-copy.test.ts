@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  esignCompletedBody,
   esignCompletedSubject,
   esignRequestCopy,
   STANDARD_COMPLETED_SUBJECT,
@@ -54,6 +55,15 @@ describe("esignCompletedSubject", () => {
     expect(
       esignCompletedSubject({ workflow: "STANDARD", companyName: "Acme" }),
     ).toBe(STANDARD_COMPLETED_SUBJECT);
+  });
+
+  it("has a subscription body only for a subscription", () => {
+    expect(
+      esignCompletedBody({ workflow: "STANDARD", companyName: "Acme" }),
+    ).toBeNull();
+    expect(
+      esignCompletedBody({ workflow: "SUBSCRIPTION", companyName: "Acme" }),
+    ).toContain("The Manager of Acme has countersigned");
   });
 
   it("names the company for a countersigned subscription", () => {

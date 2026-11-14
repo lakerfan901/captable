@@ -1,7 +1,10 @@
 import { render } from "react-email";
 import { z } from "zod";
 import ESignConfirmationEmail from "@/emails/EsignConfirmationEmail";
-import { esignCompletedSubject } from "@/lib/esign/email-copy";
+import {
+  esignCompletedBody,
+  esignCompletedSubject,
+} from "@/lib/esign/email-copy";
 import { db } from "@/server/db";
 import { getPresignedGetUrl } from "@/server/file-uploads";
 import { sendMail } from "@/server/mailer";
@@ -51,6 +54,10 @@ export const eSignConfirmationEmailWorker = defineWorker(
         senderName: payload.senderName,
         senderEmail: payload.senderEmail,
         company: payload.company,
+        body: esignCompletedBody({
+          workflow: template?.workflow,
+          companyName: payload.company.name,
+        }),
       }),
     );
     // A fresh presigned URL on every attempt, so a retry after the old URL

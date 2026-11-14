@@ -43,6 +43,21 @@ export function esignRequestCopy(input: {
   };
 }
 
+/**
+ * The body sentence of the "all parties signed" email for a SUBSCRIPTION
+ * packet (null keeps the standard wording).
+ */
+export function esignCompletedBody(input: {
+  workflow: EsignEmailWorkflow | null | undefined;
+  companyName: string | null | undefined;
+}): string | null {
+  const company = input.companyName?.trim();
+  if (input.workflow === "SUBSCRIPTION" && company) {
+    return `The Manager of ${company} has countersigned the subscription documents, and the subscription is accepted. The fully signed Exhibit B is attached for your records.`;
+  }
+  return null;
+}
+
 /** The "all parties signed" email with the PDF attached. */
 export function esignCompletedSubject(input: {
   workflow: EsignEmailWorkflow | null | undefined;
