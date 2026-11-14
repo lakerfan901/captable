@@ -610,6 +610,31 @@ export function buildTitle(
 // ---------------------------------------------------------------------------
 // Starter bodies (editable)
 
+/**
+ * The bracketed prompts the starter bodies contain, for the author to
+ * replace. A resolution is not sent while any of them is still in its text
+ * (`unfilledPlaceholders`); other brackets ("[sic]", "[Exhibit C]") are the
+ * author's own and are left alone.
+ */
+export const STARTER_PLACEHOLDERS = {
+  DESCRIBE_ACTION: "[describe the action]",
+  AMENDMENT_TEXT: "[insert the full text of the amendment]",
+} as const;
+
+/** The starter prompts still present in `text` (whitespace and case normalised), in definition order. */
+export function unfilledPlaceholders(text: string): string[] {
+  const normalized = text.replace(/\s+/g, " ").toLowerCase();
+  return Object.values(STARTER_PLACEHOLDERS).filter((p) =>
+    normalized.includes(p),
+  );
+}
+
+/** The message `send` refuses with and `preview` shows as a blocker. */
+export function placeholderBlocker(placeholders: readonly string[]): string {
+  const list = placeholders.map((p) => `"${p}"`).join(" and ");
+  return `The resolution text still contains the starter placeholder ${list}. Replace it with the actual text before sending.`;
+}
+
 function starterParagraph(
   type: ResolutionType,
   params: unknown,
@@ -619,7 +644,7 @@ function starterParagraph(
   switch (type) {
     case "GENERAL_CONSENT":
       parseParams(type, params);
-      return "RESOLVED, that the Members approve the following: [describe the action].";
+      return `RESOLVED, that the Members approve the following: ${STARTER_PLACEHOLDERS.DESCRIBE_ACTION}.`;
     case "RELATED_PARTY":
       parseParams(type, params);
       return "RESOLVED, that the transaction described below is approved.";
@@ -639,7 +664,7 @@ function starterParagraph(
     }
     case "AMENDMENT":
       parseParams(type, params);
-      return "RESOLVED, that the Operating Agreement is amended as follows: [insert the full text of the amendment].";
+      return `RESOLVED, that the Operating Agreement is amended as follows: ${STARTER_PLACEHOLDERS.AMENDMENT_TEXT}.`;
     case "AUDIT_CALL": {
       const p = parseParams(type, params);
       const kind = p.scope === "REVIEW" ? "review" : "audit";

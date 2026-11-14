@@ -99,6 +99,7 @@ export function ResolutionDraftEditor({
   const bodyRef = useRef<unknown[]>(initialBody);
 
   const update = api.resolution.update.useMutation();
+  const utils = api.useUtils();
   const remove = api.resolution.delete.useMutation();
 
   const locked = useMemo(
@@ -138,6 +139,8 @@ export function ResolutionDraftEditor({
         setParams(saved.params as Params);
         setParamsVersion((v) => v + 1);
       }
+      // The send dialog's blockers read the stored text (placeholders).
+      void utils.resolution.preview.invalidate();
       return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));

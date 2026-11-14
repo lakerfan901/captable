@@ -3,9 +3,12 @@ import {
   behaviour,
   buildRequirements,
   buildTitle,
+  placeholderBlocker,
   type ResolutionType,
+  unfilledPlaceholders,
 } from "@/lib/governance/presets";
 import { eligibleRecipients } from "@/lib/governance/resolution-core";
+import { docToPlainText, normalizeBlocks } from "@/lib/governance/rich-doc";
 import { denominator, fromMicro, minimumFor, toMicro } from "@/lib/llc/voting";
 import { buildSnapshotDraft } from "@/server/governance/snapshot";
 import { termExtensionSendBlockers } from "@/server/governance/term-extension";
@@ -169,6 +172,23 @@ export const previewProcedure = withLlcAccessControl
     // Refusals of `send` that do not depend on the record date.
     const mail = currentMailDelivery("RESOLUTION");
     if (mail.blockedReason !== null) blockers.push(mail.blockedReason);
+    // The stored draft (the editor saves before opening the send dialog)
+    // still holding a starter placeholder, as `send` refuses it.
+    if (input.publicId) {
+      const draftBody = await ctx.db.resolution.findFirst({
+        where: { publicId: input.publicId, companyId },
+        select: { body: true },
+      });
+      const normalized = draftBody ? normalizeBlocks(draftBody.body) : null;
+      if (normalized?.ok) {
+        const placeholders = unfilledPlaceholders(
+          docToPlainText(normalized.doc),
+        );
+        if (placeholders.length > 0) {
+          blockers.push(placeholderBlocker(placeholders));
+        }
+      }
+    }
     if (type === "TERM_EXTENSION") {
       const stored = input.publicId
         ? await ctx.db.resolution.findFirst({

@@ -1675,6 +1675,59 @@ async function review2CapitalTile() {
   );
 }
 
+/** A written consent is not sent while the starter placeholder is in its text. */
+async function starterPlaceholder() {
+  section("A consent still holding the starter placeholder is not sent");
+  const { c, admin } = await governedCompany("placeholder");
+  const caller = createCallerFactory(resolutionRouter)(admin.context);
+  const params = {
+    matterKey: "CHANGE_BUSINESS",
+    requireManagerApproval: false,
+  };
+  const { publicId } = await caller.create({ type: "GENERAL_CONSENT", params });
+  const today = realToday(c);
+  const preview = () =>
+    caller.preview({
+      type: "GENERAL_CONSENT",
+      params,
+      recordDate: today,
+      publicId,
+    });
+  check(
+    "preview lists the placeholder as a blocker",
+    (await preview()).blockers.some((b) =>
+      b.includes('starter placeholder "[describe the action]"'),
+    ),
+  );
+  await expectRefused(
+    "send refuses it",
+    () => caller.send({ publicId, recordDate: today, autoReminders: false }),
+    /starter placeholder "\[describe the action\]"/,
+    "BAD_REQUEST",
+  );
+  const draft = await db.resolution.findFirstOrThrow({
+    where: { publicId, companyId: c.id },
+  });
+  eq("the draft is still a DRAFT", draft.status, "DRAFT");
+  eq(
+    "no ballot was created",
+    await db.resolutionBallot.count({ where: { resolutionId: draft.id } }),
+    0,
+  );
+  // The author writes the action (a bracket of their own stays allowed).
+  const body = JSON.parse(
+    JSON.stringify(draft.body).replace(
+      "[describe the action]",
+      "adding GPU colocation services to the business [sic]",
+    ),
+  ) as unknown[];
+  await caller.update({ publicId, title: draft.title, params, body });
+  check(
+    "after the text is written the blocker is gone",
+    !(await preview()).blockers.some((b) => b.includes("starter placeholder")),
+  );
+}
+
 await runScenarios([
   ["F1", finding1],
   ["F2", finding2],
@@ -1685,4 +1738,5 @@ await runScenarios([
   ["R2-3", review2TermExtension],
   ["R2-5", review2CapitalTile],
   ["R2-6", review2MailCatcher],
+  ["starter placeholder", starterPlaceholder],
 ]);
