@@ -71,6 +71,8 @@ export type DigestDelivery =
   | "NOTHING_DUE"
   | "NO_MANAGERS"
   | "MAIL_BLOCKED"
+  /** Another sweep run holds this company's lock: that run sends. */
+  | "CONCURRENT_RUN"
   | "FAILED";
 
 export interface CompanySweepResult {
@@ -91,10 +93,62 @@ export interface CompanySweepResult {
 export interface DailySweepOptions {
   /** Replaces `sendMail` (local scripted runs only). */
   send?: typeof sendMail;
+  /** Only these companies (local scripted runs only); default every LLC company. */
+  companyIds?: string[];
 }
 
-/** Fills `result` as it goes, so a failure still reports what was done. */
+/**
+ * Exactly one digest per company per day, even when two sweep runs overlap
+ * (a pg-boss retry or a duplicate schedule firing while the first run is
+ * still sending): the whole per-company step, from the sync and the read of
+ * the due deadlines to marking them, runs while holding a Postgres
+ * transaction-scoped advisory lock keyed on the company. A run that cannot
+ * take the lock does nothing for that company (`CONCURRENT_RUN`): the holder
+ * sends. A run that starts after the holder finished takes the lock and
+ * reads the deadlines the holder already marked, so it finds nothing due.
+ * The lock lives on one pooled connection inside an interactive transaction
+ * that only holds it (every other query goes through `db`, so the marks
+ * commit at once); a session-level advisory lock is not used because
+ * Prisma's pool may run the unlock on another connection.
+ * Limits: if the lock transaction outlives `LOCK_TIMEOUT_MS` it is rolled
+ * back (lock released) and the company is reported FAILED and retried, while
+ * the sends already made stand; a crash between a send and its mark still
+ * sends again on the retry (as before).
+ */
+export const dailySweepLockKey = (companyId: string) =>
+  `${JOB_NAME}:${companyId}`;
+const LOCK_TIMEOUT_MS = 15 * 60_000;
+
 async function sweepCompany(
+  company: { id: string; name: string; publicId: string },
+  now: Date,
+  options: DailySweepOptions,
+  result: CompanySweepResult,
+): Promise<void> {
+  const key = dailySweepLockKey(company.id);
+  await db.$transaction(
+    async (lockTx) => {
+      const rows = await lockTx.$queryRaw<{ locked: boolean }[]>`
+        SELECT pg_try_advisory_xact_lock(hashtext(${key})) AS locked`;
+      if (rows[0]?.locked !== true) {
+        result.delivery = "CONCURRENT_RUN";
+        log.info(
+          { companyId: company.id },
+          "Compliance digest left to the sweep run already holding this company",
+        );
+        return;
+      }
+      await sweepCompanyLocked(company, now, options, result);
+    },
+    { maxWait: 10_000, timeout: LOCK_TIMEOUT_MS },
+  );
+}
+
+/**
+ * Fills `result` as it goes, so a failure still reports what was done.
+ * Called only while holding the company's sweep lock (`sweepCompany`).
+ */
+async function sweepCompanyLocked(
   company: { id: string; name: string; publicId: string },
   now: Date,
   options: DailySweepOptions,
@@ -255,7 +309,10 @@ export async function runDailySweep(
   options: DailySweepOptions = {},
 ): Promise<CompanySweepResult[]> {
   const companies = await db.company.findMany({
-    where: { entityType: "LLC" },
+    where: {
+      entityType: "LLC",
+      ...(options.companyIds ? { id: { in: options.companyIds } } : {}),
+    },
     select: { id: true, name: true, publicId: true },
     orderBy: { createdAt: "asc" },
   });
