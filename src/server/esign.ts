@@ -2,7 +2,10 @@
 
 import { renderToBuffer } from "@react-pdf/renderer";
 import { PDFDocument, StandardFonts } from "pdf-lib";
+import sharp from "sharp";
 import { dayjsExt } from "@/common/dayjs";
+import { fitSignature, inkBounds } from "@/lib/esign/signature-fit";
+import { logger } from "@/lib/logger";
 import { TAG } from "@/lib/tags";
 import { AuditLogTemplate } from "@/pdf-templates/audit-log-template";
 import { Audit } from "@/server/audit";
@@ -124,6 +127,32 @@ export const getFieldValue = ({
     : undefined;
 };
 
+/**
+ * The signature PNG cropped to its ink: the signing pad exports its whole
+ * (mostly transparent) drawing surface. Falls back to the original image when
+ * it cannot be decoded or has no visible pixels.
+ */
+async function cropSignatureToInk(value: string): Promise<Uint8Array | string> {
+  const comma = value.indexOf(",");
+  if (!value.startsWith("data:image/") || comma < 0) return value;
+  try {
+    const input = Buffer.from(value.slice(comma + 1), "base64");
+    const { data, info } = await sharp(input)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const bounds = inkBounds(data, info.width, info.height, {
+      channels: info.channels,
+      margin: 4,
+    });
+    if (!bounds) return value;
+    return await sharp(input).extract(bounds).png().toBuffer();
+  } catch (error) {
+    logger.warn({ err: error }, "Could not crop a signature image");
+    return value;
+  }
+}
+
 export interface GenerateEsignSignPdfOptionsType {
   bucketKey: string;
   data: Record<string, string>;
@@ -180,18 +209,20 @@ export async function generateEsignPdf({
 
       const fieldY = field.top * heightRatio;
       const height = field.height * heightRatio;
-      const width = height;
 
       if (field.type === "SIGNATURE") {
-        const image = await pdfDoc.embedPng(value);
-
-        const updatedY = fieldY + height;
+        // Cropped to the ink and scaled to fit the field box (aspect kept).
+        const image = await pdfDoc.embedPng(await cropSignatureToInk(value));
+        const placed = fitSignature(
+          { x: fieldX, y: fieldY, width: field.width * widthRatio, height },
+          { width: image.width, height: image.height },
+        );
 
         page.drawImage(image, {
-          x: fieldX,
-          y: pageHeight - updatedY,
-          width,
-          height,
+          x: placed.x,
+          y: pageHeight - placed.y - placed.height,
+          width: placed.width,
+          height: placed.height,
         });
       } else {
         const padding = (height + textHeight) / 2;
