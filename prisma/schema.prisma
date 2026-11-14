@@ -2162,10 +2162,16 @@ model DistributionLine {
   netCents                   BigInt /// cash payable = gross − offsets
 
   // Operational (may be set after finalize)
-  paidOn           DateTime? @db.Date
-  paymentReference String?
-  noticeEmailLogId String?
-  noticeSentAt     DateTime?
+  paidOn            DateTime? @db.Date
+  paymentReference  String?
+  noticeEmailLogId  String?
+  noticeSentAt      DateTime?
+  /// Notice emails the mail server accepted for this line (first send + re-sends); a re-send must name the count it saw (idempotency)
+  noticeSendCount   Int       @default(0)
+  /// Claim of a re-send in flight (cleared when recorded or released)
+  noticeResendingAt DateTime?
+  /// Instant the latest re-send was accepted; noticeSentAt stays the first send
+  noticeLastSentAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

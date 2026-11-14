@@ -116,3 +116,54 @@ export function noticeSkipReason(line: {
   if (line.email === null) return "NO_EMAIL";
   return null;
 }
+
+/** A claim (first send or re-send) younger than this is treated as in flight. */
+export const NOTICE_CLAIM_STALE_MS = 2 * 60 * 1000;
+
+/**
+ * Whether a line's notice may be RE-sent (a bounced or corrected address),
+ * and why not. Rules: the first notice must have gone out (`noticeSentAt`
+ * set); a first send still in flight (claimed, no email log yet, younger than
+ * NOTICE_CLAIM_STALE_MS) or another re-send in flight is not raced; the count
+ * of accepted notices must still be the one the Manager saw
+ * (`expectedSendCount`, so a double click sends once); nothing distributed,
+ * or no address on file, is refused as for the first send.
+ */
+export function resendSkipReason(
+  line: {
+    noticeSentAt: Date | null;
+    noticeEmailLogId: string | null;
+    noticeSendCount: number;
+    noticeResendingAt: Date | null;
+    grossCents: Cents;
+    email: string | null;
+  },
+  expectedSendCount: number,
+  now: Date,
+):
+  | "NOT_SENT"
+  | "FIRST_SEND_IN_FLIGHT"
+  | "RESEND_IN_FLIGHT"
+  | "ALREADY_RESENT"
+  | "NOTHING_DISTRIBUTED"
+  | "NO_EMAIL"
+  | null {
+  if (line.noticeSentAt === null) return "NOT_SENT";
+  if (line.grossCents <= 0n) return "NOTHING_DISTRIBUTED";
+  if (
+    line.noticeEmailLogId === null &&
+    line.noticeSendCount === 0 &&
+    now.getTime() - line.noticeSentAt.getTime() < NOTICE_CLAIM_STALE_MS
+  ) {
+    return "FIRST_SEND_IN_FLIGHT";
+  }
+  if (line.noticeSendCount !== expectedSendCount) return "ALREADY_RESENT";
+  if (
+    line.noticeResendingAt !== null &&
+    now.getTime() - line.noticeResendingAt.getTime() < NOTICE_CLAIM_STALE_MS
+  ) {
+    return "RESEND_IN_FLIGHT";
+  }
+  if (line.email === null) return "NO_EMAIL";
+  return null;
+}

@@ -481,6 +481,9 @@ function lineView(l: DistributionLine) {
     paymentReference: l.paymentReference,
     noticeEmailLogId: l.noticeEmailLogId,
     noticeSentAt: l.noticeSentAt,
+    /** Notice emails accepted for this line (first + re-sends); a re-send names it. */
+    noticeSendCount: l.noticeSendCount,
+    noticeLastSentAt: l.noticeLastSentAt,
   };
 }
 
@@ -497,7 +500,13 @@ export async function getDistribution(
   if (!row) notFound("Distribution");
   const stakeholders = await tx.stakeholder.findMany({
     where: { companyId, id: { in: row.lines.map((l) => l.stakeholderId) } },
-    select: { id: true, name: true, isInsider: true },
+    select: {
+      id: true,
+      name: true,
+      isInsider: true,
+      email: true,
+      noticeEmail: true,
+    },
   });
   const byId = new Map(stakeholders.map((s) => [s.id, s]));
   const reversedBy = row.isReversal
@@ -519,6 +528,12 @@ export async function getDistribution(
       ...lineView(l),
       name: byId.get(l.stakeholderId)?.name ?? "",
       isInsider: byId.get(l.stakeholderId)?.isInsider ?? false,
+      /** Where a notice (or a re-send) goes now: noticeEmail, else email; null when both are blank. */
+      noticeAddress: (() => {
+        const s = byId.get(l.stakeholderId);
+        const a = s ? s.noticeEmail?.trim() || s.email.trim() : "";
+        return a === "" ? null : a;
+      })(),
     })),
     snapshot: row.snapshot,
     reversedBy,

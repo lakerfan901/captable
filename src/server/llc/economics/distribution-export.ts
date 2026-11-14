@@ -31,7 +31,9 @@ import {
   buildDistributionCsv,
   type DistributionCsvRow,
   distributionCsvFilename,
+  NOTICE_CLAIM_STALE_MS,
   noticeSkipReason,
+  resendSkipReason,
 } from "./distribution-export.logic";
 import { conflict, lockCompanyLedger, notFound, ruleViolation } from "./scope";
 
@@ -121,6 +123,60 @@ async function loadDeliverable(db: Reader, companyId: string, id: string) {
 // ---------------------------------------------------------------------------
 // Notices
 
+type DeliverableDistribution = Awaited<ReturnType<typeof loadDeliverable>>;
+type DeliverableLine = DeliverableDistribution["lines"][number];
+
+/** The notice of one line, as `sendNotices` and `resendNotices` email it (identical figures). */
+async function renderNotice(
+  d: DeliverableDistribution,
+  line: DeliverableLine,
+  who: {
+    companyName: string;
+    memberName: string;
+    manager: { name: string; email: string };
+  },
+): Promise<{ subject: string; html: string }> {
+  const defaultOffset =
+    line.defaultOffsetBalanceCents +
+    line.defaultOffsetInterestCents +
+    line.defaultOffsetCostsCents;
+  const props: DistributionNoticeEmailProps = {
+    companyName: who.companyName,
+    memberName: who.memberName,
+    distributionNumber: String(d.number),
+    typeLabel: TYPE_LABEL[d.type],
+    periodLabel: periodLabel(d.periodStart, d.periodEnd),
+    paymentDateLong: longDate(toDateOnly(d.paymentDate)),
+    tierC: formatCents(line.tierCCents),
+    tierD: formatCents(line.tierDCents),
+    tierE: formatCents(line.tierEPreferredCents + line.tierECommonCents),
+    gross: formatCents(line.grossCents),
+    defaultOffset: defaultOffset === 0n ? "" : formatCents(defaultOffset),
+    taxAdvanceOffset:
+      line.taxAdvanceOffsetCents === 0n
+        ? ""
+        : formatCents(line.taxAdvanceOffsetCents),
+    net: formatCents(line.netCents),
+    unpaidReturnAfter: formatCents(
+      line.unpaidReturnBeforeCents - line.tierCCents,
+    ),
+    unreturnedAfter: formatCents(line.unreturnedBeforeCents - line.tierDCents),
+    preferredUnits: unitsText(
+      microUnitsToDecimalString(
+        microUnitsFromDecimal(unitsToWire(line.preferredUnits)),
+      ),
+    ),
+    reserveBalance: formatCents(d.reserveBalanceCents ?? 0n),
+    managerName: who.manager.name,
+    managerEmail: who.manager.email,
+    isReturnOfUnusedCapital: d.type === "RETURN_OF_UNUSED_CAPITAL",
+  };
+  return {
+    subject: distributionNoticeSubject(props),
+    html: await render(DistributionNoticeEmail(props)),
+  };
+}
+
 export type NoticeLineResult = {
   lineId: string;
   stakeholderId: string;
@@ -164,7 +220,6 @@ export async function sendDistributionNotices(
       })
     ).map((s) => [s.id, s]),
   );
-  const paymentDateLong = longDate(toDateOnly(d.paymentDate));
   const results: NoticeLineResult[] = [];
   const sorted = [...lines].sort((a, b) =>
     (people.get(a.stakeholderId)?.name ?? "").localeCompare(
@@ -239,47 +294,11 @@ export async function sendDistributionNotices(
 
     let email: { subject: string; html: string };
     try {
-      const defaultOffset =
-        line.defaultOffsetBalanceCents +
-        line.defaultOffsetInterestCents +
-        line.defaultOffsetCostsCents;
-      const props: DistributionNoticeEmailProps = {
+      email = await renderNotice(d, line, {
         companyName: i.company.name,
         memberName: name,
-        distributionNumber: String(d.number),
-        typeLabel: TYPE_LABEL[d.type],
-        periodLabel: periodLabel(d.periodStart, d.periodEnd),
-        paymentDateLong,
-        tierC: formatCents(line.tierCCents),
-        tierD: formatCents(line.tierDCents),
-        tierE: formatCents(line.tierEPreferredCents + line.tierECommonCents),
-        gross: formatCents(line.grossCents),
-        defaultOffset: defaultOffset === 0n ? "" : formatCents(defaultOffset),
-        taxAdvanceOffset:
-          line.taxAdvanceOffsetCents === 0n
-            ? ""
-            : formatCents(line.taxAdvanceOffsetCents),
-        net: formatCents(line.netCents),
-        unpaidReturnAfter: formatCents(
-          line.unpaidReturnBeforeCents - line.tierCCents,
-        ),
-        unreturnedAfter: formatCents(
-          line.unreturnedBeforeCents - line.tierDCents,
-        ),
-        preferredUnits: unitsText(
-          microUnitsToDecimalString(
-            microUnitsFromDecimal(unitsToWire(line.preferredUnits)),
-          ),
-        ),
-        reserveBalance: formatCents(d.reserveBalanceCents ?? 0n),
-        managerName: i.manager.name,
-        managerEmail: i.manager.email,
-        isReturnOfUnusedCapital: d.type === "RETURN_OF_UNUSED_CAPITAL",
-      };
-      email = {
-        subject: distributionNoticeSubject(props),
-        html: await render(DistributionNoticeEmail(props)),
-      };
+        manager: i.manager,
+      });
     } catch (error) {
       logger.error(
         { err: error, companyId, lineId: line.id },
@@ -332,6 +351,7 @@ export async function sendDistributionNotices(
           data: {
             noticeSentAt: sent.sentAt,
             noticeEmailLogId: sent.emailLogId,
+            noticeSendCount: { increment: 1 },
           },
           select: { id: true },
         });
@@ -363,6 +383,245 @@ export async function sendDistributionNotices(
         emailLogId: sent.emailLogId,
         reason:
           "The email was sent, but recording its log id failed; the line is still marked as sent.",
+      });
+    }
+  }
+  return { results };
+}
+
+// ---------------------------------------------------------------------------
+// Re-sending a notice (a bounced or corrected address)
+
+const RESEND_SKIP_TEXT = {
+  NOT_SENT: "No notice was sent for this line yet; use Send notices.",
+  FIRST_SEND_IN_FLIGHT:
+    "The first notice for this line is still being sent; try again in two minutes.",
+  RESEND_IN_FLIGHT: "This notice is being re-sent right now.",
+  ALREADY_RESENT:
+    "This notice was already re-sent (the page was out of date); nothing was sent.",
+  NOTHING_DISTRIBUTED: "Nothing was distributed to this member.",
+  NO_EMAIL: "The member has no email address.",
+} as const;
+
+/**
+ * Re-sends the notice of the given lines to each member's CURRENT notice
+ * address (correct the address on the member first). The email is the same
+ * notice, built from the stored line, so no figure is recomputed and nothing
+ * economic is written: only the operational columns `noticeSendCount`,
+ * `noticeResendingAt` and `noticeLastSentAt` change (`noticeSentAt` and
+ * `noticeEmailLogId` keep the first send). Each re-send is an EmailLog row
+ * (`relatedType "distributionLine"`) and an audit row naming the address.
+ *
+ * Idempotent against double clicks: the caller passes, per line, the
+ * `noticeSendCount` it showed; the line is CLAIMED by a single-row guarded
+ * write `update({ where: { id, noticeSendCount: expected, noticeResendingAt:
+ * null-or-stale } })` before the email is sent, so of two requests carrying
+ * the same count exactly one sends (the other is SKIPPED), and a later
+ * request with the old count is skipped too. A failed send releases the
+ * claim; a crash leaves it, and it may be taken over after
+ * NOTICE_CLAIM_STALE_MS (the email log says whether that email went out).
+ */
+export async function resendDistributionNotices(
+  db: TPrisma,
+  i: {
+    company: { id: string; name: string };
+    actor: LedgerActor;
+    manager: { name: string; email: string };
+    id: string;
+    lines: readonly { lineId: string; sendCount: number }[];
+  },
+): Promise<{ results: NoticeLineResult[] }> {
+  const companyId = i.company.id;
+  // Production with the bundled mail catcher: refused before anything is written.
+  assertMailDeliverable("DISTRIBUTION_NOTICES");
+  const d = await loadDeliverable(db, companyId, i.id);
+  const expected = new Map(i.lines.map((l) => [l.lineId, l.sendCount]));
+  const lines = d.lines.filter((l) => expected.has(l.id));
+  if (lines.length !== expected.size) notFound("Distribution line");
+  const people = new Map(
+    (
+      await db.stakeholder.findMany({
+        where: { companyId, id: { in: lines.map((l) => l.stakeholderId) } },
+        select: { id: true, name: true, email: true, noticeEmail: true },
+      })
+    ).map((s) => [s.id, s]),
+  );
+  const sorted = [...lines].sort((a, b) =>
+    (people.get(a.stakeholderId)?.name ?? "").localeCompare(
+      people.get(b.stakeholderId)?.name ?? "",
+      "en",
+    ),
+  );
+  const results: NoticeLineResult[] = [];
+
+  for (const line of sorted) {
+    const person = people.get(line.stakeholderId);
+    const name = person?.name ?? "";
+    const to = person ? noticeAddress(person) : null;
+    const base = { lineId: line.id, stakeholderId: line.stakeholderId, name };
+    const sendCount = expected.get(line.id) ?? -1;
+    const now = new Date();
+    const skip = resendSkipReason(
+      {
+        noticeSentAt: line.noticeSentAt,
+        noticeEmailLogId: line.noticeEmailLogId,
+        noticeSendCount: line.noticeSendCount,
+        noticeResendingAt: line.noticeResendingAt,
+        grossCents: line.grossCents,
+        email: to,
+      },
+      sendCount,
+      now,
+    );
+    if (skip !== null || to === null) {
+      results.push({
+        ...base,
+        status: "SKIPPED",
+        reason: RESEND_SKIP_TEXT[skip ?? "NO_EMAIL"],
+      });
+      continue;
+    }
+
+    // Claim (single-row guarded write; P2025 -> another request has it, or
+    // the count moved on since the page was loaded).
+    const claimAt = now;
+    const staleBefore = new Date(now.getTime() - NOTICE_CLAIM_STALE_MS);
+    const claimed = await guardedUpdate(() =>
+      db.distributionLine.update({
+        where: {
+          id: line.id,
+          companyId,
+          distributionId: d.id,
+          noticeSentAt: { not: null },
+          noticeSendCount: sendCount,
+          OR: [
+            { noticeResendingAt: null },
+            { noticeResendingAt: { lte: staleBefore } },
+          ],
+        },
+        data: { noticeResendingAt: claimAt },
+        select: { id: true },
+      }),
+    );
+    if (claimed === null) {
+      results.push({
+        ...base,
+        status: "SKIPPED",
+        reason: RESEND_SKIP_TEXT.ALREADY_RESENT,
+      });
+      continue;
+    }
+
+    const release = async () => {
+      try {
+        await guardedUpdate(() =>
+          db.distributionLine.update({
+            where: { id: line.id, companyId, noticeResendingAt: claimAt },
+            data: { noticeResendingAt: null },
+            select: { id: true },
+          }),
+        );
+      } catch (error) {
+        logger.error(
+          { err: error, companyId, lineId: line.id },
+          "Distribution notice re-send: could not release the claim on a line",
+        );
+      }
+    };
+
+    let email: { subject: string; html: string };
+    try {
+      email = await renderNotice(d, line, {
+        companyName: i.company.name,
+        memberName: name,
+        manager: i.manager,
+      });
+    } catch (error) {
+      logger.error(
+        { err: error, companyId, lineId: line.id },
+        "Distribution notice re-send: the email could not be prepared",
+      );
+      await release();
+      results.push({
+        ...base,
+        status: "FAILED",
+        reason: "The email could not be prepared; nothing was sent.",
+      });
+      continue;
+    }
+
+    let sent: { emailLogId: string | null; sentAt: Date };
+    try {
+      sent = await sendMail(
+        {
+          to,
+          subject: email.subject,
+          html: email.html,
+          headers: { "X-From-Name": i.company.name },
+        },
+        {
+          kind: "llc.distribution-notice",
+          companyId,
+          stakeholderId: line.stakeholderId,
+          relatedType: "distributionLine",
+          relatedId: line.id,
+        },
+      );
+    } catch (error) {
+      logger.warn(
+        { err: error, companyId, lineId: line.id },
+        "Distribution notice re-send: the mail server did not accept the email",
+      );
+      await release();
+      results.push({
+        ...base,
+        status: "FAILED",
+        reason: "The mail server did not accept the email; it can be retried.",
+      });
+      continue;
+    }
+
+    const n = sendCount + 1;
+    try {
+      await db.$transaction(async (tx: Tx) => {
+        await tx.distributionLine.update({
+          where: { id: line.id, companyId, noticeResendingAt: claimAt },
+          data: {
+            noticeResendingAt: null,
+            noticeSendCount: { increment: 1 },
+            noticeLastSentAt: sent.sentAt,
+          },
+          select: { id: true },
+        });
+        await audit(
+          tx,
+          i.actor,
+          companyId,
+          "distribution.notice-resent",
+          [
+            { type: "distribution", id: d.id },
+            { type: "stakeholder", id: line.stakeholderId },
+            ...(sent.emailLogId
+              ? [{ type: "emailLog" as const, id: sent.emailLogId }]
+              : []),
+          ],
+          `${i.actor.name} re-sent the notice of distribution No. ${d.number} to ${name} (${to}); notice email ${n} for this line.`,
+        );
+      });
+      results.push({ ...base, status: "SENT", emailLogId: sent.emailLogId });
+    } catch (error) {
+      // The email went out; the claim stays (a later re-send after the stale
+      // window is a new, deliberate action) and the email log is the record.
+      logger.error(
+        { err: error, companyId, lineId: line.id, emailLogId: sent.emailLogId },
+        "Distribution notice re-send: the email was accepted but could not be recorded",
+      );
+      results.push({
+        ...base,
+        status: "SENT",
+        emailLogId: sent.emailLogId,
+        reason:
+          "The email was sent, but recording it failed; check the email log before re-sending.",
       });
     }
   }

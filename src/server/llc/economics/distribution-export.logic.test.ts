@@ -5,7 +5,9 @@ import {
   DISTRIBUTION_CSV_HEADER,
   type DistributionCsvRow,
   distributionCsvFilename,
+  NOTICE_CLAIM_STALE_MS,
   noticeSkipReason,
+  resendSkipReason,
 } from "./distribution-export.logic";
 
 const COMPANY = "OCTAGON GPU I LLC";
@@ -118,5 +120,64 @@ describe("helpers", () => {
       "NOTHING_DISTRIBUTED",
     );
     expect(noticeSkipReason({ ...base, email: null })).toBe("NO_EMAIL");
+  });
+});
+
+describe("resendSkipReason", () => {
+  const now = new Date("2027-07-20T12:00:00.000Z");
+  const sent = {
+    noticeSentAt: new Date("2027-07-16T09:00:00.000Z"),
+    noticeEmailLogId: "log1",
+    noticeSendCount: 1,
+    noticeResendingAt: null,
+    grossCents: 100n,
+    email: "a@example.com",
+  };
+  it("a sent line with the count the Manager saw may be re-sent", () => {
+    expect(resendSkipReason(sent, 1, now)).toBeNull();
+  });
+  it("a line never sent is refused (use Send notices)", () => {
+    expect(resendSkipReason({ ...sent, noticeSentAt: null }, 1, now)).toBe(
+      "NOT_SENT",
+    );
+  });
+  it("a double click: the second request names a count that moved on", () => {
+    expect(resendSkipReason({ ...sent, noticeSendCount: 2 }, 1, now)).toBe(
+      "ALREADY_RESENT",
+    );
+  });
+  it("a re-send in flight is not raced; a stale claim (crash) may be taken over", () => {
+    const claimed = {
+      ...sent,
+      noticeResendingAt: new Date(now.getTime() - 30_000),
+    };
+    expect(resendSkipReason(claimed, 1, now)).toBe("RESEND_IN_FLIGHT");
+    const stale = {
+      ...sent,
+      noticeResendingAt: new Date(now.getTime() - NOTICE_CLAIM_STALE_MS),
+    };
+    expect(resendSkipReason(stale, 1, now)).toBeNull();
+  });
+  it("a first send still in flight is not raced; one that crashed long ago may be re-sent", () => {
+    const claiming = {
+      ...sent,
+      noticeEmailLogId: null,
+      noticeSendCount: 0,
+      noticeSentAt: new Date(now.getTime() - 10_000),
+    };
+    expect(resendSkipReason(claiming, 0, now)).toBe("FIRST_SEND_IN_FLIGHT");
+    expect(
+      resendSkipReason(
+        { ...claiming, noticeSentAt: new Date("2027-07-16T09:00:00.000Z") },
+        0,
+        now,
+      ),
+    ).toBeNull();
+  });
+  it("nothing distributed or no address: refused as for the first send", () => {
+    expect(resendSkipReason({ ...sent, grossCents: 0n }, 1, now)).toBe(
+      "NOTHING_DISTRIBUTED",
+    );
+    expect(resendSkipReason({ ...sent, email: null }, 1, now)).toBe("NO_EMAIL");
   });
 });
