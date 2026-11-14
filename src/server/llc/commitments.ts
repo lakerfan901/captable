@@ -1039,6 +1039,11 @@ export type RecordCapitalReceiptInput = {
   sourceType?: string;
   sourceId?: string;
   special?: { kind: SpecialReceiptKind; appliedCents: bigint };
+  /**
+   * The caller records Balance money (a Call Notice payment): the receipt is
+   * BALANCE or the call is refused, never INITIAL (`deriveReceiptKind`).
+   */
+  balancePayment?: true;
 };
 
 export async function recordCapitalReceipt(
@@ -1085,6 +1090,18 @@ export async function recordCapitalReceipt(
         status: commitment.status,
         acceptedOn: dateToWire(commitment.acceptedOn),
         receivedOn,
+        ...(input.balancePayment
+          ? {
+              balancePayment: {
+                acceptedCents: commitment.acceptedCents,
+                initialAppliedCents: commitment.receipts
+                  .filter((r) => r.kind === "INITIAL")
+                  .reduce((sum, r) => sum + r.appliedCents, 0n),
+                initialInstallmentBps: unitClass.initialInstallmentBps,
+                isReplacement: commitment.isReplacement,
+              },
+            }
+          : {}),
       }),
     );
     if (commitment.status === "PENDING") {

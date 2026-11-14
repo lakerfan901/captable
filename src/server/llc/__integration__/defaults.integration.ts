@@ -1331,10 +1331,145 @@ async function ledgerLock(c: TestCompany) {
   check("another company: no wait", !other.secondWaited && other.second.ok);
 }
 
+// ---------------------------------------------------------------------------
+// A Call Notice payment dated on the acceptance date is Balance money.
+
+async function sameDayBalancePayment() {
+  section("Call Notice payment dated on the acceptance date (Section 4.9)");
+  const c = await createCompany("e9-same-day");
+  const A = await newMember(c, "A Same Day");
+  const B = await newMember(c, "B Wired Early");
+  // A: accepted, called and paid all on 2026-11-16.
+  const aCommitment = await subscribe(c, A.id, $(100_000), {
+    cents: $(40_000),
+    receivedOn: "2026-11-16",
+  });
+  const aCall = await sendCall(
+    c,
+    aCommitment,
+    $(60_000),
+    "2026-11-16",
+    "2026-11-19",
+  );
+  const paid = await inTx((tx) =>
+    recordCallNoticePayment(tx, {
+      ...input(c),
+      commitmentId: aCommitment,
+      receivedOn: "2026-11-16",
+      amountCents: $(60_000),
+    }),
+  );
+  const receipt = await db.capitalReceipt.findFirstOrThrow({
+    where: { id: paid.capitalReceiptId, companyId: c.id },
+  });
+  eq("the payment is a BALANCE receipt", receipt.kind, "BALANCE");
+  eq("all of it is applied as capital", receipt.appliedCents, $(60_000));
+  eq(
+    "its Preferred Return starts on the line's due date (R29)",
+    receipt.prefReturnStartDate?.toISOString().slice(0, 10),
+    "2026-11-19",
+  );
+  check(
+    "all of it is applied to the call line",
+    paid.allocations.length === 1 &&
+      paid.allocations[0]?.lineId === aCall.lineId &&
+      paid.allocations[0]?.amount === $(60_000),
+    `${paid.allocations.length} allocations`,
+  );
+  eq("nothing is left as prepaid", paid.prepaid, 0n);
+  const [aLine] = await inTx((tx) =>
+    getLineStates(tx, c.id, "2026-11-20", { commitmentId: aCommitment }),
+  );
+  eq("the line shows $60,000.00 received", aLine?.allocated, $(60_000));
+  eq("the line is PAID", aLine?.status, "PAID");
+  eq("nothing is outstanding on the line", aLine?.outstanding, 0n);
+  check("the line is not overdue after its due date", aLine?.overdue === false);
+  setToday("2026-11-20");
+  await expectRefused(
+    "the member cannot be declared in default for the paid call",
+    () =>
+      inTx((tx) =>
+        declareDefault(tx, {
+          ...input(c),
+          callNoticeLineId: aCall.lineId,
+          expectedUnpaidCents: $(60_000),
+        }),
+      ),
+    /Nothing is outstanding/,
+  );
+  eq("A holds 100 units", await unitsOf(c, "2026-11-20", A.id), 100n * U);
+
+  // B: $40,000 wired 2026-11-16, accepted 2026-11-17, called the same day.
+  const bCommitment = await subscribe(c, B.id, $(100_000), {
+    cents: $(40_000),
+    receivedOn: "2026-11-16",
+    acceptedOn: "2026-11-17",
+  });
+  const held = await db.capitalReceipt.findFirstOrThrow({
+    where: { companyId: c.id, commitmentId: bCommitment },
+  });
+  eq("money wired before acceptance stays INITIAL", held.kind, "INITIAL");
+  eq(
+    "and earns the Preferred Return from the wire date",
+    held.prefReturnStartDate?.toISOString().slice(0, 10),
+    "2026-11-16",
+  );
+  const bCall = await sendCall(
+    c,
+    bCommitment,
+    $(60_000),
+    "2026-11-17",
+    "2026-11-20",
+  );
+  await expectRefused(
+    "a Call Notice payment dated before the acceptance date is refused, saying why",
+    () =>
+      inTx((tx) =>
+        recordCallNoticePayment(tx, {
+          ...input(c),
+          commitmentId: bCommitment,
+          receivedOn: "2026-11-16",
+          amountCents: $(60_000),
+        }),
+      ),
+    /before the acceptance date 2026-11-17, is part of the Initial Installment.*Commitments page/,
+  );
+  eq(
+    "no receipt was written for the refused payment",
+    await db.capitalReceipt.count({
+      where: { companyId: c.id, commitmentId: bCommitment },
+    }),
+    1,
+  );
+  eq(
+    "and no allocation",
+    await db.callNoticeAllocation.count({
+      where: { companyId: c.id, callNoticeLineId: bCall.lineId },
+    }),
+    0,
+  );
+  setToday("2026-11-17");
+  const bPaid = await inTx((tx) =>
+    recordCallNoticePayment(tx, {
+      ...input(c),
+      commitmentId: bCommitment,
+      receivedOn: "2026-11-17",
+      amountCents: $(60_000),
+    }),
+  );
+  check(
+    "B's payment on its acceptance date pays its line",
+    bPaid.allocations.length === 1 &&
+      bPaid.allocations[0]?.lineId === bCall.lineId,
+    `${bPaid.allocations.length} allocations`,
+  );
+}
+
 void runScenarios([
   ["E11 worked case", workedCase],
   ["$0 forfeiture", zeroForfeiture],
   ["B2 declare reconcile", declareAfterReconcile],
   ["Forfeiture Date = payment date", forfeitureOnPaymentDate],
   ["unapplied money on a declared default", unappliedMoneyOnDefault],
+  ["same-day Balance payment", sameDayBalancePayment],
 ]);

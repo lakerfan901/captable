@@ -2246,23 +2246,22 @@ export async function recordCallNoticePayment(
   const lines = await getLineStates(tx, companyId, today, {
     commitmentId: i.commitmentId,
   });
-  // FOUNDATION derives INITIAL for money received on or before acceptance;
-  // such a payment is not allocated to any line.
-  const initial = state.acceptedOn !== null && i.receivedOn <= state.acceptedOn;
-  const openLines: OpenLine[] = initial
-    ? []
-    : lines
-        .map((l, createdSeq) => ({ l, createdSeq }))
-        .filter(
-          ({ l }) =>
-            l.status === "SENT" && l.dueOn !== null && l.outstanding > 0n,
-        )
-        .map(({ l, createdSeq }) => ({
-          lineId: l.lineId,
-          dueOn: l.dueOn,
-          outstanding: l.outstanding,
-          createdSeq,
-        }));
+  // Money recorded here is a Balance payment (Section 4.9(b)). FOUNDATION
+  // records it as BALANCE (`balancePayment`) or refuses with the reason (money
+  // received before the acceptance date, or on it while the Initial
+  // Installment is short, is Initial Installment money); it never turns it
+  // into an INITIAL receipt that no line would see.
+  const openLines: OpenLine[] = lines
+    .map((l, createdSeq) => ({ l, createdSeq }))
+    .filter(
+      ({ l }) => l.status === "SENT" && l.dueOn !== null && l.outstanding > 0n,
+    )
+    .map(({ l, createdSeq }) => ({
+      lineId: l.lineId,
+      dueOn: l.dueOn,
+      outstanding: l.outstanding,
+      createdSeq,
+    }));
   const plan = planBalancePayment({
     amount: i.amountCents,
     receivedOn: i.receivedOn,
@@ -2286,44 +2285,48 @@ export async function recordCallNoticePayment(
       ...(plan.receiptDueDate !== null ? { dueDate: plan.receiptDueDate } : {}),
       sourceType: "callNotice",
       ...(firstNoticeId ? { sourceId: firstNoticeId } : {}),
+      balancePayment: true,
     },
     i.actor,
   );
+  if (receipt.kind !== "BALANCE" || receipt.appliedCents !== i.amountCents) {
+    throw new Error(
+      "Ledger write did not match the Balance payment (BALANCE receipt); nothing was saved.",
+    );
+  }
 
   const allocations: (BalancePaymentPlan["allocations"][number] & {
     callNoticeId: string;
   })[] = [];
-  if (receipt.kind === "BALANCE") {
-    for (const a of plan.allocations) {
-      const line = lineById.get(a.lineId);
-      if (!line) continue;
-      await tx.callNoticeAllocation.create({
-        data: {
-          companyId,
-          callNoticeLineId: a.lineId,
-          capitalReceiptId: receipt.id,
-          amountCents: a.amount,
-          receivedOn: fromDateOnly(i.receivedOn),
-          prefReturnStartOn: fromDateOnly(a.prefReturnStartOn),
-          source: "PAYMENT",
-          createdById: createdBy(i.actor),
-        },
+  for (const a of plan.allocations) {
+    const line = lineById.get(a.lineId);
+    if (!line) continue;
+    await tx.callNoticeAllocation.create({
+      data: {
+        companyId,
+        callNoticeLineId: a.lineId,
+        capitalReceiptId: receipt.id,
+        amountCents: a.amount,
+        receivedOn: fromDateOnly(i.receivedOn),
+        prefReturnStartOn: fromDateOnly(a.prefReturnStartOn),
+        source: "PAYMENT",
+        createdById: createdBy(i.actor),
+      },
+    });
+    if (a.amount >= line.outstanding) {
+      await tx.callNoticeLine.update({
+        where: { id: a.lineId, companyId },
+        data: { status: "PAID", paidInFullOn: fromDateOnly(i.receivedOn) },
       });
-      if (a.amount >= line.outstanding) {
-        await tx.callNoticeLine.update({
-          where: { id: a.lineId, companyId },
-          data: { status: "PAID", paidInFullOn: fromDateOnly(i.receivedOn) },
-        });
-      }
-      allocations.push({ ...a, callNoticeId: line.callNoticeId });
     }
-    await settleNotices(
-      tx,
-      companyId,
-      allocations.map((a) => a.callNoticeId),
-    );
+    allocations.push({ ...a, callNoticeId: line.callNoticeId });
   }
-  const prepaid = receipt.kind === "BALANCE" ? plan.unallocated : 0n;
+  await settleNotices(
+    tx,
+    companyId,
+    allocations.map((a) => a.callNoticeId),
+  );
+  const prepaid = plan.unallocated;
   const late = allocations.some((a) => i.receivedOn > a.dueOn);
 
   await audit(
@@ -2342,9 +2345,7 @@ export async function recordCallNoticePayment(
     ],
     `${i.actor.name} recorded ${formatCents(i.amountCents)} received from ${state.name} on ${i.receivedOn}: ${
       allocations.length === 0
-        ? receipt.kind === "BALANCE"
-          ? "no open Call Notice line, held as prepaid Balance"
-          : "Initial Installment"
+        ? "no open Call Notice line, held as prepaid Balance"
         : `${allocations.map((a) => `${formatCents(a.amount)} to the line due ${a.dueOn} (return from ${a.prefReturnStartOn})`).join("; ")}${prepaid > 0n ? `; ${formatCents(prepaid)} prepaid` : ""}`
     }${late ? "; received after the due date" : ""}.`,
   );

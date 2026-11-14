@@ -108,8 +108,8 @@ export function RecordPaymentDialog({
           <div className="grid gap-3 text-sm">
             {result.allocations.length === 0 ? (
               <p>
-                No line was paid by this receipt (it was recorded as an Initial
-                Installment or held as prepaid Balance).
+                No open line was paid by this receipt; it is held as prepaid
+                Balance.
               </p>
             ) : (
               <ul className="grid gap-1">
