@@ -4,8 +4,10 @@ import {
   BOOKS_CATEGORY_KEYS,
   categoryCompleteness,
   completenessLabel,
+  effectiveBooksCategory,
   isGeneratedTags,
   requiredFiscalYears,
+  SIGNATURE_PAGE_KIND,
   validateCategorize,
   yearRequired,
 } from "./books-core";
@@ -115,9 +117,22 @@ describe("categoryCompleteness", () => {
     expect(completenessLabel("TAX_RETURNS", c, 1)).toBe("Complete");
   });
 
-  test("no required year yet is complete", () => {
-    const c = categoryCompleteness("TAX_RETURNS", [], []);
-    expect(c).toEqual({ years: [], complete: true });
+  test("no required year yet is not complete: nothing is required yet", () => {
+    for (const category of ["TAX_RETURNS", "FINANCIAL_STATEMENTS"] as const) {
+      // formed 2026, today in 2026: no completed fiscal year
+      const c = categoryCompleteness(
+        category,
+        [],
+        requiredFiscalYears(2026, 2026),
+      );
+      expect(c).toEqual({ years: [], complete: null });
+      expect(completenessLabel(category, c, 0)).toBe("Nothing required yet");
+      // a filed copy for the current year does not make it "Complete" either
+      const filed = categoryCompleteness(category, [{ recordYear: 2026 }], []);
+      expect(completenessLabel(category, filed, 1)).toBe(
+        "Nothing required yet",
+      );
+    }
   });
 
   test("count-only categories", () => {
@@ -129,6 +144,37 @@ describe("categoryCompleteness", () => {
     expect(c).toEqual({ years: null, complete: null });
     expect(completenessLabel("CONSENTS_AND_MINUTES", c, 2)).toBe("2 documents");
     expect(completenessLabel("OTHER_STATUTORY", c, 1)).toBe("1 document");
+  });
+});
+
+describe("effectiveBooksCategory", () => {
+  test("an executed Exhibit B signature page is kept under 8.1(b)", () => {
+    expect(
+      effectiveBooksCategory({
+        recordCategory: null,
+        kind: SIGNATURE_PAGE_KIND,
+      }),
+    ).toBe("ARTICLES_AND_AGREEMENT");
+    const withPage = categoryCompleteness(
+      "ARTICLES_AND_AGREEMENT",
+      [{ recordYear: null }],
+      [],
+    );
+    expect(completenessLabel("ARTICLES_AND_AGREEMENT", withPage, 1)).toBe(
+      "Complete",
+    );
+  });
+
+  test("a filed category wins; other kinds are not filed by kind", () => {
+    expect(
+      effectiveBooksCategory({
+        recordCategory: "OTHER_STATUTORY",
+        kind: SIGNATURE_PAGE_KIND,
+      }),
+    ).toBe("OTHER_STATUTORY");
+    for (const kind of ["w9", "wire-confirmation", "other", null]) {
+      expect(effectiveBooksCategory({ recordCategory: null, kind })).toBe(null);
+    }
   });
 });
 

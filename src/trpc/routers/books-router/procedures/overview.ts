@@ -3,8 +3,10 @@ import {
   BOOKS_CATEGORIES,
   type BooksCategory,
   categoryCompleteness,
+  effectiveBooksCategory,
   isGeneratedTags,
   requiredFiscalYears,
+  SIGNATURE_PAGE_KIND,
 } from "@/lib/governance/books-core";
 import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
@@ -29,7 +31,15 @@ export const overviewProcedure = withLlcAccessControl
         select: { incorporationDate: true },
       }),
       ctx.db.document.findMany({
-        where: { companyId, recordCategory: { not: null } },
+        // Executed Exhibit B signature pages count under 8.1(b) even when
+        // nobody filed them (`effectiveBooksCategory`).
+        where: {
+          companyId,
+          OR: [
+            { recordCategory: { not: null } },
+            { kind: SIGNATURE_PAGE_KIND },
+          ],
+        },
         orderBy: [
           { recordYear: "desc" },
           { createdAt: "desc" },
@@ -41,6 +51,7 @@ export const overviewProcedure = withLlcAccessControl
           name: true,
           recordCategory: true,
           recordYear: true,
+          kind: true,
           createdAt: true,
           bucket: { select: { tags: true } },
         },
@@ -59,7 +70,7 @@ export const overviewProcedure = withLlcAccessControl
 
     const categories = BOOKS_CATEGORIES.map((def) => {
       const docs = documents
-        .filter((d) => d.recordCategory === def.category)
+        .filter((d) => effectiveBooksCategory(d) === def.category)
         .map((d) => ({
           publicId: d.publicId,
           bucketId: d.bucketId,
@@ -67,6 +78,8 @@ export const overviewProcedure = withLlcAccessControl
           recordYear: d.recordYear,
           createdAt: d.createdAt,
           generated: isGeneratedTags(d.bucket.tags),
+          /** kept here as a signature page, not filed by a user */
+          signaturePage: d.recordCategory === null,
         }));
       const { years, complete } = categoryCompleteness(
         def.category,

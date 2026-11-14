@@ -118,8 +118,29 @@ export interface BooksDocumentLike {
   recordYear: number | null;
 }
 
+/** `Document.kind` of an executed Exhibit B signature page (F13, member documents). */
+export const SIGNATURE_PAGE_KIND = "exhibit-b";
+
+/**
+ * The Section 8.1 category a document is kept under: the one it was filed
+ * under, else 8.1(b) for an executed Exhibit B signature page. Section 8.1(b)
+ * keeps "the Agreement with amendments"; a Member's signature page to
+ * Exhibit B is its counterpart signature to the Agreement, so the executed
+ * pages are part of that record.
+ */
+export function effectiveBooksCategory(document: {
+  recordCategory: BooksCategory | null;
+  kind: string | null;
+}): BooksCategory | null {
+  if (document.recordCategory !== null) return document.recordCategory;
+  return document.kind === SIGNATURE_PAGE_KIND
+    ? "ARTICLES_AND_AGREEMENT"
+    : null;
+}
+
 export interface CategoryCompleteness {
   years: { year: number; present: boolean }[] | null;
+  /** null: no completeness rule, or (per year) no fiscal year required yet */
   complete: boolean | null;
 }
 
@@ -139,6 +160,9 @@ export function categoryCompleteness(
       year,
       present: filed.has(year),
     }));
+    // No completed fiscal year yet: nothing is required, which is not
+    // "Complete" either.
+    if (years.length === 0) return { years, complete: null };
     return { years, complete: years.every((y) => y.present) };
   }
   return { years: null, complete: null };
@@ -154,6 +178,9 @@ export function completenessLabel(
   if (rule === "LIVE") return "Live register";
   if (rule === "COUNT") {
     return `${documentCount} ${documentCount === 1 ? "document" : "documents"}`;
+  }
+  if (rule === "PER_YEAR" && completeness.years?.length === 0) {
+    return "Nothing required yet";
   }
   if (completeness.complete) return "Complete";
   if (rule === "PER_YEAR" && completeness.years) {

@@ -1,3 +1,4 @@
+import { SIGNATURE_PAGE_KIND } from "@/lib/governance/books-core";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZBooksUncategorizedSchema } from "../schema";
 
@@ -15,6 +16,8 @@ export const uncategorizedProcedure = withLlcAccessControl
       where: {
         companyId,
         recordCategory: null,
+        // executed Exhibit B pages are already kept under 8.1(b)
+        OR: [{ kind: null }, { kind: { not: SIGNATURE_PAGE_KIND } }],
         ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
