@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { K1CoverageCard } from "@/components/governance/k1-coverage-card";
 import {
   FiledDocumentButton,
   ReportAttachments,
@@ -119,6 +120,10 @@ export default async function ReportPage({
           />
         </CardContent>
       </Card>
+
+      {data.k1Coverage ? (
+        <K1CoverageCard coverage={data.k1Coverage} status={report.status} />
+      ) : null}
 
       <Card>
         <CardHeader>

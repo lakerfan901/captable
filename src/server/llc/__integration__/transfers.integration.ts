@@ -38,6 +38,7 @@ import { fromDateOnly } from "@/lib/date-only";
 import { todayInZone } from "@/lib/governance/dates";
 import { roundDiv } from "@/lib/llc/money";
 import type { PositionsResult } from "@/lib/llc/positions";
+import { loadK1Coverage } from "@/server/governance/k1-coverage";
 import { buildSnapshotDraft } from "@/server/governance/snapshot";
 import {
   createCommitment,
@@ -574,6 +575,20 @@ async function mainFlow() {
     "2026-11-01 Bob unchanged 50",
     row(p1101, bob.id, c.preferredId)?.units,
     "50.000000",
+  );
+  const k1 = await inTx((tx) => loadK1Coverage(tx, c.id, 2026));
+  eq(
+    "FY2026 K-1s needed: Carol, Bob and Dave (Units by transfer, Financial Interest only, R22a)",
+    k1.needed
+      .map((h) => h.stakeholderId)
+      .sort()
+      .join(","),
+    [carol.id, bob.id, dave.id].sort().join(","),
+  );
+  eq(
+    "FY2025: no K-1 needed (Units held only from 2026)",
+    (await inTx((tx) => loadK1Coverage(tx, c.id, 2025))).needed.length,
+    0,
   );
   const pNone = await positionsOf(c);
   eq(
