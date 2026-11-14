@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dayjsExt } from "@/common/dayjs";
 import EsignEmail from "@/emails/EsignEmail";
 import { env } from "@/env";
+import { esignRequestCopy } from "@/lib/esign/email-copy";
 import { EsignAudit } from "@/server/audit";
 import { db } from "@/server/db";
 import { sendMail } from "@/server/mailer";
@@ -102,22 +103,39 @@ export const eSignNotificationEmailWorker = defineWorker(
       return recipient.templateId;
     });
 
+    // A SUBSCRIPTION packet's email names the company and the documents;
+    // an ordinary template keeps the generic subject.
+    const template = await db.template.findUnique({
+      where: { id: templateId },
+      select: { workflow: true },
+    });
+    const isSubscription = template?.workflow === "SUBSCRIPTION";
+    const copy = esignRequestCopy({
+      workflow: template?.workflow,
+      companyName: rest.company?.name,
+      senderName: sender?.name,
+    });
+
     const html = await render(
       EsignEmail({
         signingLink: `${baseUrl}/esign/${token}`,
         sender,
         documentName,
         ...rest,
+        ...(isSubscription ? { copy } : {}),
       }),
     );
     await sendMail(
       {
         to: email,
         ...(sender?.email && { replyTo: sender.email }),
-        subject: "eSign Document Request",
+        subject: copy.subject,
         html,
         headers: {
-          "X-From-Name": sender?.name || "Captable",
+          "X-From-Name":
+            isSubscription && rest.company?.name
+              ? rest.company.name
+              : sender?.name || "Captable",
         },
       },
       {

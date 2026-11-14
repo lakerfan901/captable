@@ -15,6 +15,7 @@ import {
   Text,
 } from "react-email";
 import type { TESignNotificationEmailJobInput } from "@/jobs/esign-email";
+import type { EsignRequestCopy } from "@/lib/esign/email-copy";
 import {
   ArrowRight,
   SignatureIcon,
@@ -26,6 +27,8 @@ type TEsignEmailProps = Omit<
   "token" | "email" | "userAgent" | "requestIp" | "companyId"
 > & {
   signingLink: string;
+  /** Wording for a SUBSCRIPTION packet; omitted keeps the standard email. */
+  copy?: EsignRequestCopy;
 };
 
 const EsignEmail = ({
@@ -35,11 +38,15 @@ const EsignEmail = ({
   recipient,
   sender,
   company,
+  copy,
 }: TEsignEmailProps) => {
   return (
     <Html>
       <Head />
-      <Preview>{sender?.name ?? ""} has sent you a document to sign.</Preview>
+      <Preview>
+        {copy?.preview ??
+          `${sender?.name ?? ""} has sent you a document to sign.`}
+      </Preview>
       <Tailwind>
         <Body className="mx-auto my-auto bg-white font-sans">
           <Container className="mx-auto my-[40px] max-w-[465px] border-separate rounded border border-solid border-neutral-200 p-[20px]">
@@ -47,10 +54,14 @@ const EsignEmail = ({
               <strong>{company?.name}</strong>
             </Heading>
             <Heading className="mx-0 my-[30px] p-0 text-center text-[24px] font-normal text-black">
-              <Text>
-                <strong>{sender?.name}</strong> has sent you a document{" "}
-                <strong>{`"${documentName}"`}</strong> to sign.
-              </Text>
+              {copy?.headline ? (
+                <Text>{copy.headline}</Text>
+              ) : (
+                <Text>
+                  <strong>{sender?.name}</strong> has sent you a document{" "}
+                  <strong>{`"${documentName}"`}</strong> to sign.
+                </Text>
+              )}
             </Heading>
             <Text className="text-[14px] leading-[24px] text-black">
               Hello {recipient?.name},
@@ -58,6 +69,10 @@ const EsignEmail = ({
             {message ? (
               <Text className="text-[14px] leading-[24px] text-black">
                 {message}
+              </Text>
+            ) : copy?.intro ? (
+              <Text className="text-[14px] leading-[24px] text-black">
+                {copy.intro}
               </Text>
             ) : (
               <Text className="text-[14px] leading-[24px] text-black">
@@ -85,7 +100,7 @@ const EsignEmail = ({
                 className="mx-[200px] rounded bg-black px-5 py-3 text-center text-[12px] font-semibold text-white no-underline"
                 href={signingLink}
               >
-                Sign the document
+                {copy?.button ?? "Sign the document"}
               </Button>
             </Section>
             <Text className="text-[14px]! leading-[24px] text-black">
