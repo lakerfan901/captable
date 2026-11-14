@@ -14,6 +14,9 @@ const log = logger.child({ module: "proxy" });
 // never the query string.
 // This function can be marked `async` if using `await` inside
 export function proxy(request: NextRequest) {
+  // The health check (src/app/api/health/route.ts) is polled every few
+  // seconds: not logged, never limited, no session involved.
+  if (request.nextUrl.pathname === "/api/health") return NextResponse.next();
   if (env.LOGS || env.NODE_ENV === "production" || env.NODE_ENV === "staging") {
     const { method } = request;
     const url = loggablePath(request.nextUrl.pathname);
