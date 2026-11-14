@@ -92,14 +92,16 @@ export function SideBar({
   return (
     <ScrollArea className="h-screen px-3">
       <div className={cn("pb-12", className)}>
-        <div className="fixed gap-y-4 py-4">
+        {/* In normal flow (not fixed) so the ScrollArea can scroll a menu
+            that is taller than the window. */}
+        <div className="gap-y-4 py-4">
           <div className="flex items-center px-1 py-2">
             <CaptableLogo className="h-7 w-auto" />
 
             <CompanySwitcher companies={companies} publicId={publicId} />
           </div>
 
-          <div className="overflow-auto py-2">
+          <div className="py-2">
             {sections.map((section) => (
               <div
                 key={section.title ?? "main"}

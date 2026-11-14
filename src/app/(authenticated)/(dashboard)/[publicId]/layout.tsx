@@ -51,7 +51,7 @@ const DashboardLayout = async (props: DashboardLayoutProps) => {
     >
       <RolesProvider data={{ permissions }}>
         <div className="flex min-h-screen bg-gray-50">
-          <aside className="sticky top-0 hidden min-h-full w-64 shrink-0 flex-col lg:flex lg:border-r">
+          <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col self-start lg:flex lg:border-r">
             <SideBar
               companies={companies}
               publicId={publicId}
