@@ -38,7 +38,9 @@ import {
 } from "@/components/ui/accordion";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { TSubjects } from "@/lib/rbac/subjects";
 import { cn } from "@/lib/utils";
+import { useRoles } from "@/providers/roles-provider";
 import type { TGetCompanyList } from "@/server/company";
 import { CompanySwitcher } from "./company-switcher";
 import {
@@ -46,6 +48,8 @@ import {
   getCompanyNav,
   getNavSections,
   type NavIconKey,
+  visibleCompanyNav,
+  visibleNavSections,
 } from "./nav-config";
 import { NavLink } from "./nav-link";
 
@@ -81,11 +85,18 @@ export function SideBar({
   entityType,
 }: SideBarProps) {
   const currentPath = usePathname();
-  const sections = getNavSections(entityType);
-  const company = getCompanyNav(entityType).map((item) => ({
-    ...item,
-    ...ICONS[item.icon],
-  }));
+  const { permissions } = useRoles();
+  const canRead = (subject: string) => {
+    const actions = permissions.get(subject as TSubjects) ?? [];
+    return actions.includes("read") || actions.includes("*");
+  };
+  const sections = visibleNavSections(getNavSections(entityType), canRead);
+  const company = visibleCompanyNav(getCompanyNav(entityType), canRead).map(
+    (item) => ({
+      ...item,
+      ...ICONS[item.icon],
+    }),
+  );
 
   const basePath = `/${publicId}`;
 
@@ -205,7 +216,7 @@ export function SideBar({
               </div>
             ))}
 
-            <div className="py-3">
+            <div className={company.length > 0 ? "py-3" : "hidden"}>
               <div className="text-xs font-semibold leading-6 text-gray-400">
                 Company
               </div>

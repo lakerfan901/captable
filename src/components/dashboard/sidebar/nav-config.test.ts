@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getCompanyNav, getNavSections, type NavSection } from "./nav-config";
+import {
+  getCompanyNav,
+  getNavSections,
+  type NavSection,
+  visibleCompanyNav,
+  visibleNavSections,
+} from "./nav-config";
 
 function allHrefs(sections: NavSection[]): string[] {
   return sections.flatMap((s) =>
@@ -61,5 +67,22 @@ describe("nav-config", () => {
       "/3921",
       "/409a",
     ]);
+  });
+
+  it("hides items and whole sections the user cannot read", () => {
+    const only = (allowed: string[]) => (s: string) => allowed.includes(s);
+    const none = visibleNavSections(getNavSections("LLC"), only([]));
+    expect(allHrefs(none)).toEqual(["/", "/updates"]);
+    const gov = visibleNavSections(getNavSections("LLC"), only(["governance"]));
+    expect(gov.map((s) => s.title)).toEqual([
+      undefined,
+      "Governance",
+      "Communication",
+    ]);
+    expect(allHrefs(gov)).toContain("/resolutions");
+    expect(allHrefs(gov)).not.toContain("/commitments");
+    expect(visibleCompanyNav(getCompanyNav("LLC"), only([]))).toEqual([]);
+    const all = visibleNavSections(getNavSections("LLC"), () => true);
+    expect(all).toEqual(getNavSections("LLC"));
   });
 });

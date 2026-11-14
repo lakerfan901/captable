@@ -23,6 +23,8 @@ export type NavItem = {
   name: string;
   href: string;
   icon: NavIconKey;
+  /** RBAC subject the page needs to read; the item is hidden without it. */
+  subject?: string;
   subNav?: NavSubItem[];
 };
 
@@ -34,6 +36,8 @@ export type CompanyNavItem = {
   href: string;
   rootPath?: string;
   icon: NavIconKey;
+  /** RBAC subject the page needs to read; the item is hidden without it. */
+  subject?: string;
 };
 
 const documentsSubNav: NavSubItem[] = [
@@ -83,27 +87,63 @@ const llcSections: NavSection[] = [
   {
     items: [
       { name: "Overview", href: "/", icon: "home" },
-      { name: "Member schedule", href: "/captable", icon: "pieChart" },
-      { name: "Members", href: "/stakeholders", icon: "group" },
-      { name: "Unit classes", href: "/unit-classes", icon: "folderChart2" },
+      {
+        name: "Member schedule",
+        href: "/captable",
+        icon: "pieChart",
+        subject: "stakeholder",
+      },
+      {
+        name: "Members",
+        href: "/stakeholders",
+        icon: "group",
+        subject: "stakeholder",
+      },
+      {
+        name: "Unit classes",
+        href: "/unit-classes",
+        icon: "folderChart2",
+        subject: "unit-classes",
+      },
     ],
   },
   {
     title: "Capital",
     items: [
-      { name: "Admissions", href: "/admissions", icon: "fileText" },
-      { name: "Commitments", href: "/commitments", icon: "safe" },
-      { name: "Capital calls", href: "/capital-calls", icon: "money" },
+      {
+        name: "Admissions",
+        href: "/admissions",
+        icon: "fileText",
+        subject: "commitments",
+      },
+      {
+        name: "Commitments",
+        href: "/commitments",
+        icon: "safe",
+        subject: "commitments",
+      },
+      {
+        name: "Capital calls",
+        href: "/capital-calls",
+        icon: "money",
+        subject: "capital-calls",
+      },
     ],
   },
   {
     title: "Operations",
     items: [
-      { name: "Distributions", href: "/distributions", icon: "money" },
+      {
+        name: "Distributions",
+        href: "/distributions",
+        icon: "money",
+        subject: "distributions",
+      },
       {
         name: "Financials",
         href: "/financials",
         icon: "folderChart",
+        subject: "llc-financials",
         subNav: [
           { name: "Revenue", href: "/revenue" },
           { name: "Manager payments", href: "/manager-payments" },
@@ -111,16 +151,41 @@ const llcSections: NavSection[] = [
           { name: "Loans and advances", href: "/loans-advances" },
         ],
       },
-      { name: "Fair value", href: "/fair-value", icon: "pieChart" },
+      {
+        name: "Fair value",
+        href: "/fair-value",
+        icon: "pieChart",
+        subject: "distributions",
+      },
     ],
   },
   {
     title: "Governance",
     items: [
-      { name: "Resolutions", href: "/resolutions", icon: "fileText" },
-      { name: "Transfers", href: "/transfers", icon: "group" },
-      { name: "Compliance", href: "/compliance", icon: "list" },
-      { name: "Reports", href: "/reports", icon: "folderChart" },
+      {
+        name: "Resolutions",
+        href: "/resolutions",
+        icon: "fileText",
+        subject: "governance",
+      },
+      {
+        name: "Transfers",
+        href: "/transfers",
+        icon: "group",
+        subject: "governance",
+      },
+      {
+        name: "Compliance",
+        href: "/compliance",
+        icon: "list",
+        subject: "governance",
+      },
+      {
+        name: "Reports",
+        href: "/reports",
+        icon: "folderChart",
+        subject: "governance",
+      },
     ],
   },
   {
@@ -130,14 +195,20 @@ const llcSections: NavSection[] = [
         name: "Documents",
         href: "/documents",
         icon: "folder",
+        subject: "documents",
         subNav: [
           ...documentsSubNav,
           { name: "Books and records", href: "/books" },
         ],
       },
       { name: "Updates", href: "/updates", icon: "mailSend" },
-      { name: "Email log", href: "/emails", icon: "mailSend" },
-      { name: "Audits", href: "/audits", icon: "list" },
+      {
+        name: "Email log",
+        href: "/emails",
+        icon: "mailSend",
+        subject: "emails",
+      },
+      { name: "Audits", href: "/audits", icon: "list", subject: "audits" },
     ],
   },
 ];
@@ -148,6 +219,7 @@ const teamNav: CompanyNavItem = {
   rootPath: "/settings/team",
   href: "/settings/team",
   icon: "group",
+  subject: "members",
 };
 
 const settingsNav: CompanyNavItem = {
@@ -156,6 +228,7 @@ const settingsNav: CompanyNavItem = {
   rootPath: "/settings/company",
   href: "/settings/company",
   icon: "equalizer",
+  subject: "company",
 };
 
 const corporationCompanyNav: CompanyNavItem[] = [
@@ -173,4 +246,31 @@ export function getNavSections(entityType: EntityType): NavSection[] {
 
 export function getCompanyNav(entityType: EntityType): CompanyNavItem[] {
   return entityType === "LLC" ? [teamNav, settingsNav] : corporationCompanyNav;
+}
+
+/**
+ * Drops every item whose `subject` the user cannot read, and every section
+ * left empty. A section the user has no permission for is not shown at all.
+ */
+export function visibleNavSections(
+  sections: NavSection[],
+  canRead: (subject: string) => boolean,
+): NavSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => item.subject === undefined || canRead(item.subject),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
+export function visibleCompanyNav(
+  items: CompanyNavItem[],
+  canRead: (subject: string) => boolean,
+): CompanyNavItem[] {
+  return items.filter(
+    (item) => item.subject === undefined || canRead(item.subject),
+  );
 }
