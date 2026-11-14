@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse, userAgent } from "next/server";
+import { BASELINE_CSP, buildCsp, cspReportOnly } from "@/lib/csp";
 import { logger } from "@/lib/logger";
 import {
   checkRateLimit,
@@ -101,7 +102,55 @@ export function proxy(request: NextRequest) {
   // overwritten here, so a client-supplied value never reaches them.
   const headers = new Headers(request.headers);
   headers.set("x-pathname", request.nextUrl.pathname + request.nextUrl.search);
-  return NextResponse.next({ request: { headers } });
+
+  // Content-Security-Policy with a fresh nonce. Next.js reads the nonce from
+  // the REQUEST header and stamps it on the scripts it renders; the browser
+  // gets the policy on the response.
+  const { policy, reportOnly } = contentSecurityPolicy();
+  headers.set("content-security-policy", policy);
+  const response = NextResponse.next({ request: { headers } });
+  if (reportOnly) {
+    response.headers.set("Content-Security-Policy", BASELINE_CSP);
+    response.headers.set("Content-Security-Policy-Report-Only", policy);
+  } else {
+    response.headers.set("Content-Security-Policy", policy);
+  }
+  return response;
+}
+
+// Read at request time with a computed key so the build never inlines a
+// value: one image serves every environment.
+const runtimeEnv = (key: string): string | undefined =>
+  process.env[key] || undefined;
+
+function contentSecurityPolicy(): { policy: string; reportOnly: boolean } {
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const policy = buildCsp({
+    nonce,
+    isDev: process.env.NODE_ENV === "development",
+    baseUrl: runtimeEnv("NEXT_PUBLIC_BASE_URL"),
+    uploadEndpoint: runtimeEnv("UPLOAD_ENDPOINT"),
+    // NEXT_PUBLIC_* values may also be baked in at build time (the literal
+    // `process.env.NEXT_PUBLIC_…` is inlined), which is what the browser
+    // Sentry setup and the upload code fall back to: the policy follows the
+    // same order, runtime value first.
+    uploadDomain:
+      runtimeEnv("NEXT_PUBLIC_UPLOAD_DOMAIN") ??
+      process.env.NEXT_PUBLIC_UPLOAD_DOMAIN,
+    forcePathStyle: ["true", "1"].includes(
+      runtimeEnv("UPLOAD_FORCE_PATH_STYLE") ?? "",
+    ),
+    buckets: [
+      runtimeEnv("UPLOAD_BUCKET_PUBLIC"),
+      runtimeEnv("UPLOAD_BUCKET_PRIVATE"),
+    ],
+    sentryDsn:
+      runtimeEnv("NEXT_PUBLIC_SENTRY_DSN") ??
+      process.env.NEXT_PUBLIC_SENTRY_DSN,
+  });
+  // CSP_MODE=report-only: the full policy only reports; the baseline
+  // (framing, base, plugins, form targets) stays enforced.
+  return { policy, reportOnly: cspReportOnly(runtimeEnv("CSP_MODE")) };
 }
 
 export const config = {

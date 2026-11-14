@@ -5,6 +5,8 @@
 // set. Public env vars are injected at runtime by <PublicEnvScript /> (see
 // src/env.js), which may run after this file, so `@/env` is not imported here
 // (evaluating it too early would cache missing public values app-wide).
+
+import { z } from "zod";
 import { PUBLIC_ENV_KEY } from "@/constants/env";
 import { sentryDataCollection } from "@/constants/sentry-data-collection";
 import {
@@ -12,6 +14,12 @@ import {
   sentryScrubbing,
 } from "@/constants/sentry-scrub";
 import { redactDeep } from "@/lib/token-redaction";
+
+// The Content-Security-Policy (src/lib/csp.ts) has no 'unsafe-eval'. zod 4
+// otherwise probes `Function("")` on its first object parse to decide
+// whether to JIT-compile parsers, which the browser blocks and reports as a
+// CSP violation on every page. Interpreted parsing is what runs anyway.
+z.config({ jitless: true });
 
 type CaptureRouterTransitionStart =
   typeof import("@sentry/nextjs").captureRouterTransitionStart;

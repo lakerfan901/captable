@@ -11,21 +11,18 @@ const bundleAnalyzer = withBundleAnalyzer({
  */
 await import("./src/env.js");
 
-// Security headers on every response. The Content-Security-Policy is the
-// framing / base / plugin / form-target part only: a full script/style/
-// connect policy has not been verified across the app (BlockNote editor,
-// react-pdf worker, presigned uploads to the S3 / MinIO origin, Sentry,
-// Google sign-in), so it is not shipped yet. Nothing in the app frames its
-// own pages (the only iframes are a sandboxed `srcdoc` email preview and the
-// Office viewer, which frames Microsoft's origin), hence DENY / 'none'.
-const CONTENT_SECURITY_POLICY =
-  "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'";
+// Security headers on every response. The Content-Security-Policy is NOT
+// here: these headers are fixed at build time, and the policy needs a
+// per-request nonce and the runtime storage host, so the proxy builds it
+// (src/proxy.ts, src/lib/csp.ts). Nothing in the app frames its own pages
+// (the only iframes are a sandboxed `srcdoc` email preview and the Office
+// viewer, which frames Microsoft's origin), hence DENY here and
+// `frame-ancestors 'none'` in the policy.
 
 /** @type {{ key: string; value: string }[]} */
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
-  { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
   // Production only: a development server on http://localhost must not pin
   // HTTPS for the host.
   ...(process.env.NODE_ENV === "production"
