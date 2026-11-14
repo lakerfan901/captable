@@ -9,6 +9,7 @@ import type { WaterfallHolder } from "../../../lib/llc/waterfall";
 import {
   buildMemberStatement,
   computeFairValue,
+  defaultStatusAsOf,
   memberLoansOwed,
   perPreferredUnit,
   receiptDescription,
@@ -352,5 +353,35 @@ describe("receiptDescription (money wired before acceptance)", () => {
     ).toBe(
       "Balance payment (received 2026-11-09; capital and Units from 2026-11-10 (acceptance))",
     );
+  });
+});
+
+describe("defaultStatusAsOf (statement closing date)", () => {
+  const due = "2027-01-20";
+  it("not in effect on or before the due date (R32: dueOn < asOf)", () => {
+    const d = { status: "OPEN", dueOn: due, curedOn: null };
+    expect(defaultStatusAsOf(d, "2027-01-19")).toBeNull();
+    expect(defaultStatusAsOf(d, due)).toBeNull();
+    expect(defaultStatusAsOf(d, "2027-01-21")).toBe("OPEN");
+  });
+  it("a default cured later was OPEN before its cure date", () => {
+    const d = { status: "CURED", dueOn: due, curedOn: "2027-02-25" };
+    expect(defaultStatusAsOf(d, "2027-02-24")).toBe("OPEN");
+    expect(defaultStatusAsOf(d, "2027-02-25")).toBe("CURED");
+    expect(defaultStatusAsOf(d, "2027-03-01")).toBe("CURED");
+  });
+  it("VOIDED never shows; a cure without a date shows as cured", () => {
+    expect(
+      defaultStatusAsOf(
+        { status: "VOIDED", dueOn: due, curedOn: null },
+        "2027-03-01",
+      ),
+    ).toBeNull();
+    expect(
+      defaultStatusAsOf(
+        { status: "CURED", dueOn: due, curedOn: null },
+        "2027-03-01",
+      ),
+    ).toBe("CURED");
   });
 });

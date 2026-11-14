@@ -170,6 +170,63 @@ describe("buildPeriodEconomics", () => {
     expect(m.grandTotal).toBe(30_330_063n);
   });
 
+  it("figures are as of the period end: rows dated after it change nothing", () => {
+    const later = buildPeriodEconomics(
+      input({
+        ledger: {
+          ...ledger,
+          months: [...ledger.months, month("2027-07-01", 9_000_000n, 0n)],
+          expenses: [
+            ...ledger.expenses,
+            {
+              on: "2027-07-01",
+              amount: 1_000_000n,
+              fundingSource: "OPERATING_CASH",
+              category: "COLOCATION",
+              countsTowardOrgCap: true,
+            },
+          ],
+          reserves: [
+            ...ledger.reserves,
+            {
+              on: "2027-07-02",
+              kind: "MINIMUM_OPERATING",
+              type: "RELEASE",
+              amount: 1_000_000n,
+              fundingSource: "CAPITAL_CONTRIBUTIONS",
+              releaseTo: "CAPITAL_CONTRIBUTIONS",
+            },
+          ],
+        },
+        managerPayments: [
+          ...input().managerPayments,
+          payment("p4", "2027-07-01", "MANAGEMENT_FEE", 595_110n),
+          {
+            ...payment("p5", "2027-07-03", "EXPENSE_REIMBURSEMENT", 1n),
+            countsTowardOrgCap: true,
+          },
+        ],
+        distributions: input().distributions.flatMap((d) => [
+          d,
+          { ...d, id: "dist2", number: 2, paymentDate: "2027-07-15" },
+        ]),
+        utilization: [
+          ...input().utilization,
+          { month: "2027-07-01", utilizationBps: 1 },
+        ],
+        loanPayments: [
+          {
+            lenderStakeholderId: "M",
+            paidOn: "2027-07-01",
+            principal: 100n,
+            interest: 1n,
+          },
+        ],
+      }),
+    );
+    expect(later).toEqual(buildPeriodEconomics(input()));
+  });
+
   it("rows outside the period are excluded", () => {
     const r = buildPeriodEconomics(
       input({ period: { periodStart: "2027-07-01", periodEnd: "2027-09-30" } }),

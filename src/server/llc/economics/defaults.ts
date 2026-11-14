@@ -692,11 +692,15 @@ export async function getDefaultView(
   };
 }
 
-/** All defaults with headline numbers (`memberDefault.list`). */
+/**
+ * All defaults with headline numbers (`memberDefault.list`); figures
+ * (balance, interest, costs) as of `asOf` (default `today`).
+ */
 export async function listDefaults(
   tx: Reader,
   companyId: string,
   today: IsoDate,
+  asOf: IsoDate = today,
 ) {
   const company = await companyOf(tx, companyId);
   const { config } = await getEconomicsContext(tx, company);
@@ -707,7 +711,7 @@ export async function listDefaults(
     records.map((r) => r.stakeholderId),
   );
   return records.map((r) => {
-    const ev = evaluate(r, config, today);
+    const ev = evaluate(r, config, today, asOf);
     const fd = toDateOnly(r.forfeitureDate);
     const { stage, actions } = defaultStage(r.status, fd, ev);
     return {

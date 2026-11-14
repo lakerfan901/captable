@@ -96,6 +96,25 @@ export interface MemberStatement {
   taxAdvanceOutstanding: Cents;
 }
 
+/**
+ * A member default as the statement shows it AS OF `asOf` (the statement's
+ * `to`, E18 "closing … as of to"): null when it was not yet in effect (due
+ * date not passed, R32 `dueOn < asOf`) or is VOIDED; a default cured after
+ * `asOf` was still OPEN then.
+ */
+export function defaultStatusAsOf(
+  d: { status: string; dueOn: IsoDate; curedOn: IsoDate | null },
+  asOf: IsoDate,
+): "OPEN" | "CURED" | null {
+  if (d.status === "VOIDED") return null;
+  if (compareIso(d.dueOn, asOf) >= 0) return null;
+  if (d.status !== "CURED") return "OPEN";
+  // A cure without a date is shown as cured (as the stored status says).
+  return d.curedOn !== null && compareIso(d.curedOn, asOf) > 0
+    ? "OPEN"
+    : "CURED";
+}
+
 /** A Preferred-class CapitalReceipt of the member (non-void, applied). */
 export interface StatementReceiptRow {
   id: string;

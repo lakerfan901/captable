@@ -246,17 +246,22 @@ export async function getOrgCapStatus(
   };
 }
 
-/** Σ MemberAdvance − Σ MemberAdvanceRecovery per stakeholder (net of reversals). */
+/**
+ * Σ MemberAdvance − Σ MemberAdvanceRecovery per stakeholder (net of
+ * reversals). With `asOf`: advances paid and recoveries made on or before it.
+ */
 export async function getTaxAdvancesOutstanding(
   tx: Tx,
   companyId: string,
+  asOf?: IsoDate,
 ): Promise<Map<string, Cents>> {
+  const on = asOf === undefined ? null : fromDateOnly(asOf);
   const advances = await tx.memberAdvance.findMany({
-    where: { companyId },
+    where: { companyId, ...(on ? { paidOn: { lte: on } } : {}) },
     select: { stakeholderId: true, amountCents: true },
   });
   const recoveries = await tx.memberAdvanceRecovery.findMany({
-    where: { companyId },
+    where: { companyId, ...(on ? { recoveredOn: { lte: on } } : {}) },
     select: { stakeholderId: true, amountCents: true },
   });
   return advancesOutstanding(advances, recoveries);

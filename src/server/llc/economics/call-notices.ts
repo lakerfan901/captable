@@ -240,12 +240,30 @@ export interface CommitmentState {
   remainingCommitment: Cents;
 }
 
+/**
+ * A cut of the call ledger as of a PAST date (member statements, E18): only
+ * rows dated on or before `on` count — commitments accepted, receipts
+ * applied, allocations received, lines sent, Replacement Funder money funded.
+ * A line still being sent has no send date yet and is not counted (it was
+ * not called on a past date). Callers reading "today" pass no cut.
+ */
+export interface AsOfCut {
+  on: IsoDate;
+}
+
+/** Prisma `where` for the CALLED lines of a cut (sent on or before the date). */
+function sentByCut(cut: AsOfCut | undefined) {
+  if (!cut) return {};
+  return { sentOn: { lte: fromDateOnly(cut.on) } };
+}
+
 /** Preferred commitments with status ACCEPTED or REDUCED and isReplacement = false, by member name. */
 export async function getCommitmentStates(
   tx: Reader,
   companyId: string,
-  filter?: { commitmentIds?: readonly string[] },
+  filter?: { commitmentIds?: readonly string[]; asOf?: AsOfCut },
 ): Promise<CommitmentState[]> {
+  const cutOn = filter?.asOf ? fromDateOnly(filter.asOf.on) : null;
   const preferred = await tx.unitClass.findFirst({
     where: { companyId, kind: "PREFERRED" },
     select: { id: true },
@@ -260,6 +278,7 @@ export async function getCommitmentStates(
       ...(filter?.commitmentIds
         ? { id: { in: [...filter.commitmentIds] } }
         : {}),
+      ...(cutOn ? { acceptedOn: { lte: cutOn } } : {}),
     },
     select: {
       id: true,
@@ -273,7 +292,14 @@ export async function getCommitmentStates(
   const ids = commitments.map((c) => c.id);
 
   const receipts = await tx.capitalReceipt.findMany({
-    where: { companyId, commitmentId: { in: ids }, voidedAt: null },
+    where: {
+      companyId,
+      commitmentId: { in: ids },
+      voidedAt: null,
+      // Money applied after the cut was not yet capital (an unapplied
+      // receipt carries no applied money either way).
+      ...(cutOn ? { appliedOn: { lte: cutOn } } : {}),
+    },
     select: { id: true, commitmentId: true, kind: true, appliedCents: true },
   });
   const balanceReceiptIds = receipts
@@ -284,7 +310,11 @@ export async function getCommitmentStates(
       ? []
       : await tx.callNoticeAllocation.groupBy({
           by: ["capitalReceiptId"],
-          where: { companyId, capitalReceiptId: { in: balanceReceiptIds } },
+          where: {
+            companyId,
+            capitalReceiptId: { in: balanceReceiptIds },
+            ...(cutOn ? { receivedOn: { lte: cutOn } } : {}),
+          },
           _sum: { amountCents: true },
         });
   const allocatedByReceipt = new Map(
@@ -298,6 +328,7 @@ export async function getCommitmentStates(
       companyId,
       commitmentId: { in: ids },
       status: { in: CALLED },
+      ...sentByCut(filter?.asOf),
     },
     select: { commitmentId: true, amountCalledCents: true },
   });
@@ -314,11 +345,16 @@ export async function getCommitmentStates(
             companyId,
             memberDefaultId: { in: defaults.map((d) => d.id) },
           },
-          select: { memberDefaultId: true, amountCents: true },
+          select: { memberDefaultId: true, amountCents: true, fundedOn: true },
         });
   const commitmentOfDefault = new Map(
     defaults.map((d) => [d.id, d.commitmentId]),
   );
+  // As of a cut, money funded after it was not yet funded, and the
+  // commitment was not yet reduced by it (`reduceAcceptedCommitment` is only
+  // ever called for a Replacement Funder funding, R31).
+  const fundedByCut = (f: { fundedOn: Date }) =>
+    cutOn === null || f.fundedOn.getTime() <= cutOn.getTime();
 
   const states = commitments.map((c): CommitmentState => {
     const own = receipts.filter((r) => r.commitmentId === c.id);
@@ -328,9 +364,17 @@ export async function getCommitmentStates(
     const calledTotal = sentLines
       .filter((l) => l.commitmentId === c.id)
       .reduce((s, l) => s + l.amountCalledCents, 0n);
-    const replacementFunded = fundings
-      .filter((f) => commitmentOfDefault.get(f.memberDefaultId) === c.id)
+    const ownFundings = fundings.filter(
+      (f) => commitmentOfDefault.get(f.memberDefaultId) === c.id,
+    );
+    const replacementFunded = ownFundings
+      .filter(fundedByCut)
       .reduce((s, f) => s + f.amountCents, 0n);
+    const acceptedCents =
+      c.acceptedCents +
+      ownFundings
+        .filter((f) => !fundedByCut(f))
+        .reduce((s, f) => s + f.amountCents, 0n);
     const address =
       c.stakeholder.noticeEmail?.trim() || c.stakeholder.email.trim();
     return {
@@ -339,9 +383,9 @@ export async function getCommitmentStates(
       name: c.stakeholder.name,
       noticeEmail: address === "" ? null : address,
       acceptedOn: dateOrNull(c.acceptedOn),
-      acceptedCents: c.acceptedCents,
+      acceptedCents,
       ...commitmentFigures({
-        acceptedCents: c.acceptedCents,
+        acceptedCents,
         receipts: own,
         netAllocated,
         calledTotal,
@@ -375,9 +419,16 @@ export interface CapitalTotals {
 export async function getCapitalTotals(
   tx: Reader,
   companyId: string,
-  filter?: { stakeholderId?: string },
+  filter?: { stakeholderId?: string; asOf?: AsOfCut },
 ): Promise<CapitalTotals> {
-  const states = (await getCommitmentStates(tx, companyId)).filter(
+  const cutOn = filter?.asOf ? fromDateOnly(filter.asOf.on) : null;
+  const states = (
+    await getCommitmentStates(
+      tx,
+      companyId,
+      filter?.asOf ? { asOf: filter.asOf } : undefined,
+    )
+  ).filter(
     (s) =>
       filter?.stakeholderId === undefined ||
       s.stakeholderId === filter.stakeholderId,
@@ -402,6 +453,7 @@ export async function getCapitalTotals(
       status: { in: ["ACCEPTED", "REDUCED"] },
       isReplacement: true,
       ...(filter?.stakeholderId ? { stakeholderId: filter.stakeholderId } : {}),
+      ...(cutOn ? { acceptedOn: { lte: cutOn } } : {}),
     },
     select: { id: true, acceptedCents: true },
   });
@@ -413,6 +465,7 @@ export async function getCapitalTotals(
       commitmentId: { in: replacements.map((r) => r.id) },
       voidedAt: null,
       kind: { in: ["INITIAL", "BALANCE", "REPLACEMENT"] },
+      ...(cutOn ? { appliedOn: { lte: cutOn } } : {}),
     },
     _sum: { appliedCents: true },
   });
@@ -481,18 +534,26 @@ export interface LineState {
   memberDefaultId: string | null;
 }
 
-/** Lines ordered by notice number, then creation (the order payments are applied in on equal due dates). */
+/**
+ * Lines ordered by notice number, then creation (the order payments are
+ * applied in on equal due dates). With `asOf`: only the lines called by the
+ * cut (`sentByCut`), money received or funded on or before it, and a line
+ * paid in full after it shown as SENT.
+ */
 export async function getLineStates(
   tx: Reader,
   companyId: string,
   today: IsoDate,
-  filter?: { callNoticeId?: string; commitmentId?: string },
+  filter?: { callNoticeId?: string; commitmentId?: string; asOf?: AsOfCut },
 ): Promise<LineState[]> {
+  const cut = filter?.asOf;
+  const cutOn = cut ? fromDateOnly(cut.on) : null;
   const lines = await tx.callNoticeLine.findMany({
     where: {
       companyId,
       ...(filter?.callNoticeId ? { callNoticeId: filter.callNoticeId } : {}),
       ...(filter?.commitmentId ? { commitmentId: filter.commitmentId } : {}),
+      ...(cut ? { status: { in: CALLED }, ...sentByCut(cut) } : {}),
     },
     orderBy: [
       { callNotice: { number: "asc" } },
@@ -507,13 +568,18 @@ export async function getLineStates(
       amountCalledCents: true,
       dueOn: true,
       status: true,
+      paidInFullOn: true,
       memberDefault: { select: { id: true } },
     },
   });
   if (lines.length === 0) return [];
   const allocations = await tx.callNoticeAllocation.groupBy({
     by: ["callNoticeLineId"],
-    where: { companyId, callNoticeLineId: { in: lines.map((l) => l.id) } },
+    where: {
+      companyId,
+      callNoticeLineId: { in: lines.map((l) => l.id) },
+      ...(cutOn ? { receivedOn: { lte: cutOn } } : {}),
+    },
     _sum: { amountCents: true },
   });
   const allocatedByLine = new Map(
@@ -527,7 +593,11 @@ export async function getLineStates(
       ? []
       : await tx.memberDefaultFunding.groupBy({
           by: ["memberDefaultId"],
-          where: { companyId, memberDefaultId: { in: defaultIds } },
+          where: {
+            companyId,
+            memberDefaultId: { in: defaultIds },
+            ...(cutOn ? { fundedOn: { lte: cutOn } } : {}),
+          },
           _sum: { amountCents: true },
         });
   const fundedByDefault = new Map(
@@ -541,11 +611,17 @@ export async function getLineStates(
         ? 0n
         : (fundedByDefault.get(memberDefaultId) ?? 0n);
     const dueOn = dateOrNull(l.dueOn);
+    // As of a cut: a line paid in full after it was still SENT then.
+    const paidOn = dateOrNull(l.paidInFullOn);
+    const status: CallNoticeLineStatusEnum =
+      cut && l.status === "PAID" && paidOn !== null && paidOn > cut.on
+        ? "SENT"
+        : l.status;
     const { outstanding, overdue } = lineFigures({
       amountCalled: l.amountCalledCents,
       allocated,
       replacementFunded,
-      status: l.status,
+      status,
       dueOn,
       today,
     });
@@ -559,7 +635,7 @@ export async function getLineStates(
       replacementFunded,
       outstanding,
       dueOn,
-      status: l.status,
+      status,
       overdue,
       memberDefaultId,
     };

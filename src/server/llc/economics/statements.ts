@@ -11,6 +11,7 @@ import {
 import type { TPrismaOrTransaction } from "@/server/db";
 import { unitsToWire } from "@/server/llc/serialize";
 import {
+  type AsOfCut,
   getCapitalTotals,
   getCommitmentStates,
   getLineStates,
@@ -26,6 +27,7 @@ import { notFound, ruleViolation } from "./scope";
 import {
   buildMemberStatement,
   computeFairValue,
+  defaultStatusAsOf,
   type FairValueResult,
   type FairValueUnitClass,
   type MemberStatement,
@@ -71,25 +73,34 @@ async function companyOf(tx: Tx, companyId: string) {
   return company;
 }
 
+/**
+ * The member's commitment figures; with `cut` (a past statement date), as of
+ * that date: only commitments accepted, money applied or received, lines sent
+ * and Replacement Funder money funded on or before it. Without a cut, the
+ * current figures (as before the statement had a date).
+ */
 async function loadCommitment(
   tx: Tx,
   companyId: string,
   stakeholderId: string,
   today: IsoDate,
+  cut: AsOfCut | undefined,
 ): Promise<StatementCommitment | null> {
-  const states = (await getCommitmentStates(tx, companyId)).filter(
-    (s) => s.stakeholderId === stakeholderId,
-  );
+  const states = (
+    await getCommitmentStates(tx, companyId, cut ? { asOf: cut } : undefined)
+  ).filter((s) => s.stakeholderId === stakeholderId);
   // Committed, paid and uncalled include a Replacement Funder commitment of
   // this member (getCommitmentStates lists the callable ones only).
   const { committed, paid, uncalled } = await getCapitalTotals(tx, companyId, {
     stakeholderId,
+    ...(cut ? { asOf: cut } : {}),
   });
   if (states.length === 0 && committed === 0n && paid === 0n) return null;
   let calledOutstanding = 0n;
   for (const s of states) {
-    const lines = await getLineStates(tx, companyId, today, {
+    const lines = await getLineStates(tx, companyId, cut ? cut.on : today, {
       commitmentId: s.commitmentId,
+      ...(cut ? { asOf: cut } : {}),
     });
     for (const l of lines) {
       if (
@@ -239,19 +250,48 @@ export async function getMemberStatement(
     amount: a.amountCents,
   }));
 
-  const defaults = (await listDefaults(tx, companyId, today))
-    .filter((d) => d.stakeholderId === stakeholderId && d.status !== "VOIDED")
-    .map((d) => ({
-      memberDefaultId: d.id,
-      status: d.status,
-      outstandingBalance: d.outstandingBalance,
-      interestOwed: d.interestOwed,
-      costsOwed: d.costsOwed,
-    }));
+  // Every figure below is as of `to` (E18: "closing ... as of to"), like the
+  // closing positions. A statement to today (or later) reads them exactly as
+  // before the statement had a date (no cut: a finalized distribution paid
+  // in the future may already carry a tax-advance recovery); a past `to`
+  // cuts them at that date.
+  const cut: AsOfCut | undefined = to < today ? { on: to } : undefined;
+  const defaults = (
+    await listDefaults(tx, companyId, today, cut ? cut.on : today)
+  ).flatMap((d) => {
+    if (d.stakeholderId !== stakeholderId) return [];
+    const status = cut
+      ? defaultStatusAsOf(
+          { status: d.status, dueOn: d.dueOn, curedOn: d.curedOn },
+          cut.on,
+        )
+      : d.status === "VOIDED"
+        ? null
+        : d.status;
+    return status === null
+      ? []
+      : [
+          {
+            memberDefaultId: d.id,
+            status,
+            outstandingBalance: d.outstandingBalance,
+            interestOwed: d.interestOwed,
+            costsOwed: d.costsOwed,
+          },
+        ];
+  });
 
-  const commitment = await loadCommitment(tx, companyId, stakeholderId, today);
+  const commitment = await loadCommitment(
+    tx,
+    companyId,
+    stakeholderId,
+    today,
+    cut,
+  );
   const taxAdvanceOutstanding =
-    (await getTaxAdvancesOutstanding(tx, companyId)).get(stakeholderId) ?? 0n;
+    (await getTaxAdvancesOutstanding(tx, companyId, cut?.on)).get(
+      stakeholderId,
+    ) ?? 0n;
 
   return math(() =>
     buildMemberStatement({
