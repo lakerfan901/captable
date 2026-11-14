@@ -115,7 +115,7 @@ describe("presets", () => {
 
   it("8. every matter has requirements and a section", () => {
     const keys = Object.keys(MATTERS);
-    expect(keys).toHaveLength(26);
+    expect(keys).toHaveLength(25);
     for (const key of keys) {
       const m = MATTERS[key];
       expect(m?.requirements.length).toBeGreaterThan(0);
@@ -190,8 +190,10 @@ describe("presets", () => {
         currentTargetSaleDate: "2031-11-30",
         extensionNumber: 1,
       },
-      MANAGER_REMOVAL: { managerName: "Octagon Compute LLC", requestedBy: "" },
-      SUCCESSOR_MANAGER: { successorName: "New Co LLC.", reason: "REMOVAL" },
+      SUCCESSOR_MANAGER: {
+        successorName: "New Co LLC.",
+        reason: "RESIGNATION",
+      },
       AMENDMENT: amendment,
       AUDIT_CALL: {
         fiscalYear: 2027,

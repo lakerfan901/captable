@@ -14,7 +14,6 @@ export type ResolutionType =
   | "RELATED_PARTY"
   | "PURCHASE_ORDER"
   | "TERM_EXTENSION"
-  | "MANAGER_REMOVAL"
   | "SUCCESSOR_MANAGER"
   | "AMENDMENT"
   | "AUDIT_CALL"
@@ -25,7 +24,6 @@ export const RESOLUTION_TYPES: readonly ResolutionType[] = [
   "RELATED_PARTY",
   "PURCHASE_ORDER",
   "TERM_EXTENSION",
-  "MANAGER_REMOVAL",
   "SUCCESSOR_MANAGER",
   "AMENDMENT",
   "AUDIT_CALL",
@@ -193,14 +191,8 @@ export const MATTERS: Record<string, Matter> = {
     [vote("PREFERRED_MAJORITY")],
     "AUDIT_CALL",
   ),
-  MANAGER_REMOVAL: matter(
-    "Remove the Manager",
-    "6.20",
-    [vote("DISINTERESTED_67")],
-    "MANAGER_REMOVAL",
-  ),
   SUCCESSOR_MANAGER: matter(
-    "Appoint a successor Manager (after removal or resignation)",
+    "Appoint a successor Manager (after resignation)",
     "6.20",
     [vote("DISINTERESTED_MAJORITY")],
     "SUCCESSOR_MANAGER",
@@ -289,14 +281,9 @@ const termExtensionSchema = z.strictObject({
   extensionNumber: z.number().int().min(1),
 });
 
-const managerRemovalSchema = z.strictObject({
-  managerName: text(1, 200),
-  requestedBy: text(0, 500),
-});
-
 const successorManagerSchema = z.strictObject({
   successorName: text(1, 200),
-  reason: z.enum(["REMOVAL", "RESIGNATION"]),
+  reason: z.enum(["RESIGNATION"]),
 });
 
 const amendmentSchema = z
@@ -348,7 +335,6 @@ const SCHEMAS = {
   RELATED_PARTY: relatedPartySchema,
   PURCHASE_ORDER: purchaseOrderSchema,
   TERM_EXTENSION: termExtensionSchema,
-  MANAGER_REMOVAL: managerRemovalSchema,
   SUCCESSOR_MANAGER: successorManagerSchema,
   AMENDMENT: amendmentSchema,
   AUDIT_CALL: auditCallSchema,
@@ -416,9 +402,6 @@ export function buildRequirements(
     case "TERM_EXTENSION":
       parseParams(type, params);
       return [spec(vote("PREFERRED_MAJORITY"), "2.5")];
-    case "MANAGER_REMOVAL":
-      parseParams(type, params);
-      return [spec(vote("DISINTERESTED_67"), "6.20")];
     case "SUCCESSOR_MANAGER":
       parseParams(type, params);
       return [spec(vote("DISINTERESTED_MAJORITY"), "6.20")];
@@ -584,10 +567,6 @@ export function buildTitle(
       const p = parseParams(type, params);
       return `Extension of the operating term to ${longDate(proposedDate(p.currentTargetSaleDate))}`;
     }
-    case "MANAGER_REMOVAL": {
-      const p = parseParams(type, params);
-      return `Removal of ${p.managerName} as Manager`;
-    }
     case "SUCCESSOR_MANAGER": {
       const p = parseParams(type, params);
       return `Appointment of ${p.successorName} as successor Manager`;
@@ -654,10 +633,6 @@ function starterParagraph(
     case "TERM_EXTENSION":
       parseParams(type, params);
       return "Do you approve extending the operating term for one additional year?";
-    case "MANAGER_REMOVAL": {
-      const p = parseParams(type, params);
-      return `RESOLVED, that ${v(p.managerName)} is removed as Manager of ${company}.`;
-    }
     case "SUCCESSOR_MANAGER": {
       const p = parseParams(type, params);
       return `RESOLVED, that ${v(p.successorName)} is appointed successor Manager of ${company}.`;
@@ -736,11 +711,6 @@ function typeClauses(
         "A Preferred Member who does not respond within thirty (30) days after this request is deemed to have voted against the extension.",
       ];
     }
-    case "MANAGER_REMOVAL":
-      parseParams(type, params);
-      return [
-        "Under Section 6.20 of the Operating Agreement the Manager may be removed by the vote of the holders of at least sixty-seven percent (67%) of the Disinterested Preferred Units. Removal does not affect the Common Units, any accrued and unpaid Management Fee, or the removed Manager's rights to indemnification, and the removed Manager shall be released from any guarantee of LLC obligations as a condition of removal.",
-      ];
     case "SUCCESSOR_MANAGER": {
       const p = parseParams(type, params);
       const name = v(p.successorName);

@@ -22,7 +22,6 @@ export const RESOLUTION_TYPE_LABEL: Record<ResolutionType, string> = {
   RELATED_PARTY: "Related-party transaction",
   PURCHASE_ORDER: "Purchase-order resolution",
   TERM_EXTENSION: "Term extension election",
-  MANAGER_REMOVAL: "Removal of the Manager",
   SUCCESSOR_MANAGER: "Successor Manager",
   AMENDMENT: "Amendment",
   AUDIT_CALL: "Call for review or audit",

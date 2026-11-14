@@ -161,26 +161,13 @@ const FIELDS: Record<ResolutionType, FieldSpec[]> = {
       readOnly: true,
     },
   ],
-  MANAGER_REMOVAL: [
-    { name: "managerName", label: "Manager to be removed", kind: "text" },
-    {
-      name: "requestedBy",
-      label: "Requested by",
-      kind: "textarea",
-      optional: true,
-      description: "The Members who asked for this consent in writing.",
-    },
-  ],
   SUCCESSOR_MANAGER: [
     { name: "successorName", label: "Successor Manager", kind: "text" },
     {
       name: "reason",
       label: "Reason",
       kind: "select",
-      options: [
-        { value: "REMOVAL", label: "Removal of the Manager" },
-        { value: "RESIGNATION", label: "Resignation of the Manager" },
-      ],
+      options: [{ value: "RESIGNATION", label: "Resignation of the Manager" }],
     },
   ],
   AMENDMENT: [
@@ -268,8 +255,7 @@ export function defaultParams(
       purchasingAgentName: "",
     },
     TERM_EXTENSION: { currentTargetSaleDate: "", extensionNumber: 1 },
-    MANAGER_REMOVAL: { managerName: "", requestedBy: "" },
-    SUCCESSOR_MANAGER: { successorName: "", reason: "REMOVAL" },
+    SUCCESSOR_MANAGER: { successorName: "", reason: "RESIGNATION" },
     AMENDMENT: {
       summary: "",
       touchesProtectedProvision: false,
@@ -648,13 +634,8 @@ const PRESET_CARDS: PresetCard[] = [
     section: "2.5",
   },
   {
-    type: "MANAGER_REMOVAL",
-    description: "Removal of the Manager by the Disinterested Members.",
-    section: "6.20",
-  },
-  {
     type: "SUCCESSOR_MANAGER",
-    description: "Appoint a successor after removal or resignation.",
+    description: "Appoint a successor after the Manager resigns.",
     section: "6.20",
   },
   {
