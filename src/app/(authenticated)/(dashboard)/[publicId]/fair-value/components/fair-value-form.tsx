@@ -202,12 +202,19 @@ export function FairValueForm({
             ) : null}
           </div>
           <div className="grid gap-1.5">
-            <Label>Fair market value of the LLC&apos;s assets</Label>
-            <MoneyInput value={assetFmv} onChange={setAssetFmv} />
+            <Label htmlFor="fv-asset-fmv">
+              Fair market value of the LLC&apos;s assets
+            </Label>
+            <MoneyInput
+              id="fv-asset-fmv"
+              value={assetFmv}
+              onChange={setAssetFmv}
+            />
           </div>
           <div className="grid gap-1.5">
-            <Label>Cash on hand</Label>
+            <Label htmlFor="fv-cash">Cash on hand</Label>
             <MoneyInput
+              id="fv-cash"
               value={cash}
               onChange={(cents) => {
                 setCash(cents);
@@ -234,8 +241,9 @@ export function FairValueForm({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Liabilities to creditors</Label>
+            <Label htmlFor="fv-liabilities">Liabilities to creditors</Label>
             <MoneyInput
+              id="fv-liabilities"
               value={liabilities}
               onChange={(cents) => {
                 setLiabilities(cents);

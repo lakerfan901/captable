@@ -132,6 +132,7 @@ export function DefaultPaymentDialog({
           <div className="grid gap-1.5">
             <Label>Amount paid</Label>
             <MoneyInput
+              aria-label="Amount paid"
               value={amount}
               onChange={(v) => {
                 setAmount(v);

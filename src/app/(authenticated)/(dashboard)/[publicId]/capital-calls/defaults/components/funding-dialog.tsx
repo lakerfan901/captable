@@ -160,6 +160,7 @@ export function FundingDialog({
           <div className="grid gap-1.5">
             <Label>Amount funded</Label>
             <MoneyInput
+              aria-label="Amount funded"
               value={amount}
               onChange={(v) => {
                 setAmount(v);

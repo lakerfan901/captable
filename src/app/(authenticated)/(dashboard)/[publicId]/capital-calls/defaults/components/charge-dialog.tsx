@@ -114,7 +114,11 @@ export function ChargeDialog({
           </div>
           <div className="grid gap-1.5">
             <Label>Amount</Label>
-            <MoneyInput value={amount} onChange={setAmount} />
+            <MoneyInput
+              aria-label="Amount"
+              value={amount}
+              onChange={setAmount}
+            />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`ch-desc-${view.id}`}>Description</Label>

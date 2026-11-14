@@ -280,6 +280,7 @@ export function NoticeForm({
                   </TableCell>
                   <TableCell>
                     <MoneyInput
+                      aria-label={`Amount called from ${s.name}`}
                       value={row.cents}
                       disabled={reason !== null || !row.checked}
                       onChange={(cents) => set({ cents })}
