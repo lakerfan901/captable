@@ -4,12 +4,20 @@ import type { MemberScheduleDTO } from "@/lib/admission/member-schedule";
 import { formatDateOnly } from "@/lib/date-only";
 import { formatCents } from "@/lib/money";
 import { trimUnits } from "@/server/llc/serialize";
+import { fitCell, noHyphenation } from "./fit-text";
 
 // Built-in Helvetica only: no Font.register, no network at render time.
+const FONT_SIZE = 8;
+/** Smallest size a cell shrinks to so its longest word (an email) fits. */
+const MIN_FONT_SIZE = 5;
+/** LETTER landscape (792pt) less the page's horizontal padding. */
+const CONTENT_WIDTH = 792 - 2 * 30;
+const CELL_PADDING = 3;
+
 const styles = StyleSheet.create({
   page: {
     fontFamily: "Helvetica",
-    fontSize: 8,
+    fontSize: FONT_SIZE,
     paddingTop: 30,
     paddingBottom: 45,
     paddingHorizontal: 30,
@@ -33,7 +41,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   head: { fontFamily: "Helvetica-Bold" },
-  cell: { paddingHorizontal: 3 },
+  cell: { paddingHorizontal: CELL_PADDING },
   right: { textAlign: "right" },
   footer: { marginTop: 14, fontSize: 8 },
   note: { marginTop: 4, fontSize: 7 },
@@ -79,19 +87,33 @@ function Row({
 }) {
   return (
     <View style={styles.row} wrap={false}>
-      {cols.map((c, i) => (
-        <Text
-          key={c.label}
-          style={[
-            styles.cell,
-            { width: c.width },
-            ...(c.right ? [styles.right] : []),
-            ...(bold ? [styles.head] : []),
-          ]}
-        >
-          {cells[i] ?? ""}
-        </Text>
-      ))}
+      {cols.map((c, i) => {
+        // Words (emails above all) are never hyphenated: a word too long for
+        // its column shrinks the cell's text instead (fit-text.ts).
+        const fit = fitCell(
+          cells[i] ?? "",
+          (Number.parseFloat(c.width) / 100) * CONTENT_WIDTH - 2 * CELL_PADDING,
+          FONT_SIZE,
+          MIN_FONT_SIZE,
+        );
+        return (
+          <Text
+            key={c.label}
+            hyphenationCallback={noHyphenation}
+            style={[
+              styles.cell,
+              { width: c.width },
+              ...(c.right ? [styles.right] : []),
+              ...(bold ? [styles.head] : []),
+              ...(fit.fontSize !== FONT_SIZE
+                ? [{ fontSize: fit.fontSize }]
+                : []),
+            ]}
+          >
+            {fit.text}
+          </Text>
+        );
+      })}
     </View>
   );
 }
@@ -154,9 +176,10 @@ export function MemberScheduleTemplate({
               trimUnits(r.units),
               `${r.percent}%`,
               r.admittedOn ? formatDateOnly(r.admittedOn) : "",
+              // the email on its own line, so it is never split
               [r.noticeAddress, r.noticeEmail]
                 .filter((p) => p !== "")
-                .join("; "),
+                .join("\n"),
             ]}
           />
         ))}
