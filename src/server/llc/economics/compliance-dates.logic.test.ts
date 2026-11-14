@@ -192,6 +192,128 @@ describe("buildComplianceDates", () => {
     );
   });
 
+  it("a call line's due date leaves the feed once a default is declared on it", () => {
+    const line = { id: "l1", dueOn: "2027-01-20", outstanding: 6_000_000n };
+    const declared = buildComplianceDates(
+      input({ callLines: [{ ...line, defaultDeclared: true }] }),
+    );
+    expect(ofKind(declared, "CALL_NOTICE_DUE")).toEqual([]);
+    // Voided (or never declared): the line is due again.
+    const open = buildComplianceDates(
+      input({ callLines: [{ ...line, defaultDeclared: false }] }),
+    );
+    expect(open.find((d) => d.kind === "CALL_NOTICE_DUE")?.key).toBe(
+      "CALL_NOTICE_DUE:l1",
+    );
+  });
+
+  describe("Section 4.8 admission dates", () => {
+    const admission = (over: Partial<ComplianceInput> = {}) =>
+      input({
+        today: "2026-11-20",
+        range: { from: "2026-11-01", to: "2026-12-31" },
+        finalClosingDate: "2026-11-30",
+        ...over,
+      });
+
+    it("the Final Closing Date, keyed by its date, done once passed", () => {
+      const before = buildComplianceDates(admission());
+      const row = before.find((d) => d.kind === "FINAL_CLOSING_DATE");
+      expect(row).toMatchObject({
+        key: "FINAL_CLOSING_DATE:2026-11-30",
+        dueOn: "2026-11-30",
+        status: "OPEN",
+        oaSection: "§4.8",
+      });
+      expect(
+        ofKind(
+          buildComplianceDates(admission({ today: "2026-11-30" })),
+          "FINAL_CLOSING_DATE",
+        ),
+      ).toEqual([["2026-11-30", "OPEN"]]);
+      expect(
+        ofKind(
+          buildComplianceDates(admission({ today: "2026-12-01" })),
+          "FINAL_CLOSING_DATE",
+        ),
+      ).toEqual([["2026-11-30", "DONE"]]);
+      expect(
+        ofKind(
+          buildComplianceDates(admission({ finalClosingDate: null })),
+          "FINAL_CLOSING_DATE",
+        ),
+      ).toEqual([]);
+    });
+
+    it("a refund due, per commitment, until it is paid", () => {
+      const refund = {
+        id: "c1",
+        dueBy: "2026-12-07",
+        outstanding: 2_000_000n,
+        memberName: "Jane Doe",
+      };
+      const out = buildComplianceDates(admission({ refunds: [refund] }));
+      expect(out.find((d) => d.kind === "REFUND_DUE")).toMatchObject({
+        key: "REFUND_DUE:c1",
+        dueOn: "2026-12-07",
+        label: "Refund $20,000.00 to Jane Doe",
+        status: "OPEN",
+        sourceType: "commitment",
+        sourceId: "c1",
+      });
+      expect(
+        ofKind(
+          buildComplianceDates(
+            admission({ refunds: [refund], today: "2026-12-08" }),
+          ),
+          "REFUND_DUE",
+        ),
+      ).toEqual([["2026-12-07", "OVERDUE"]]);
+      // Recorded in full: the key leaves the feed (the sync closes the row).
+      expect(
+        ofKind(
+          buildComplianceDates(
+            admission({ refunds: [{ ...refund, outstanding: 0n }] }),
+          ),
+          "REFUND_DUE",
+        ),
+      ).toEqual([]);
+    });
+
+    it("the Manager's decision on a signed subscription, until decided", () => {
+      const out = buildComplianceDates(
+        admission({
+          pendingDecisions: [
+            { id: "c2", decideBy: "2026-11-27", memberName: "Priya" },
+          ],
+        }),
+      );
+      expect(out.find((d) => d.kind === "ACCEPTANCE_DEADLINE")).toMatchObject({
+        key: "ACCEPTANCE_DEADLINE:c2",
+        dueOn: "2026-11-27",
+        label: "Accept or reject the subscription of Priya",
+        status: "OPEN",
+      });
+      expect(
+        ofKind(
+          buildComplianceDates(
+            admission({
+              today: "2026-11-28",
+              pendingDecisions: [{ id: "c2", decideBy: "2026-11-27" }],
+            }),
+          ),
+          "ACCEPTANCE_DEADLINE",
+        ),
+      ).toEqual([["2026-11-27", "OVERDUE"]]);
+      expect(
+        ofKind(
+          buildComplianceDates(admission({ pendingDecisions: [] })),
+          "ACCEPTANCE_DEADLINE",
+        ),
+      ).toEqual([]);
+    });
+  });
+
   it("no receipt, no quarters; range bounds", () => {
     expect(complianceQuarterEnds(null, input().range, OA_DEFAULTS)).toEqual([]);
     expect(

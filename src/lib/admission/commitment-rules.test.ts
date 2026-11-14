@@ -433,6 +433,80 @@ describe("deriveReceiptKind", () => {
       }),
     ).toThrow(expect.objectContaining({ code: "NOT_OPEN" }));
   });
+
+  describe("money recorded as a Balance payment (Call Notice page)", () => {
+    // $100,000 accepted on 2026-11-14 with the $40,000 Initial Installment.
+    const paid = {
+      acceptedCents: $(100_000),
+      initialAppliedCents: $(40_000),
+      initialInstallmentBps: 4000,
+      isReplacement: false,
+    };
+    const kind = (
+      receivedOn: string,
+      ctx: Partial<typeof paid> = {},
+      status: "ACCEPTED" | "REDUCED" | "PENDING" | "REJECTED" = "ACCEPTED",
+    ) =>
+      deriveReceiptKind({
+        status,
+        acceptedOn: status === "PENDING" ? null : "2026-11-14",
+        receivedOn,
+        balancePayment: { ...paid, ...ctx },
+      });
+
+    it("is BALANCE on the acceptance date once the Initial Installment is paid", () => {
+      // Without the flag the same date is INITIAL (B16, money wired before
+      // or at acceptance); recorded against a Call Notice it is Balance.
+      expect(kind("2026-11-14")).toBe("BALANCE");
+      expect(kind("2026-11-14", {}, "REDUCED")).toBe("BALANCE");
+      expect(kind("2026-11-14", { initialAppliedCents: $(100_000) })).toBe(
+        "BALANCE",
+      );
+    });
+
+    it("is BALANCE after the acceptance date", () => {
+      expect(kind("2026-11-15")).toBe("BALANCE");
+      // Later dates do not look at the Initial Installment at all.
+      expect(kind("2026-11-15", { initialAppliedCents: 0n })).toBe("BALANCE");
+    });
+
+    it("refuses money received before the acceptance date (Initial Installment)", () => {
+      expect(() => kind("2026-11-13")).toThrow(
+        expect.objectContaining({
+          code: "NOT_BALANCE",
+          message: expect.stringMatching(
+            /before the acceptance date 2026-11-14, is part of the Initial Installment.*Commitments page/,
+          ),
+        }),
+      );
+    });
+
+    it("refuses money on the acceptance date while the Initial Installment is short", () => {
+      expect(() =>
+        kind("2026-11-14", { initialAppliedCents: $(39_999.99) }),
+      ).toThrow(
+        expect.objectContaining({
+          code: "NOT_BALANCE",
+          message: expect.stringMatching(
+            /Only \$39,999\.99 of the \$40,000\.00 Initial Installment \(40% of the accepted amount\)/,
+          ),
+        }),
+      );
+      // A Replacement Funder's commitment has no Initial Installment.
+      expect(
+        kind("2026-11-14", { initialAppliedCents: 0n, isReplacement: true }),
+      ).toBe("BALANCE");
+    });
+
+    it("refuses a pending or rejected commitment", () => {
+      expect(() => kind("2026-11-14", {}, "PENDING")).toThrow(
+        expect.objectContaining({ code: "NOT_BALANCE" }),
+      );
+      expect(() => kind("2026-11-15", {}, "REJECTED")).toThrow(
+        expect.objectContaining({ code: "NOT_OPEN" }),
+      );
+    });
+  });
 });
 
 describe("prefReturnStartDate", () => {

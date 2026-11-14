@@ -13,7 +13,9 @@ import {
   behaviour,
   buildLockedClauses,
   buildRequirements,
+  placeholderBlocker,
   type ResolutionType,
+  unfilledPlaceholders,
 } from "@/lib/governance/presets";
 import {
   eligibleRecipients,
@@ -21,6 +23,7 @@ import {
 } from "@/lib/governance/resolution-core";
 import {
   canonicalJson,
+  docToPlainText,
   isDocEmpty,
   normalizeBlocks,
 } from "@/lib/governance/rich-doc";
@@ -186,6 +189,10 @@ export const sendProcedure = withLlcAccessControl
           if (!normalized.ok) badRequest(normalized.errors.join("; "));
           const doc = normalized.doc;
           if (isDocEmpty(doc)) badRequest("The resolution text is empty.");
+          const placeholders = unfilledPlaceholders(docToPlainText(doc));
+          if (placeholders.length > 0) {
+            badRequest(placeholderBlocker(placeholders));
+          }
           const title = resolution.title.trim();
           if (title === "") badRequest("The resolution needs a title.");
           await assertDraftReferences(tx, companyId, type, params);

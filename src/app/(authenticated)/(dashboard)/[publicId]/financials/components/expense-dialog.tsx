@@ -29,6 +29,7 @@ import {
   issuesByField,
   type NamedOption,
   OptionSelect,
+  ResolutionSelect,
   useLedgerForm,
 } from "./shared";
 
@@ -60,7 +61,7 @@ export function ExpenseDialog({
     countsTowardOrgCap: false,
     memo: "",
     documentId: null as string | null,
-    resolutionId: "",
+    resolutionId: null as string | null,
   });
   const { values: v, set, errors } = form;
   const mutation = api.llcFinancials.expense.create.useMutation();
@@ -81,7 +82,7 @@ export function ExpenseDialog({
       countsTowardOrgCap: v.countsTowardOrgCap,
       memo: v.memo.trim() === "" ? null : v.memo,
       documentId: v.documentId,
-      resolutionId: v.resolutionId.trim() === "" ? null : v.resolutionId.trim(),
+      resolutionId: v.resolutionId,
     });
     if (!parsed.success) {
       form.setErrors(issuesByField(parsed.error.issues));
@@ -171,14 +172,15 @@ export function ExpenseDialog({
           </div>
           {v.countsTowardOrgCap ? (
             <Field
-              label="Resolution id (only if the cap is exceeded)"
+              label="Approving resolution (only if the cap is exceeded)"
               error={errors.resolutionId}
-              hint="An amount above the cap needs a Preferred Supermajority resolution recorded under Governance."
+              hint="An amount above the cap needs an effective Preferred Supermajority resolution recorded under Governance."
               className="sm:col-span-2"
             >
-              <Input
+              <ResolutionSelect
                 value={v.resolutionId}
-                onChange={(e) => set("resolutionId", e.target.value)}
+                onChange={(id) => set("resolutionId", id)}
+                enabled={open}
               />
             </Field>
           ) : null}

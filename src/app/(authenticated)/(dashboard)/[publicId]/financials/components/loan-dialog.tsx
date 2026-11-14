@@ -23,6 +23,7 @@ import {
   issuesByField,
   type NamedOption,
   OptionSelect,
+  ResolutionSelect,
   useLedgerForm,
 } from "./shared";
 
@@ -44,7 +45,7 @@ export function LoanDialog({
     madeOn: today,
     maturityOn: "",
     noteDocumentId: null as string | null,
-    resolutionId: "",
+    resolutionId: null as string | null,
     notes: "",
   });
   const { values: v, set, errors } = form;
@@ -62,7 +63,7 @@ export function LoanDialog({
       madeOn: v.madeOn,
       maturityOn: v.maturityOn,
       noteDocumentId: v.noteDocumentId ?? "",
-      resolutionId: v.resolutionId.trim() === "" ? null : v.resolutionId.trim(),
+      resolutionId: v.resolutionId,
       notes: v.notes.trim() === "" ? null : v.notes,
     });
     if (!parsed.success) {
@@ -145,14 +146,15 @@ export function LoanDialog({
             />
           </Field>
           <Field
-            label="Resolution id"
+            label="Approving resolution"
             error={errors.resolutionId}
-            hint="The Governance resolution approving the loan (Section 6.16(d))."
+            hint="The effective Governance resolution approving the loan (Section 6.16(d))."
             className="sm:col-span-2"
           >
-            <Input
+            <ResolutionSelect
               value={v.resolutionId}
-              onChange={(e) => set("resolutionId", e.target.value)}
+              onChange={(id) => set("resolutionId", id)}
+              enabled={open}
             />
           </Field>
           <Field

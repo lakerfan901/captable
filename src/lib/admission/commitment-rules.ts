@@ -16,7 +16,8 @@ export type RuleCode =
   | "INITIAL_INSTALLMENT_SHORT"
   | "KEEP_OUT_OF_RANGE"
   | "OVERPAYMENT"
-  | "NOT_OPEN";
+  | "NOT_OPEN"
+  | "NOT_BALANCE";
 export type RuleError = { code: RuleCode; message: string };
 export type OfferingTerms = {
   minCommitmentCents: bigint | null;
@@ -371,11 +372,87 @@ export function computeSubscriptionClock(
 }
 
 /** B16: kind of a cash receipt recorded against a commitment. */
+/** What `deriveReceiptKind` needs to judge money recorded as a Balance payment. */
+export type BalancePaymentContext = {
+  acceptedCents: bigint;
+  /** Σ appliedCents of the commitment's non-void INITIAL receipts. */
+  initialAppliedCents: bigint;
+  initialInstallmentBps: number;
+  isReplacement: boolean;
+};
+
+const ELSEWHERE =
+  "Record it on the Commitments page; it cannot be applied to a Call Notice.";
+
+/**
+ * Section 4.9: the Initial Installment is what is paid "at the time its
+ * signature page is accepted" (at least 40%), the Balance is the rest. B16's
+ * date rule (`receivedOn <= acceptedOn` → INITIAL) exists for money wired
+ * before acceptance, which earns the Preferred Return from the wire date
+ * (owner decision 2). Money recorded as a Balance payment is therefore:
+ * refused when dated before the acceptance date (it is Initial Installment
+ * money) or on the acceptance date while the Initial Installment is still
+ * short; otherwise `BALANCE`, also on the acceptance date itself (a Call
+ * Notice can be sent and paid the day the subscription is accepted).
+ */
+function balancePaymentKind(input: {
+  status: CommitmentStatus;
+  acceptedOn: string | null;
+  receivedOn: string;
+  balancePayment?: BalancePaymentContext;
+}): "BALANCE" {
+  const ctx = input.balancePayment as BalancePaymentContext;
+  if (input.status === "PENDING") {
+    throw new RuleViolation(
+      "NOT_BALANCE",
+      `The subscription is not accepted yet, so money received now is held toward the Initial Installment (Section 4.9(a)), not paid on the Balance. ${ELSEWHERE}`,
+    );
+  }
+  if (input.status === "REJECTED") {
+    throw new RuleViolation(
+      "NOT_OPEN",
+      "The commitment was rejected; no money can be recorded against it.",
+    );
+  }
+  if (input.acceptedOn === null) {
+    throw new RuleViolation(
+      "NOT_OPEN",
+      "The commitment has no acceptance date.",
+    );
+  }
+  if (input.receivedOn < input.acceptedOn) {
+    throw new RuleViolation(
+      "NOT_BALANCE",
+      `Money received on ${input.receivedOn}, before the acceptance date ${input.acceptedOn}, is part of the Initial Installment (Section 4.9(a)), not a Balance payment. ${ELSEWHERE}`,
+    );
+  }
+  if (input.receivedOn === input.acceptedOn && !ctx.isReplacement) {
+    const required = requiredInitialInstallmentCents(
+      ctx.acceptedCents,
+      ctx.initialInstallmentBps,
+    );
+    if (ctx.initialAppliedCents < required) {
+      throw new RuleViolation(
+        "NOT_BALANCE",
+        `Only ${formatCents(ctx.initialAppliedCents)} of the ${formatCents(required)} Initial Installment (${bpsToPct(ctx.initialInstallmentBps)}% of the accepted amount) is recorded, so money received on the acceptance date ${input.acceptedOn} completes the Initial Installment (Section 4.9(a)) before any Balance. ${ELSEWHERE}`,
+      );
+    }
+  }
+  return "BALANCE";
+}
+
 export function deriveReceiptKind(input: {
   status: CommitmentStatus;
   acceptedOn: string | null;
   receivedOn: string;
+  /**
+   * Set when the caller records the money as a Balance payment (a Call
+   * Notice payment, Section 4.9(b)): the result is `BALANCE` or a
+   * `NOT_BALANCE` refusal saying why, never a silent `INITIAL`.
+   */
+  balancePayment?: BalancePaymentContext;
 }): "INITIAL" | "BALANCE" {
+  if (input.balancePayment) return balancePaymentKind(input);
   if (input.status === "PENDING") return "INITIAL";
   if (input.status === "REJECTED") {
     throw new RuleViolation(

@@ -30,6 +30,7 @@ import {
   updatePendingCommitment,
   voidCapitalReceipt,
 } from "@/server/llc/commitments";
+import { getComplianceDates } from "@/server/llc/economics/compliance-dates";
 import { ledgerInvariantErrors } from "@/server/llc/receipt-rules";
 import { createCallerFactory } from "@/trpc/api/trpc";
 import { stakeholderRouter } from "@/trpc/routers/stakeholder-router/router";
@@ -351,6 +352,26 @@ async function h1RejectedDuplicate() {
   const c = await newCommitment(m.id, 10_000_000n);
   const r1 = await receive(c.id, "2026-11-03", 4_000_000n);
   const r2 = await receive(c.id, "2026-11-03", 4_000_000n);
+  // Compliance calendar feed (Section 4.8): the decision is due while the
+  // commitment is pending, the refund once it is decided, until it is paid.
+  const feed = async () =>
+    (
+      await tx((t) =>
+        getComplianceDates(t, companyId, {
+          from: "2026-10-01",
+          to: "2027-03-31",
+        }),
+      )
+    ).filter((d) => d.sourceId === c.id);
+  const pending = await feed();
+  check(
+    "pending: the acceptance deadline is in the compliance feed",
+    pending.length === 1 &&
+      pending[0]?.key === `ACCEPTANCE_DEADLINE:${c.id}` &&
+      // 10 business days after 2026-11-03 (Veterans Day not counted)
+      pending[0]?.dueOn === "2026-11-18",
+    JSON.stringify(pending),
+  );
   await tx((t) =>
     decideCommitment(
       t,
@@ -376,6 +397,14 @@ async function h1RejectedDuplicate() {
     String((await commitmentRow(c.id)).refundDueCents),
   );
   await assertInvariant("void of duplicate");
+  const decided = await feed();
+  check(
+    "decided: the acceptance deadline left the feed, the $40,000.00 refund is due",
+    decided.length === 1 &&
+      decided[0]?.key === `REFUND_DUE:${c.id}` &&
+      decided[0]?.label.startsWith("Refund $40,000.00 to H1 Rejected"),
+    JSON.stringify(decided),
+  );
   await tx((t) =>
     recordRefund(
       t,
@@ -389,6 +418,10 @@ async function h1RejectedDuplicate() {
     ),
   );
   await assertInvariant("refund paid");
+  check(
+    "refunded: nothing for the commitment is left in the feed",
+    (await feed()).length === 0,
+  );
   await expectRefused(
     "void of a receipt whose refund was paid refused",
     () => voidReceipt(r1.id),

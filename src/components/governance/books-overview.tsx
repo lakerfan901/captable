@@ -153,8 +153,11 @@ function CategoryCard({
                 {d.generated ? (
                   <Badge variant="secondary">Generated</Badge>
                 ) : null}
+                {d.signaturePage ? (
+                  <Badge variant="secondary">Signature page</Badge>
+                ) : null}
               </div>
-              {canUpdate && !d.generated ? (
+              {canUpdate && !d.generated && !d.signaturePage ? (
                 <Button
                   size="sm"
                   variant="ghost"

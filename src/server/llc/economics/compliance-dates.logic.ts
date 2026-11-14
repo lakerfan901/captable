@@ -12,6 +12,7 @@ import {
 } from "../../../lib/llc/dates";
 import type { Cents } from "../../../lib/llc/money";
 import { distributionDeadline, type TermClock } from "../../../lib/llc/term";
+import { formatCents } from "../../../lib/money";
 
 export type ComplianceStatus =
   | "OPEN"
@@ -33,7 +34,10 @@ export type ComplianceKind =
   | "EXTENSION_REQUEST_DUE"
   | "TARGET_SALE_DATE"
   | "DISSOLUTION_ELECTION_AVAILABLE"
-  | "MEMBER_LOAN_MATURITY";
+  | "MEMBER_LOAN_MATURITY"
+  | "REFUND_DUE"
+  | "ACCEPTANCE_DEADLINE"
+  | "FINAL_CLOSING_DATE";
 
 export type ComplianceDate = {
   /** stable: `${kind}:${sourceId ?? period}` */
@@ -74,6 +78,8 @@ export interface ComplianceInput {
     dueOn: IsoDate | null;
     outstanding: Cents;
     label?: string;
+    /** a default (not voided) was declared on the line: its own dates take over */
+    defaultDeclared?: boolean;
   }[];
   anyUncalledBalance: boolean;
   defaults: readonly {
@@ -94,6 +100,22 @@ export interface ComplianceInput {
     lenderName?: string;
   }[];
   ocdNoticeSentOn: IsoDate | null;
+  /** Preferred class Final Closing Date (Section 4.8); null = not set */
+  finalClosingDate?: IsoDate | null;
+  /** PENDING commitments whose Section 4.8 clock has started */
+  pendingDecisions?: readonly {
+    id: string;
+    /** the earlier of the acceptance deadline and the Final Closing Date */
+    decideBy: IsoDate;
+    memberName?: string;
+  }[];
+  /** decided commitments with part of the refund still unpaid */
+  refunds?: readonly {
+    id: string;
+    dueBy: IsoDate;
+    outstanding: Cents;
+    memberName?: string;
+  }[];
 }
 
 /** Quarter ends from the quarter of `firstReceiptOn` whose deadline falls in the range. */
@@ -173,9 +195,10 @@ export function buildComplianceDates(i: ComplianceInput): ComplianceDate[] {
     });
   }
 
-  // §4.9 Call Notices (R26)
+  // §4.9 Call Notices (R26). Once a default is declared on a line, the
+  // default's own dates (Forfeiture Date, Credit Date) take over.
   for (const l of i.callLines) {
-    if (l.dueOn === null || l.outstanding <= 0n) continue;
+    if (l.dueOn === null || l.outstanding <= 0n || l.defaultDeclared) continue;
     push({
       kind: "CALL_NOTICE_DUE",
       dueOn: l.dueOn,
@@ -294,6 +317,50 @@ export function buildComplianceDates(i: ComplianceInput): ComplianceDate[] {
         sourceId: null,
       });
     }
+  }
+
+  // §4.8 admission: the Final Closing Date, decisions on signed
+  // subscriptions, refunds of the unaccepted part. A decision or a refund
+  // leaves the feed once it is recorded (the calendar then closes its row).
+  const closing = i.finalClosingDate ?? null;
+  if (closing !== null) {
+    push({
+      kind: "FINAL_CLOSING_DATE",
+      dueOn: closing,
+      label: "Final Closing Date: last day to accept a subscription",
+      oaSection: "§4.8",
+      // a date, not a task: done once it has passed
+      status: compareIso(closing, i.today) < 0 ? "DONE" : "OPEN",
+      sourceType: "unitClass",
+      sourceId: null,
+    });
+  }
+  for (const p of i.pendingDecisions ?? []) {
+    push({
+      kind: "ACCEPTANCE_DEADLINE",
+      dueOn: p.decideBy,
+      label: p.memberName
+        ? `Accept or reject the subscription of ${p.memberName}`
+        : "Accept or reject the subscription",
+      oaSection: "§4.8",
+      status: openOrOverdue(p.decideBy, i.today),
+      sourceType: "commitment",
+      sourceId: p.id,
+    });
+  }
+  for (const r of i.refunds ?? []) {
+    if (r.outstanding <= 0n) continue;
+    push({
+      kind: "REFUND_DUE",
+      dueOn: r.dueBy,
+      label: r.memberName
+        ? `Refund ${formatCents(r.outstanding)} to ${r.memberName}`
+        : `Refund ${formatCents(r.outstanding)}`,
+      oaSection: "§4.8",
+      status: openOrOverdue(r.dueBy, i.today),
+      sourceType: "commitment",
+      sourceId: r.id,
+    });
   }
 
   // §4.6 member loans (R25)

@@ -10,8 +10,11 @@ import {
   PRE_APPROVED_RELATED_PARTY,
   PROTECTED_PROVISIONS,
   paramsSchema,
+  placeholderBlocker,
   RESOLUTION_TYPES,
   type ResolutionType,
+  STARTER_PLACEHOLDERS,
+  unfilledPlaceholders,
 } from "./presets";
 
 const CTX = { companyName: "OCTAGON GPU I LLC" };
@@ -218,8 +221,46 @@ describe("presets", () => {
         type: "heading",
         text: "Resolved",
       });
+      // Only these two starters carry a prompt the author must replace.
+      const starter = buildStarterBody(type, valid[type], CTX)
+        .map((block) => block.text)
+        .join("\n");
+      expect(unfilledPlaceholders(starter).length > 0).toBe(
+        type === "GENERAL_CONSENT" || type === "AMENDMENT",
+      );
     }
     expect(PRE_APPROVED_RELATED_PARTY).toHaveLength(6);
+  });
+
+  it("unfilledPlaceholders finds exactly the starter prompts", () => {
+    expect(
+      unfilledPlaceholders(
+        "RESOLVED, that the Members approve the following: [describe the action].",
+      ),
+    ).toEqual([STARTER_PLACEHOLDERS.DESCRIBE_ACTION]);
+    // split over lines or recased, it is still the prompt
+    expect(
+      unfilledPlaceholders(
+        "amended as follows: [Insert the full\ntext of the  amendment]",
+      ),
+    ).toEqual([STARTER_PLACEHOLDERS.AMENDMENT_TEXT]);
+    expect(
+      unfilledPlaceholders(
+        "[describe the action] and [insert the full text of the amendment]",
+      ),
+    ).toHaveLength(2);
+    // a lawyer's own brackets are not placeholders
+    for (const text of [
+      "RESOLVED, that the Members approve the purchase of 8 GPUs.",
+      'the "Agreement" [sic] as set out in [Exhibit C]',
+      "Section 5.6 [as amended] reads: [the text]",
+      "",
+    ]) {
+      expect(unfilledPlaceholders(text)).toEqual([]);
+    }
+    expect(placeholderBlocker([STARTER_PLACEHOLDERS.DESCRIBE_ACTION])).toBe(
+      'The resolution text still contains the starter placeholder "[describe the action]". Replace it with the actual text before sending.',
+    );
   });
 
   it("describeRequirements lists affected-member consent once", () => {
