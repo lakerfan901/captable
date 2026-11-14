@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatInstant } from "@/lib/company-time";
 import { formatDateOnly } from "@/lib/date-only";
 import {
   MAX_NOTE_CHARS,
@@ -238,7 +239,7 @@ export function ReportFiguresForm({
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="text-muted-foreground">
           {f.source
-            ? `From the ledger as of ${new Date(f.source.fetchedAt).toLocaleString("en-US", { timeZone, dateStyle: "medium", timeStyle: "short" })} (period ${formatDateOnly(f.source.periodStart)} – ${formatDateOnly(f.source.periodEnd)}).`
+            ? `From the ledger as of ${formatInstant(f.source.fetchedAt, timeZone)} (period ${formatDateOnly(f.source.periodStart)} – ${formatDateOnly(f.source.periodEnd)}).`
             : "Not loaded from the ledger yet."}
         </span>
         <Button
