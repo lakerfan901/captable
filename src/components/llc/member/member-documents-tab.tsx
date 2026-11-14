@@ -1,6 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
+import { InstantTime } from "@/components/common/instant-time";
 import { Allow } from "@/components/rbac/allow";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -81,7 +82,7 @@ export function MemberDocumentsTab({
                   <TableCell className="font-medium">{doc.name}</TableCell>
                   <TableCell>{kindLabel(doc.kind)}</TableCell>
                   <TableCell>
-                    {doc.createdAt.toLocaleDateString("en-US")}
+                    <InstantTime at={doc.createdAt} dateOnly />
                   </TableCell>
                   <TableCell>{formatSize(doc.bucket.size)}</TableCell>
                   <TableCell className="text-right">

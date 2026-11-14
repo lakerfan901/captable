@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { dayjsExt } from "@/common/dayjs";
 import FileIcon from "@/components/common/file-icon";
+import { InstantTime } from "@/components/common/instant-time";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -36,11 +36,16 @@ export const ESignTable = ({ documents, companyPublicId }: ESignTableProps) => {
       <TableBody>
         {documents.map((item) => (
           <TableRow key={item.id}>
-            <TableCell className="flex items-center">
-              <div className="mr-3">
-                <FileIcon type={"application/pdf"} />
-              </div>
-              <span className="flex">{item.name}</span>
+            <TableCell>
+              <Link
+                href={`/${companyPublicId}/documents/esign/v/${item.publicId}`}
+                className="flex items-center hover:underline"
+              >
+                <span className="mr-3">
+                  <FileIcon type={"application/pdf"} />
+                </span>
+                <span className="flex">{item.name}</span>
+              </Link>
             </TableCell>
 
             <TableCell>
@@ -50,8 +55,8 @@ export const ESignTable = ({ documents, companyPublicId }: ESignTableProps) => {
                 item.status
               )}
             </TableCell>
-            <TableCell suppressHydrationWarning>
-              {dayjsExt().to(item.createdAt)}
+            <TableCell className="whitespace-nowrap">
+              <InstantTime at={item.createdAt} dateOnly />
             </TableCell>
 
             <TableCell>{item.completedOn ? "Signed" : "Not Signed"}</TableCell>

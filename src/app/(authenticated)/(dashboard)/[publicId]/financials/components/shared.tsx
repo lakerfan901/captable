@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { cloneElement, isValidElement, useId, useState } from "react";
+import { MoneyInput } from "@/components/llc/money-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type {
   ExpenseCategoryEnum,
@@ -313,7 +315,13 @@ export function ReversedBadge({
 
 export type NamedOption = { id: string; name: string };
 
-/** Labelled form field with an inline error. */
+const LABELLABLE = new Set<unknown>([Input, MoneyInput, Textarea]);
+
+/**
+ * Labelled form field with an inline error. A single input child (a plain
+ * input, an amount or a text area) gets an id the label points at, so the
+ * label is its accessible name; other controls label themselves.
+ */
 export function Field({
   label,
   error,
@@ -327,10 +335,19 @@ export function Field({
   className?: string;
   children: React.ReactNode;
 }) {
+  const generatedId = useId();
+  const labelled =
+    isValidElement<{ id?: string; "aria-label"?: string }>(children) &&
+    LABELLABLE.has(children.type) &&
+    !children.props.id &&
+    !children.props["aria-label"];
+  const control = labelled
+    ? cloneElement(children, { id: generatedId })
+    : children;
   return (
     <div className={cn("grid gap-1.5", className)}>
-      <Label>{label}</Label>
-      {children}
+      <Label htmlFor={labelled ? generatedId : undefined}>{label}</Label>
+      {control}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>

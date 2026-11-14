@@ -1,9 +1,10 @@
 "use client";
 
 import { RiMore2Fill } from "@remixicon/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { dayjsExt } from "@/common/dayjs";
 import FileIcon from "@/components/common/file-icon";
+import { InstantTime } from "@/components/common/instant-time";
 import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -31,6 +32,19 @@ type DocumentTableProps = {
   companyPublicId: string;
 };
 
+/**
+ * Whose document it is: the member it is filed on, else the team member who
+ * uploaded it, else the company (a file the app generated: a signed packet,
+ * a report, a resolution).
+ */
+function ownerOf(document: DocumentType[number]): string {
+  return (
+    document.stakeholder?.name ??
+    document.uploader?.user?.name ??
+    "Company (generated)"
+  );
+}
+
 const DocumentsTable = ({ documents, companyPublicId }: DocumentTableProps) => {
   const router = useRouter();
   const openFileOnTab = async (key: string) => {
@@ -53,28 +67,28 @@ const DocumentsTable = ({ documents, companyPublicId }: DocumentTableProps) => {
         <TableBody>
           {documents.map((document) => (
             <TableRow key={document.id}>
-              <TableCell
-                className="flex cursor-pointer items-center hover:underline"
-                onClick={() => {
-                  router.push(
-                    `/${companyPublicId}/documents/${document.bucket.id}`,
-                  );
-                }}
-              >
-                <div className="mr-3">
-                  <FileIcon type={document.bucket.mimeType} />
-                </div>
-                <span className="flex">{document.name}</span>
+              <TableCell>
+                <Link
+                  href={`/${companyPublicId}/documents/${document.bucket.id}`}
+                  className="flex items-center hover:underline"
+                >
+                  <span className="mr-3">
+                    <FileIcon type={document.bucket.mimeType} />
+                  </span>
+                  <span className="flex">{document.name}</span>
+                </Link>
               </TableCell>
-              <TableCell>{document?.uploader?.user?.name}</TableCell>
-              <TableCell suppressHydrationWarning>
-                {dayjsExt().to(document.createdAt)}
+              <TableCell>{ownerOf(document)}</TableCell>
+              <TableCell className="whitespace-nowrap">
+                <InstantTime at={document.createdAt} dateOnly />
               </TableCell>
 
               <TableCell>
                 <div className="flex items-center gap-4">
                   <DropdownMenu>
-                    <DropdownMenuTrigger>
+                    <DropdownMenuTrigger
+                      aria-label={`Options for ${document.name}`}
+                    >
                       <RiMore2Fill className="cursor-pointer text-muted-foreground hover:text-primary/80" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
@@ -92,17 +106,6 @@ const DocumentsTable = ({ documents, companyPublicId }: DocumentTableProps) => {
                           Share document
                         </DropdownMenuItem> */}
 
-                      {document.bucket.mimeType === "application/pdf" && (
-                        <DropdownMenuItem
-                          onClick={() => {
-                            console.log(
-                              "TODO - Show recipient popup and redirect to template page.",
-                            );
-                          }}
-                        >
-                          eSign
-                        </DropdownMenuItem>
-                      )}
                       <DropdownMenuItem
                         onClick={() => {
                           router.push(

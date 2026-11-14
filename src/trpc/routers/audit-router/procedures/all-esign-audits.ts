@@ -27,6 +27,7 @@ export const allEsignAuditsProcedure = withAccessControl
           companyId,
           templateId,
         },
+        orderBy: { occurredAt: "asc" },
       });
 
       return { audits };

@@ -492,7 +492,11 @@ function TermsCard({
       <Field
         label="Transferee"
         htmlFor="terms-to"
-        hint="Add the transferee as a prospect on the Members page first."
+        hint={
+          editable && toId === NONE
+            ? "Not in the list? Add the transferee as a prospect on the Members page first."
+            : undefined
+        }
       >
         <Select value={toId} onValueChange={setToId} disabled={!editable}>
           <SelectTrigger id="terms-to" className="max-w-md">
@@ -971,9 +975,14 @@ function CommonUnitsCard({
         label="Approving resolution"
         htmlFor="common-resolution"
         hint={
-          linked
-            ? `Linked: ${linked.title} (${linked.status === "EFFECTIVE" ? "effective" : linked.status.toLowerCase()}). Only an effective resolution on this matter allows the transfer.`
-            : "Resolutions on the transfer of Common Units or a change of control of the Manager."
+          // Follows the selection: the saved link only while it is selected.
+          resolution === NONE
+            ? linked
+              ? "Not saved yet: save to remove the linked resolution."
+              : "Resolutions on the transfer of Common Units or a change of control of the Manager."
+            : linked && resolution === linked.publicId
+              ? `Linked: ${linked.title} (${linked.status === "EFFECTIVE" ? "effective" : linked.status.toLowerCase()}). Only an effective resolution on this matter allows the transfer.`
+              : "Not saved yet: save to link this resolution. Only an effective resolution on this matter allows the transfer."
         }
       >
         <Select
@@ -1423,7 +1432,10 @@ export function TransferDetail({
   const editable = canUpdate && isOpen;
   // A card remounts with the server's values when its own saved fields change
   // (unsaved edits in the other cards are kept).
-  const k = (...v: unknown[]) => JSON.stringify(v);
+  // Remounts a card when its saved values change. Each key names its card:
+  // two cards with equal values (e.g. ROFR and consent both "PENDING") must
+  // not share a key, or React duplicates them and keeps stale copies.
+  const k = (card: string, ...v: unknown[]) => JSON.stringify([card, ...v]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -1470,6 +1482,7 @@ export function TransferDetail({
       {isOpen ? (
         <TermsCard
           key={k(
+            "TermsCard",
             data.toStakeholderId,
             data.proposedPriceCents,
             data.terms,
@@ -1493,7 +1506,12 @@ export function TransferDetail({
       ) : null}
       {hasRofr(kind) ? (
         <RofrCard
-          key={k(data.rofrOutcome, data.rofrDecidedOn, data.rofrNote)}
+          key={k(
+            "RofrCard",
+            data.rofrOutcome,
+            data.rofrDecidedOn,
+            data.rofrNote,
+          )}
           data={data}
           editable={editable}
           onDirty={onDirty}
@@ -1502,6 +1520,7 @@ export function TransferDetail({
       {kind === "VOLUNTARY" ? (
         <ConsentCard
           key={k(
+            "ConsentCard",
             data.managerConsent,
             data.managerConsentOn,
             data.managerConsentNote,
@@ -1513,7 +1532,7 @@ export function TransferDetail({
       ) : null}
       {kind === "VOLUNTARY" || kind === "PERMITTED_TRANSFEREE" ? (
         <SecuritiesCard
-          key={k(data.securitiesOpinion)}
+          key={k("SecuritiesCard", data.securitiesOpinion)}
           data={data}
           editable={editable}
           onDirty={onDirty}
@@ -1522,6 +1541,7 @@ export function TransferDetail({
       {data.unitClassKind === "COMMON" ? (
         <CommonUnitsCard
           key={k(
+            "CommonUnitsCard",
             data.requiredResolution?.publicId,
             data.exemptUnder71,
             data.exemptNote,
@@ -1534,7 +1554,7 @@ export function TransferDetail({
       ) : null}
 
       <CompleteCard
-        key={k(data.transferNoticeOn, data.status)}
+        key={k("CompleteCard", data.transferNoticeOn, data.status)}
         data={data}
         editable={editable}
         anyDirty={anyDirty}
@@ -1546,6 +1566,7 @@ export function TransferDetail({
       {data.status !== "CANCELLED" && data.toStakeholderId ? (
         <AdmissionCard
           key={k(
+            "AdmissionCard",
             data.admissionSignaturePage,
             data.admissionExpensesPaid,
             data.admissionQualified,

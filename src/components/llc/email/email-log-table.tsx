@@ -29,6 +29,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatInstant } from "@/lib/company-time";
+import { useEntity } from "@/providers/entity-provider";
 import { api } from "@/trpc/react";
 import type { EmailLogDTO } from "@/trpc/routers/email-log-router/schema";
 import { MarkBounceDialog } from "./mark-bounce-dialog";
@@ -43,9 +45,6 @@ type EmailLogTableProps = {
   stakeholderId?: string;
   emptyText?: string;
 };
-
-const formatLocal = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString() : "";
 
 function StatusBadge({ email }: { email: EmailLogDTO }) {
   if (email.status === "SENT") {
@@ -66,6 +65,7 @@ function StatusBadge({ email }: { email: EmailLogDTO }) {
 }
 
 function BounceBadge({ email }: { email: EmailLogDTO }) {
+  const { timezone } = useEntity();
   if (email.bounceState === "NONE") return null;
   const label = email.bounceState === "BOUNCED" ? "Bounced" : "Complained";
   const badge = <Badge variant="warning">{label}</Badge>;
@@ -76,7 +76,9 @@ function BounceBadge({ email }: { email: EmailLogDTO }) {
         <span>{badge}</span>
       </TooltipTrigger>
       <TooltipContent className="max-w-sm">
-        {email.bouncedAt ? `Recorded ${formatLocal(email.bouncedAt)}. ` : ""}
+        {email.bouncedAt
+          ? `Recorded ${formatInstant(email.bouncedAt, timezone)}. `
+          : ""}
         {email.bounceNote ?? ""}
       </TooltipContent>
     </Tooltip>
@@ -195,6 +197,7 @@ export function EmailLogTable({
     }
   };
 
+  const { timezone } = useEntity();
   const columns = useMemo<ColumnDef<DataTableFeatures, EmailLogDTO>[]>(
     () => [
       {
@@ -202,7 +205,10 @@ export function EmailLogTable({
         header: "Sent",
         cell: ({ row }) => (
           <div className="whitespace-nowrap">
-            {formatLocal(row.original.sentAt ?? row.original.createdAt)}
+            {formatInstant(
+              row.original.sentAt ?? row.original.createdAt,
+              timezone,
+            )}
           </div>
         ),
       },
@@ -253,7 +259,7 @@ export function EmailLogTable({
         ),
       },
     ],
-    [params.publicId, onUpdated],
+    [params.publicId, onUpdated, timezone],
   );
 
   const table = useTable({

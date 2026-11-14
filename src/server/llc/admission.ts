@@ -497,7 +497,7 @@ export async function investorSignedNotices(
       companyId: template.companyId,
       companyName,
       kind: "admission.w9-request",
-      subject: "Your signature page was received — please upload your Form W-9",
+      subject: `${companyName}: your signature page was received — please upload your Form W-9`,
       heading: "Please upload your Form W-9",
       lines: [
         `Thank you. ${companyName} has received your signed signature page. Please upload a completed IRS Form W-9 using the secure link below. Your subscription is subject to acceptance by the Manager.`,
@@ -516,7 +516,7 @@ export async function investorSignedNotices(
       companyId: template.companyId,
       companyName,
       kind: "admission.signed-notice",
-      subject: `${investorName} signed the subscription — review required`,
+      subject: `${companyName}: ${investorName} signed the subscription — review required`,
       heading: `${investorName} signed the subscription`,
       lines: [
         "Review the answers, confirm the wire and accept, reduce or reject within 10 business days (Section 4.8).",

@@ -29,11 +29,22 @@ export function SigningFieldForm({
 
   const { mutateAsync } = api.template.sign.useMutation({
     onSuccess(data) {
+      // The Manager who countersigned an Exhibit B packet lands back on that
+      // packet's Admissions page, which shows the result (F13).
+      const countersigned = data.countersigned;
+      if (countersigned) {
+        toast.success("Countersigned. The subscription is being finalized.");
+        router.push(
+          `/${countersigned.companyPublicId}/admissions/${countersigned.templatePublicId}?countersigned=1`,
+        );
+        return;
+      }
+
       toast.success("🎉 Great job, you are done signing this document.");
 
       // An investor who signed an Exhibit B packet goes on to upload a Form
       // W-9 (F12). The token is only ever in the path of this same-origin page.
-      const w9Token = "w9Token" in data ? data.w9Token : undefined;
+      const w9Token = data.w9Token;
       if (w9Token) {
         router.push(`/w9/${w9Token}`);
       } else if (companyPublicId) {

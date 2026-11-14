@@ -22,9 +22,19 @@ import { assertCountersignFiguresCurrent } from "@/trpc/routers/admission-router
 import { DecodeEmailToken } from "../../template-field-router/procedures/add-fields";
 import { SignTemplateMutationSchema } from "../schema";
 
+export interface SignTemplateResult {
+  /** The investor of a SUBSCRIPTION packet goes on to upload a Form W-9. */
+  w9Token?: string;
+  /**
+   * The Manager countersigned a SUBSCRIPTION packet: the browser goes to that
+   * packet's Admissions page (it needs a session there to open it).
+   */
+  countersigned?: { companyPublicId: string; templatePublicId: string };
+}
+
 export const signTemplateProcedure = withoutAuth
   .input(SignTemplateMutationSchema)
-  .mutation(async ({ ctx, input }): Promise<{ w9Token?: string }> => {
+  .mutation(async ({ ctx, input }): Promise<SignTemplateResult> => {
     const { db, requestIp, userAgent } = ctx;
 
     // Public endpoint: the signing token (sent by email) is the credential.
@@ -248,12 +258,32 @@ export const signTemplateProcedure = withoutAuth
             templateId: template.id,
             investorRecipientId: recipient.id,
           });
-        return { templateId: template.id, recipientId: recipient.id, notices };
+        return {
+          kind: "investor" as const,
+          templateId: template.id,
+          recipientId: recipient.id,
+          notices,
+        };
+      }
+      if (isSubscription && recipient.role === MANAGER_ROLE) {
+        return {
+          kind: "manager" as const,
+          companyPublicId: template.company.publicId,
+          templatePublicId: template.publicId,
+        };
       }
       return null;
     });
 
     if (signed === null) return {};
+    if (signed.kind === "manager") {
+      return {
+        countersigned: {
+          companyPublicId: signed.companyPublicId,
+          templatePublicId: signed.templatePublicId,
+        },
+      };
+    }
 
     // After commit (F12): the W-9 request to the investor and the review
     // notice to the Manager; the browser goes on to the W-9 page. The

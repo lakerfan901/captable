@@ -1,10 +1,14 @@
 "use client";
 
+import { RiCheckboxCircleFill } from "@remixicon/react";
 import Link from "next/link";
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { InstantTime } from "@/components/common/instant-time";
 import { PacketStageBadge } from "@/components/llc/admission/packet-stage-badge";
 import { Allow } from "@/components/rbac/allow";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,7 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatDateOnly } from "@/lib/date-only";
 import { api } from "@/trpc/react";
 import { AnswersPanel } from "./answers-panel";
 import { CountersignSection } from "./countersign-section";
@@ -100,7 +103,7 @@ function Header() {
         </div>
         <p className="text-sm text-muted-foreground">
           {packet.sourceMasterName ?? packet.name} · sent{" "}
-          {formatDateOnly(packet.createdAt.slice(0, 10))} ·{" "}
+          <InstantTime at={packet.createdAt} dateOnly /> ·{" "}
           <Link
             href={`/${companyPublicId}/stakeholders/${stakeholder.id}`}
             className="underline"
@@ -113,6 +116,40 @@ function Header() {
         <CancelButton />
       </div>
     </div>
+  );
+}
+
+/**
+ * Shown when the Manager comes back from countersigning (`?countersigned=1`,
+ * set by the signing page). What it says comes from the packet's stage, so a
+ * reload or a stale link never claims more than the data shows.
+ */
+function CountersignedBanner() {
+  const { view } = useReview();
+  const params = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  // A one-time cue: kept for this visit, then dropped from the address so a
+  // reload or a copied link does not show it again.
+  const [cued] = useState(() => params.get("countersigned") === "1");
+  useEffect(() => {
+    if (cued) router.replace(pathname, { scroll: false });
+  }, [cued, pathname, router]);
+  const stage = view.packet.stage;
+  if (!cued) return null;
+  if (stage !== "FINALISING" && stage !== "COMPLETE") return null;
+  return (
+    <Alert className="border-green-600/40 bg-green-50 text-green-900">
+      <RiCheckboxCircleFill className="h-5 w-5 text-green-700!" />
+      <AlertTitle>
+        You countersigned {view.stakeholder.name}&apos;s subscription
+      </AlertTitle>
+      <AlertDescription>
+        {stage === "COMPLETE"
+          ? "The subscription is complete. The signed Exhibit B is filed on the member's Documents tab and has been emailed to both signers."
+          : "The signed Exhibit B is being finalized; this page updates when it is ready, and both signers receive it by email."}
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -164,6 +201,7 @@ export function PacketReview({
     >
       <div className="flex flex-col gap-y-6">
         <Header />
+        <CountersignedBanner />
         <Sections />
       </div>
     </ReviewProvider>

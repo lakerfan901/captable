@@ -18,7 +18,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { formatInstantDate } from "@/lib/company-time";
 import { formatDateOnly } from "@/lib/date-only";
+import { useEntity } from "@/providers/entity-provider";
 import { api } from "@/trpc/react";
 import type { MemberDTO } from "@/trpc/routers/stakeholder-router/member-schema";
 
@@ -151,6 +153,7 @@ function StatusChangeDialog({ member }: { member: MemberDTO }) {
 }
 
 export function MemberProfileCard({ member }: { member: MemberDTO }) {
+  const { timezone } = useEntity();
   const m = member;
   const dash = (v: string | null) => v ?? "—";
   const rows: [string, string][] = [
@@ -174,7 +177,7 @@ export function MemberProfileCard({ member }: { member: MemberDTO }) {
     ["State", dash(m.state)],
     ["ZIP code", dash(m.zipcode)],
     ["Insider", m.isInsider ? "Yes" : "No"],
-    ["Created", new Date(m.createdAt).toLocaleDateString("en-US")],
+    ["Created", formatInstantDate(m.createdAt, timezone)],
   ];
 
   return (

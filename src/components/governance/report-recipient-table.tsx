@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatInstant } from "@/lib/company-time";
 import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
 
@@ -32,16 +33,6 @@ import type { RouterOutputs } from "@/trpc/shared";
 // actions (only with `governance: update`; the server checks regardless).
 
 type Recipient = RouterOutputs["memberReport"]["get"]["recipients"][number];
-
-function formatInstant(at: Date | string | null, timeZone: string): string {
-  if (at === null) return "—";
-  const d = typeof at === "string" ? new Date(at) : at;
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(d);
-}
 
 function DeliveryState({ r }: { r: Recipient }) {
   switch (r.emailState) {

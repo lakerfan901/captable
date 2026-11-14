@@ -188,6 +188,23 @@ export function CountersignSection() {
     onError,
   });
 
+  // The PDF job completes a countersigned packet within seconds: check
+  // again on its own for a while so the page moves on to COMPLETE.
+  const finalising = packet.stage === "FINALISING";
+  useEffect(() => {
+    if (!finalising) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      if (tries > 40) {
+        clearInterval(timer);
+        return;
+      }
+      reload();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [finalising, reload]);
+
   const memberHref = `/${companyPublicId}/stakeholders/${view.stakeholder.id}`;
   let body: React.ReactNode = null;
 

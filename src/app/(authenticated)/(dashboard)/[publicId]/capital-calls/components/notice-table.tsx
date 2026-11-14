@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InstantTime } from "@/components/common/instant-time";
 import { IsoDateText, Money } from "@/components/llc/money";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -36,10 +37,9 @@ export function NoticeStatusBadge({ status }: { status: Notice["status"] }) {
 }
 
 /** Instant (not a calendar date) shown in UTC so server and browser agree. */
+/** `sentAt` is an instant: its date in the company's time zone. */
 function SentAt({ at }: { at: Date | string | null }) {
-  if (at === null) return <span>—</span>;
-  const iso = (typeof at === "string" ? at : at.toISOString()).slice(0, 10);
-  return <IsoDateText date={iso} />;
+  return <InstantTime at={at} dateOnly />;
 }
 
 export function NoticeTable({

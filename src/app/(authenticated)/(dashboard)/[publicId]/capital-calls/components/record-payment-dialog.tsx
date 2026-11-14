@@ -155,7 +155,11 @@ export function RecordPaymentDialog({
               </div>
               <div className="grid gap-1.5">
                 <Label>Amount received</Label>
-                <MoneyInput value={amount} onChange={setAmount} />
+                <MoneyInput
+                  aria-label="Amount received"
+                  value={amount}
+                  onChange={setAmount}
+                />
                 <p className="text-xs text-muted-foreground">
                   Outstanding on this line: <Money cents={outstanding} />
                 </p>

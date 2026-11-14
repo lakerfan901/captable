@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { InstantTime } from "@/components/common/instant-time";
 import {
   centsFromText,
   DollarInput,
@@ -33,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAllowed } from "@/hooks/use-allowed";
-import { formatDateOnly, isValidDateOnly } from "@/lib/date-only";
+import { isValidDateOnly } from "@/lib/date-only";
 import { formatCents } from "@/lib/money";
 import states from "@/lib/states";
 import { getPresignedGetUrl } from "@/server/file-upload-actions";
@@ -301,8 +302,7 @@ export function W9Status() {
       {docs.map((d) => (
         <li key={d.id} className="flex items-center gap-3">
           <span>
-            W-9 received on {formatDateOnly(d.createdAt.slice(0, 10))} —{" "}
-            {d.name}
+            W-9 received on <InstantTime at={d.createdAt} dateOnly /> — {d.name}
           </span>
           {d.bucketKey ? (
             <Allow subject="documents" action="read">

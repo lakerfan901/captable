@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatInstant } from "@/lib/company-time";
 import { formatDateOnly } from "@/lib/date-only";
 import {
   MAX_NOTE_CHARS,
@@ -100,6 +101,7 @@ function Money({
       <Label>{label}</Label>
       <MoneyInput
         allowNegative
+        aria-label={label}
         value={value}
         onChange={onChange}
         disabled={disabled}
@@ -142,6 +144,7 @@ function AddLineForm({
         onChange={(e) => setLine({ ...line, paidOn: e.target.value })}
       />
       <Input
+        aria-label="Payee"
         placeholder="Payee"
         maxLength={200}
         value={line.payee}
@@ -149,6 +152,7 @@ function AddLineForm({
         onChange={(e) => setLine({ ...line, payee: e.target.value })}
       />
       <Input
+        aria-label="Purpose"
         placeholder="Purpose"
         maxLength={200}
         value={line.category}
@@ -235,7 +239,7 @@ export function ReportFiguresForm({
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="text-muted-foreground">
           {f.source
-            ? `From the ledger, as of the period end ${formatDateOnly(f.source.periodEnd)} (period ${formatDateOnly(f.source.periodStart)} – ${formatDateOnly(f.source.periodEnd)}; read ${new Date(f.source.fetchedAt).toLocaleString("en-US", { timeZone, dateStyle: "medium", timeStyle: "short" })}).`
+            ? `From the ledger, as of the period end ${formatDateOnly(f.source.periodEnd)} (period ${formatDateOnly(f.source.periodStart)} – ${formatDateOnly(f.source.periodEnd)}; read ${formatInstant(f.source.fetchedAt, timeZone)}).`
             : "Not loaded from the ledger yet."}
         </span>
         <Button
