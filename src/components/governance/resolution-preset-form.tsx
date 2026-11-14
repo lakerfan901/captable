@@ -87,10 +87,6 @@ const VOTE_BASIS_OPTIONS = [
     label: "Majority of the Disinterested Preferred Units",
   },
   {
-    value: "DISINTERESTED_67",
-    label: "67% of the Disinterested Preferred Units",
-  },
-  {
     value: "DISINTERESTED_70",
     label: "70% of the Disinterested Preferred Units",
   },

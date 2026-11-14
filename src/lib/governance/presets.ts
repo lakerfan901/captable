@@ -56,7 +56,6 @@ const VOTE_BASES = [
   "PREFERRED_MAJORITY",
   "PREFERRED_SUPERMAJORITY",
   "DISINTERESTED_MAJORITY",
-  "DISINTERESTED_67",
   "DISINTERESTED_70",
 ] as const satisfies readonly VoteBasis[];
 
