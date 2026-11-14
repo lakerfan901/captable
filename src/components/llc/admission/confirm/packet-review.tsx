@@ -2,8 +2,8 @@
 
 import { RiCheckboxCircleFill } from "@remixicon/react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { InstantTime } from "@/components/common/instant-time";
 import { PacketStageBadge } from "@/components/llc/admission/packet-stage-badge";
@@ -127,8 +127,16 @@ function Header() {
 function CountersignedBanner() {
   const { view } = useReview();
   const params = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  // A one-time cue: kept for this visit, then dropped from the address so a
+  // reload or a copied link does not show it again.
+  const [cued] = useState(() => params.get("countersigned") === "1");
+  useEffect(() => {
+    if (cued) router.replace(pathname, { scroll: false });
+  }, [cued, pathname, router]);
   const stage = view.packet.stage;
-  if (params.get("countersigned") !== "1") return null;
+  if (!cued) return null;
   if (stage !== "FINALISING" && stage !== "COMPLETE") return null;
   return (
     <Alert className="border-green-600/40 bg-green-50 text-green-900">
