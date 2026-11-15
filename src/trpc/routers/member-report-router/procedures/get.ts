@@ -15,7 +15,7 @@ import { loadK1Coverage } from "@/server/governance/k1-coverage";
 import { currentMailDelivery } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportGetSchema } from "../schema";
-import { deriveAudience } from "./audience";
+import { deriveAudience, loadPortalStates } from "./audience";
 import {
   asReportType,
   readFrozenContent,
@@ -27,7 +27,11 @@ import {
 // attachments (with the holder's name), recipients (link state, email log
 // state) and, for a DRAFT, the candidates the server would send it to.
 //
-// After send, the title, figures and text shown are the ones frozen at send.
+// After release (formerly "send"), the title, figures and text shown are the
+// ones frozen at release. The candidates are the default audience of the
+// release picker (`deriveAudience`; `audienceOptions` lists every holder).
+// `report.sentAt` is the release time; each recipient's `emailedAt` is its
+// email (04-investor-portal.md 5.5).
 
 export type ReportLinkState = "ACTIVE" | "EXPIRED" | "REVOKED";
 export type ReportEmailState = "NOT_SENT" | "SENT" | "FAILED" | "BOUNCED";
@@ -75,6 +79,7 @@ export const getProcedure = withLlcAccessControl
           emailLogId: true,
           firstViewedAt: true,
           viewCount: true,
+          addedById: true,
         },
       }),
       ctx.db.emailLog.findMany({
@@ -92,6 +97,50 @@ export const getProcedure = withLlcAccessControl
         },
       }),
     ]);
+
+    // Portal (04-investor-portal.md 5.5, package P4a): the holder's portal
+    // state, its first portal view of this report, and whether anything of
+    // this report was opened in the portal. Log convention (written by P5a):
+    // REPORT_VIEWED / REPORT_EXPORTED carry targetType "memberReport" and
+    // targetId = MemberReport.id; REPORT_FILE_OPENED carries targetType
+    // "memberReportAttachment" and targetId = MemberReportAttachment.id.
+    const recipientHolderIds = recipients.map((r) => r.stakeholderId);
+    const [portalStates, portalLogs] = await Promise.all([
+      loadPortalStates(ctx.db, companyId, recipientHolderIds),
+      recipientHolderIds.length === 0
+        ? []
+        : ctx.db.portalAccessLog.findMany({
+            where: {
+              companyId,
+              stakeholderId: { in: recipientHolderIds },
+              OR: [
+                { targetType: "memberReport", targetId: row.id },
+                ...(attachments.length > 0
+                  ? [
+                      {
+                        targetType: "memberReportAttachment",
+                        targetId: { in: attachments.map((a) => a.id) },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+            select: { stakeholderId: true, event: true, createdAt: true },
+          }),
+    ]);
+    const portalFirstViewed = new Map<string, Date>();
+    const portalTouched = new Set<string>();
+    for (const l of portalLogs) {
+      if (l.stakeholderId === null) continue;
+      portalTouched.add(l.stakeholderId);
+      if (
+        l.event === "REPORT_VIEWED" &&
+        !portalFirstViewed.has(l.stakeholderId)
+      ) {
+        portalFirstViewed.set(l.stakeholderId, l.createdAt);
+      }
+    }
 
     const holderIds = [
       ...new Set(
@@ -263,8 +312,20 @@ export const getProcedure = withLlcAccessControl
         doc,
         frozenHash: row.frozenHash,
         dueOn: ymdOrNull(row.dueOn),
+        /**
+         * When the report was RELEASED (frozen, recipients fixed). It is not
+         * an email date: since the investor portal a report can be released
+         * without email; each recipient's `emailedAt` says when it was
+         * emailed.
+         */
         sentAt: row.sentAt,
         sentById: row.sentById,
+        /** null: released before the portal existed (never published). */
+        publishedAt: row.publishedAt,
+        publishedById: row.publishedById,
+        /** Set while the report is withdrawn from the portal (P24). */
+        unpublishedAt: row.unpublishedAt,
+        unpublishedById: row.unpublishedById,
         authorId: row.authorId,
         filedDocumentId: row.filedDocumentId,
         createdAt: row.createdAt,
@@ -304,12 +365,30 @@ export const getProcedure = withLlcAccessControl
           tokenVersion: r.tokenVersion,
           tokenExpiresAt: r.tokenExpiresAt,
           linkState,
+          /** First email accepted by the mail server; null: never emailed. */
           sentAt: r.sentAt,
+          /** The same as `sentAt`, under the name the portal plan uses. */
+          emailedAt: r.sentAt,
           sendCount: r.sendCount,
+          /** First view through the emailed link (token page). */
           firstViewedAt: r.firstViewedAt,
           viewCount: r.viewCount,
           emailState,
           lastEmailAt: email?.sentAt ?? email?.createdAt ?? null,
+          /** Member.id that confirmed this holder; null before the portal. */
+          addedById: r.addedById,
+          portal: portalStates.get(r.stakeholderId) ?? "NONE",
+          portalFirstViewedAt: portalFirstViewed.get(r.stakeholderId) ?? null,
+          /**
+           * Removal is allowed only for a recipient never emailed (no claim
+           * ever taken), never opened through the link and with no portal
+           * log row for this report (P19, 5.5 `removeRecipient`, P4b).
+           */
+          canRemove:
+            r.sendCount === 0 &&
+            r.sentAt === null &&
+            r.firstViewedAt === null &&
+            !portalTouched.has(r.stakeholderId),
         };
       }),
       emails,

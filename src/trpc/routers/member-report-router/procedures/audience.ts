@@ -1,12 +1,33 @@
 import "server-only";
 import type { Ymd } from "@/lib/governance/dates";
 import { TRANSFER_NOTICE_KINDS } from "@/lib/governance/report-figures";
-import { toMicro } from "@/lib/llc/voting";
+import { fromMicro, toMicro } from "@/lib/llc/voting";
+import {
+  type AudienceHolder,
+  type AudiencePresets,
+  audiencePresets,
+  type HolderMemberStatus,
+  type HolderPortalState,
+  isCurrentMember,
+  isTransferNotice,
+  type ReportType,
+} from "@/lib/portal/audience-core";
 import type { TPrismaOrTransaction } from "@/server/db";
+import { loadUnitPositions } from "@/server/governance/positions";
 import { listCurrentMembers } from "@/server/governance/recipients";
 
-// Who receives a member report (03-governance.md G12 send step 2; R22, R22a).
-// Always derived on the server; the client never chooses the audience.
+// Who receives a member report.
+//
+// Since the investor portal (04-investor-portal.md P18, package P4a) the
+// audience of a release is the list of holders the Manager user confirmed;
+// `loadAudienceHolders` builds every holder of the company with the facts
+// the pure checks of `@/lib/portal/audience-core` need (status, units, K-1,
+// notice address, portal state), and the presets that fill the picker.
+// The rule-based audience below (`deriveAudience`, 03-governance.md G12 send
+// step 2; R22, R22a) is the DEFAULT of that picker: the legacy
+// `memberReport.send` entry point releases to exactly it, and `get` lists it
+// as the draft's candidates. The two agree (asserted by
+// release.integration.ts):
 //
 // - QUARTERLY / ANNUAL / NOTICE: the current Members (`memberStatus MEMBER`
 //   with units > 0, suspended Members included). A Financial-Interest-only
@@ -112,4 +133,152 @@ export async function k1Holders(
         a.name.localeCompare(b.name, "en") ||
         (a.stakeholderId < b.stakeholderId ? -1 : 1),
     );
+}
+
+/**
+ * Portal state per holder (holders without an entry: "NONE"): ACTIVE when an
+ * ACTIVE access to the holder belongs to a portal user with a password set,
+ * INVITED when the only ACTIVE accesses have no password yet. DISABLED
+ * accesses do not count.
+ */
+export async function loadPortalStates(
+  tx: TPrismaOrTransaction,
+  companyId: string,
+  stakeholderIds: readonly string[],
+): Promise<Map<string, HolderPortalState>> {
+  const out = new Map<string, HolderPortalState>();
+  if (stakeholderIds.length === 0) return out;
+  const accesses = await tx.portalAccess.findMany({
+    where: {
+      companyId,
+      stakeholderId: { in: [...stakeholderIds] },
+      status: "ACTIVE",
+    },
+    select: {
+      stakeholderId: true,
+      portalUser: { select: { passwordHash: true } },
+    },
+  });
+  for (const a of accesses) {
+    if (out.get(a.stakeholderId) === "ACTIVE") continue;
+    out.set(
+      a.stakeholderId,
+      a.portalUser.passwordHash !== null ? "ACTIVE" : "INVITED",
+    );
+  }
+  return out;
+}
+
+/** One holder of the company as the release checks and the picker see it. */
+export interface AudienceCandidate extends AudienceHolder {
+  name: string;
+  /** `noticeEmail ?? email`, trimmed ("" when the holder has none). */
+  noticeEmail: string;
+  /** An ACTIVE access whose portal user has a password: ACTIVE; without one: INVITED. */
+  portal: HolderPortalState;
+}
+
+export interface AudienceContext {
+  /** Every holder of the company (prospects included, so the checks can name them), by name. */
+  holders: AudienceCandidate[];
+  /** The transferring Member of a transfer notice; null otherwise or when not linked. */
+  transferorId: string | null;
+  presets: AudiencePresets;
+  /**
+   * The holders whose selection (with email) closes the report's deadline
+   * (P22, `deadlineOutcome`): every current Member, or for a transfer
+   * notice the other Preferred Members (the default audience).
+   */
+  deadlineAudienceIds: string[];
+}
+
+/**
+ * P18. Every holder of the company with its status, units as of `today`
+ * (the same positions as `listCurrentMembers`), whether a K-1 of THIS
+ * report names it, its notice address and its portal state; the transferor
+ * of a transfer notice; and the presets. Read only: `release` calls it after
+ * taking the ledger, unit-class and report locks, `audienceOptions` without.
+ */
+export async function loadAudienceContext(
+  tx: TPrismaOrTransaction,
+  companyId: string,
+  report: { id: string; type: string; noticeKind: string | null },
+  today: Ymd,
+): Promise<AudienceContext> {
+  const type = report.type as ReportType;
+  const transfer = isTransferNotice(type, report.noticeKind)
+    ? await tx.unitTransfer.findFirst({
+        where: { companyId, noticeCopyReportId: report.id },
+        select: { fromStakeholderId: true },
+      })
+    : null;
+  const stakeholders = await tx.stakeholder.findMany({
+    where: { companyId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      noticeEmail: true,
+      memberStatus: true,
+    },
+  });
+  const positions = await loadUnitPositions(tx, companyId, today);
+  const k1 = await tx.memberReportAttachment.findMany({
+    where: {
+      reportId: report.id,
+      companyId,
+      kind: "K1",
+      stakeholderId: { not: null },
+    },
+    select: { stakeholderId: true },
+  });
+  const portal = await loadPortalStates(
+    tx,
+    companyId,
+    stakeholders.map((s) => s.id),
+  );
+
+  const units = new Map<string, { preferred: bigint; common: bigint }>();
+  for (const p of positions) {
+    const row = units.get(p.stakeholderId) ?? { preferred: 0n, common: 0n };
+    if (p.unitClassKind === "PREFERRED") row.preferred += toMicro(p.units);
+    else row.common += toMicro(p.units);
+    units.set(p.stakeholderId, row);
+  }
+  const k1For = new Set(
+    k1.flatMap((a) => (a.stakeholderId ? [a.stakeholderId] : [])),
+  );
+
+  const holders: AudienceCandidate[] = stakeholders
+    .map((s) => {
+      const u = units.get(s.id) ?? { preferred: 0n, common: 0n };
+      return {
+        stakeholderId: s.id,
+        name: s.name,
+        memberStatus: s.memberStatus as HolderMemberStatus,
+        preferredUnits: fromMicro(u.preferred),
+        commonUnits: fromMicro(u.common),
+        hasK1: k1For.has(s.id),
+        noticeEmail: (s.noticeEmail ?? s.email).trim(),
+        portal: portal.get(s.id) ?? "NONE",
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, "en") ||
+        (a.stakeholderId < b.stakeholderId ? -1 : 1),
+    );
+
+  const transferorId = transfer?.fromStakeholderId ?? null;
+  const presets = audiencePresets(
+    type,
+    report.noticeKind,
+    holders,
+    transferorId,
+  );
+  const deadlineAudienceIds = isTransferNotice(type, report.noticeKind)
+    ? (presets.presets.find((p) => p.key === "OTHER_PREFERRED_MEMBERS")
+        ?.stakeholderIds ?? [])
+    : holders.filter(isCurrentMember).map((h) => h.stakeholderId);
+  return { holders, transferorId, presets, deadlineAudienceIds };
 }

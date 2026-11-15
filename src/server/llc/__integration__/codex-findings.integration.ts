@@ -1683,8 +1683,10 @@ async function k1DeadlinesFollowCoverage() {
     (await k1Rows()).map((r) => r.status).join(","),
     "OPEN,OPEN",
   );
+  // `send` is the legacy entry point of `release` (04-investor-portal.md
+  // 5.5): the audit action is `memberReport.released` since P4a.
   const sentAudit = await db.audit.findFirst({
-    where: { companyId: c.id, action: "memberReport.sent" },
+    where: { companyId: c.id, action: "memberReport.released" },
     orderBy: { occurredAt: "desc" },
   });
   check(
