@@ -4,6 +4,7 @@ import {
   type ReportFigures,
 } from "../governance/report-figures";
 import {
+  dateCell,
   humanizeCategory,
   isExportableReportType,
   NONE_IN_PERIOD,
@@ -314,6 +315,23 @@ describe("helpers", () => {
     expect(isExportableReportType("ANNUAL")).toBe(true);
     expect(isExportableReportType("TAX_K1")).toBe(false);
     expect(isExportableReportType("NOTICE")).toBe(false);
+  });
+
+  test("a stored date that is not a calendar date stays as text", () => {
+    expect(dateCell("2026-02-31")).toEqual({
+      kind: "text",
+      value: "2026-02-31",
+    });
+    expect(dateCell("2026-02-28")).toEqual({ kind: "date", ymd: "2026-02-28" });
+    expect(dateCell(null)).toBeNull();
+    const f = figures();
+    const first = f.managerPayments.lines[0];
+    if (first) first.paidOn = "2026-02-31";
+    const sheet = reportWorkbook(input({ figures: f })).sheets[2];
+    expect(sheet?.rows[0]?.cells[1]).toEqual({
+      kind: "text",
+      value: "2026-02-31",
+    });
   });
 
   test("ymdInZone is the calendar day in that zone", () => {

@@ -15,9 +15,11 @@ import {
 } from "../company-time";
 import type { ReportFigures } from "../governance/report-figures";
 import {
-  date as dateCell,
+  type Cell,
+  date,
   type HeadingLine,
   money,
+  parseYmd,
   percent,
   type SheetModel,
   type SheetRow,
@@ -28,6 +30,16 @@ import {
 } from "./workbook-model";
 
 export type ExportableReportType = "QUARTERLY" | "ANNUAL";
+
+/**
+ * A date cell, or the stored text when it is not a calendar date: the figures
+ * schema checks the shape of a date only, so "2026-02-31" can be stored, and
+ * it must not make a released report impossible to export.
+ */
+export function dateCell(ymd: string | null): Cell {
+  if (ymd === null) return null;
+  return parseYmd(ymd) ? date(ymd) : text(ymd);
+}
 
 export function isExportableReportType(
   type: string,
