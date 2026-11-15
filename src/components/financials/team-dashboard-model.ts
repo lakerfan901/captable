@@ -170,11 +170,24 @@ const METRIC_BY_KEY = new Map(FUND_METRICS.map((m) => [m.key, m]));
 
 type Unit = "cents" | "bps" | "dpiBps";
 
-/** The label and unit of a fund field path ("expensesByCategory.POWER" → "Expenses: Power"). */
-export function fieldLabel(field: string): { label: string; unit: Unit } {
+/**
+ * A path's head and the rest. For the breakdown lists, `compareFundMonths`
+ * gives "expensesByCategory.POWER" when the line exists on one side only and
+ * "expensesByCategory.POWER.amount" when it exists on both; the suffix is
+ * dropped so `rest` is the category or kind.
+ */
+function splitPath(field: string): { head: string; rest: string } {
   const dot = field.indexOf(".");
   const head = dot < 0 ? field : field.slice(0, dot);
-  const rest = dot < 0 ? "" : field.slice(dot + 1);
+  let rest = dot < 0 ? "" : field.slice(dot + 1);
+  if (head === "expensesByCategory") rest = rest.replace(/\.amount$/, "");
+  if (head === "reservesByKind") rest = rest.replace(/\.balance$/, "");
+  return { head, rest };
+}
+
+/** The label and unit of a fund field path ("expensesByCategory.POWER" → "Expenses: Power"). */
+export function fieldLabel(field: string): { label: string; unit: Unit } {
+  const { head, rest } = splitPath(field);
   if (head === "expensesByCategory" && rest) {
     return { label: `Expenses: ${humanizeCategory(rest)}`, unit: "cents" };
   }
@@ -192,9 +205,7 @@ export function fieldValue(
   field: string,
 ): number | null {
   if (record === null) return null;
-  const dot = field.indexOf(".");
-  const head = dot < 0 ? field : field.slice(0, dot);
-  const rest = dot < 0 ? "" : field.slice(dot + 1);
+  const { head, rest } = splitPath(field);
   if (head === "expensesByCategory") {
     return (
       record.expensesByCategory.find((e) => e.category === rest)?.amount ?? null

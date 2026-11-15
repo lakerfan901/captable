@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { FundMonthJson } from "../../lib/llc/financial-series";
+import {
+  compareFundMonths,
+  type FundMonthJson,
+  fundMonthFromJson,
+} from "../../lib/llc/financial-series";
 import {
   type DriftEntry,
   defaultRange,
@@ -279,6 +283,56 @@ describe("restateRows", () => {
       "2 holders' own figures change: Alder LLC, Bexley Trust.",
     );
     expect(holdersSentence(drift({ month: "2026-03-01" }))).toBeNull();
+  });
+});
+
+describe("restateRows with the paths compareFundMonths produces", () => {
+  it("reads a line present on both sides (path with .amount / .balance)", () => {
+    const published = month("2026-05-01", {
+      expensesByCategory: [
+        { category: "INSURANCE", amount: 240_000 },
+        { category: "POWER", amount: 30_000 },
+      ],
+      reservesByKind: [{ kind: "MINIMUM_OPERATING", balance: 10_000 }],
+    });
+    const ledger = month("2026-05-01", {
+      expensesByCategory: [
+        { category: "INSURANCE", amount: 250_000 },
+        { category: "NETWORK", amount: 1_000 },
+        { category: "POWER", amount: 30_000 },
+      ],
+      reservesByKind: [{ kind: "MINIMUM_OPERATING", balance: 12_000 }],
+    });
+    const fields = compareFundMonths(
+      fundMonthFromJson(published),
+      fundMonthFromJson(ledger),
+    );
+    expect(fields).toContain("expensesByCategory.INSURANCE.amount");
+    expect(fields).toContain("expensesByCategory.NETWORK");
+    expect(fields).toContain("reservesByKind.MINIMUM_OPERATING.balance");
+    const rows = restateRows(
+      drift({ month: "2026-05-01", fields, published, ledger }),
+    );
+    expect(rows).toEqual([
+      {
+        field: "expensesByCategory.INSURANCE.amount",
+        label: "Expenses: Insurance",
+        before: "$2,400.00",
+        after: "$2,500.00",
+      },
+      {
+        field: "expensesByCategory.NETWORK",
+        label: "Expenses: Network",
+        before: "—",
+        after: "$10.00",
+      },
+      {
+        field: "reservesByKind.MINIMUM_OPERATING.balance",
+        label: "Reserves: Minimum operating",
+        before: "$100.00",
+        after: "$120.00",
+      },
+    ]);
   });
 });
 

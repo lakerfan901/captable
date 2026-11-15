@@ -561,7 +561,10 @@ export function ReleaseDialog({
       }
       void report.refetch();
       void options.refetch();
-      if (checkFigures) void reconcile.refetch();
+      // The fresh check replaces the refusal's list once it is back.
+      if (checkFigures) {
+        void reconcile.refetch().then(() => setRefusal(null));
+      }
     }
   };
 

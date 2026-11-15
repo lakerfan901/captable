@@ -92,7 +92,8 @@ export function ReconciliationBlock({
             ) : null}
             <span className="text-xs text-muted-foreground">
               Refreshing replaces these figures with the ledger&rsquo;s and
-              keeps the notes. Or correct the ledger and check again.
+              keeps the notes. Or correct the ledger, then open this dialog
+              again.
             </span>
           </div>
         </div>
