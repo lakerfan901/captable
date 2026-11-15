@@ -2,11 +2,10 @@ import { TRPCError } from "@trpc/server";
 import Link from "next/link";
 import { PageLayout } from "@/components/dashboard/page-layout";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card } from "@/components/ui/card";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { requireLlc } from "@/server/entity";
 import { api } from "@/trpc/server";
-import { FinancialsTabs } from "./components/shared";
+import { FinancialsBody, FinancialsTabs } from "./components/shared";
 
 /**
  * Tab bar for the financials section. Also surfaces the rule violation every
@@ -55,7 +54,7 @@ export default async function FinancialsLayout({
           </AlertDescription>
         </Alert>
       ) : null}
-      <Card className="p-5">{children}</Card>
+      <FinancialsBody publicId={entity.publicId}>{children}</FinancialsBody>
     </PageLayout>
   );
 }
