@@ -1,12 +1,12 @@
 // portal.findReport (04-investor-portal.md 5.4, 5.9).
 // P0 stub: package P5a replaces this file; router.ts stays as it is.
-// The base is `withoutAuth` until P2 replaces it with the portal procedure
-// base (`src/trpc/api/portal-procedure.ts`). A stub reads nothing.
+// P2a set the base to `portalSessionProcedure` (src/trpc/api/portal-procedure.ts), so
+// even the stub requires a portal session. A stub reads nothing.
 
 import { TRPCError } from "@trpc/server";
-import { withoutAuth } from "@/trpc/api/trpc";
+import { portalSessionProcedure } from "@/trpc/api/portal-procedure";
 
-export const findReportProcedure = withoutAuth.query(() => {
+export const findReportProcedure = portalSessionProcedure.query(() => {
   throw new TRPCError({
     code: "NOT_IMPLEMENTED",
     message: "portal.findReport is not implemented yet.",
