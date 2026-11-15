@@ -92,6 +92,37 @@ const emitted: { name: string; data: Record<string, unknown> }[] = [];
   return Promise.resolve();
 };
 
+// `Bucket` has no `companyId` column, so the harness cleanup cannot see the
+// K-1 files: they are tracked here and deleted by the last scenario.
+const createdBucketIds: string[] = [];
+
+async function testBucket(key: string) {
+  const bucket = await db.bucket.create({
+    data: {
+      name: key.split("/").pop() ?? "k1.pdf",
+      key,
+      mimeType: "application/pdf",
+      size: 1,
+      tags: [],
+    },
+  });
+  createdBucketIds.push(bucket.id);
+  return bucket;
+}
+
+async function deleteBuckets() {
+  section("cleanup: the K-1 files of this run");
+  await db.memberReportAttachment.deleteMany({
+    where: { bucketId: { in: createdBucketIds } },
+  });
+  await db.bucket.deleteMany({ where: { id: { in: createdBucketIds } } });
+  eq(
+    "no bucket of this run is left",
+    await db.bucket.count({ where: { id: { in: createdBucketIds } } }),
+    0,
+  );
+}
+
 const FIXED_FETCHED_AT = "2026-11-15T00:00:00.000Z";
 
 function paragraph(text: string) {
@@ -209,15 +240,7 @@ async function k1Draft(f: Fixture) {
     relatedId: target.id,
   });
   for (const h of [f.A, f.B, f.C, f.F]) {
-    const bucket = await db.bucket.create({
-      data: {
-        name: `k1-${h.id}.pdf`,
-        key: `${f.c.id}/zz-k1/${h.id}.pdf`,
-        mimeType: "application/pdf",
-        size: 1,
-        tags: [],
-      },
-    });
+    const bucket = await testBucket(`${f.c.id}/zz-k1/${h.id}.pdf`);
     await f.reports.addAttachment({
       publicId,
       bucketId: bucket.id,
@@ -950,15 +973,7 @@ async function k1DraftFor(f: Fixture, holders: { id: string }[]) {
     fiscalYear: 2026,
   });
   for (const h of holders) {
-    const bucket = await db.bucket.create({
-      data: {
-        name: `k1-${h.id}.pdf`,
-        key: `${f.c.id}/zz-k1b/${h.id}.pdf`,
-        mimeType: "application/pdf",
-        size: 1,
-        tags: [],
-      },
-    });
+    const bucket = await testBucket(`${f.c.id}/zz-k1b/${h.id}.pdf`);
     await f.reports.addAttachment({
       publicId,
       bucketId: bucket.id,
@@ -1409,7 +1424,10 @@ async function portalColumns() {
 
 await runScenarios(
   RECORD
-    ? [["record baseline", record]]
+    ? [
+        ["record baseline", record],
+        ["K-1 files", deleteBuckets],
+      ]
     : [
         ["same as the recorded send", sameAsRecordedSend],
         ["portal only", portalOnly],
@@ -1421,5 +1439,6 @@ await runScenarios(
         ["concurrent release", concurrentRelease],
         ["mail guard", mailGuard],
         ["portal columns", portalColumns],
+        ["K-1 files", deleteBuckets],
       ],
 );
