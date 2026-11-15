@@ -26,8 +26,17 @@
  * change password; the procedure base (cookie only, Origin, team session,
  * other users' accesses); no token or password in any stored row.
  */
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
+import { NextRequest } from "next/server";
+import { POST as setPasswordPOST } from "@/app/(portal)/portal/auth/set-password/route";
+import { POST as signInPOST } from "@/app/(portal)/portal/auth/sign-in/route";
+import { POST as signOutPOST } from "@/app/(portal)/portal/auth/sign-out/route";
+import {
+  deliverPortalAccountEmail,
+  type PortalAccountEmailDeps,
+} from "@/jobs/portal-account-email";
 import type { PortalEventEnum } from "@/prisma/enums";
 import {
   check,
@@ -47,13 +56,16 @@ import {
   mintTokenForDelivery,
   peekToken,
   requestPasswordReset,
+  SIGN_IN_REFUSED_MESSAGE,
   setPasswordWithToken,
+  TOKEN_EXPIRED_MESSAGE,
   verifySignIn,
 } from "@/server/portal/account";
 import {
   type PortalAccountEmailData,
   portalAccountEmailJob,
 } from "@/server/portal/account-email";
+import { SIGN_IN_MIN_RESPONSE_MS } from "@/server/portal/http";
 import {
   loadPortalSession,
   portalCookieName,
@@ -1109,6 +1121,883 @@ async function noSecrets() {
 }
 
 // ---------------------------------------------------------------------------
+// 8. The account-email worker (P2b)
+
+interface CapturedMail {
+  to: string;
+  subject: string;
+  html: string;
+  log: Record<string, unknown>;
+}
+const mails: CapturedMail[] = [];
+const capture: PortalAccountEmailDeps = {
+  send: ((options, log) => {
+    mails.push({
+      to: String(options.to),
+      subject: String(options.subject),
+      html: String(options.html),
+      log: (log ?? {}) as Record<string, unknown>,
+    });
+    return Promise.resolve({
+      emailLogId: null,
+      sentAt: new Date(),
+      messageId: null,
+    });
+  }) as PortalAccountEmailDeps["send"],
+  now: () => new Date(),
+};
+const takeMails = () => mails.splice(0, mails.length);
+
+/** The set-password token in an email body, or null. */
+function linkToken(html: string): string | null {
+  const m = html.match(/\/portal\/set-password\/([A-Za-z0-9_-]{43})/);
+  return m?.[1] ?? null;
+}
+
+async function tokenHashOf(tokenId: string) {
+  return (
+    await db.portalAccountToken.findUniqueOrThrow({ where: { id: tokenId } })
+  ).tokenHash;
+}
+
+function issueOnly(
+  portalUserId: string,
+  purpose: "SET_PASSWORD" | "RESET_PASSWORD",
+  now?: Date,
+) {
+  return db.$transaction((tx) =>
+    issueToken(tx, { portalUserId, purpose, requestIp: FACTS.ip, now }),
+  );
+}
+
+async function worker() {
+  section("8. account-email worker");
+  const user = await newPortalUser("mail");
+  const access = await grant(user.id, companyA.id, holderA.id);
+  const other = await newPortalUser("mail-other");
+  const otherAccess = await grant(other.id, companyA.id, holderB.id);
+
+  // INVITE: one email, the link works, nothing secret outside the body.
+  const { tokenId } = await issueOnly(user.id, "SET_PASSWORD");
+  const hashBefore = await tokenHashOf(tokenId);
+  const r1 = await deliverPortalAccountEmail(
+    { kind: "INVITE", tokenId },
+    capture,
+  );
+  const [invite] = takeMails();
+  eq("INVITE is sent", r1, "SENT");
+  check("INVITE goes to the portal user's address", invite?.to === user.email);
+  const t1 = linkToken(invite?.html ?? "");
+  check("the invitation carries a set-password link", t1 !== null);
+  if (t1) SECRETS.push(t1);
+  eq(
+    "the emailed link opens the form for that address",
+    (await peekToken(db, t1))?.email,
+    user.email,
+  );
+  check(
+    "the token row was minted (its hash changed)",
+    (await tokenHashOf(tokenId)) !== hashBefore,
+  );
+  check(
+    "the subject names the company, not the link",
+    invite?.subject ===
+      `You have been invited to the ${companyA.name} investor portal` &&
+      !invite.subject.includes(t1 ?? "@@"),
+    invite?.subject,
+  );
+  check(
+    "the body names the holder and the 7-day expiry",
+    (invite?.html ?? "").includes("Holder A") &&
+      (invite?.html ?? "").includes("7 days"),
+  );
+  check(
+    "INVITE log context: kind, company and holder given explicitly",
+    invite?.log.kind === "portal.invite" &&
+      invite.log.companyId === companyA.id &&
+      invite.log.stakeholderId === holderA.id &&
+      invite.log.relatedType === "portalAccess" &&
+      invite.log.relatedId === access.id,
+    JSON.stringify(invite?.log),
+  );
+  check(
+    "the log context carries no token",
+    !JSON.stringify(invite?.log).includes(t1 ?? "@@"),
+  );
+
+  // A second delivery (a retry) mints again: only the latest link works.
+  const r2 = await deliverPortalAccountEmail(
+    { kind: "INVITE", tokenId },
+    capture,
+  );
+  const [again] = takeMails();
+  const t2 = linkToken(again?.html ?? "");
+  if (t2) SECRETS.push(t2);
+  check(
+    "a retried INVITE sends a new link",
+    r2 === "SENT" && t2 !== null && t2 !== t1,
+  );
+  check("the earlier link no longer works", (await peekToken(db, t1)) === null);
+
+  // An accessId of another user is ignored: the email names this user's holder.
+  const r3 = await deliverPortalAccountEmail(
+    { kind: "INVITE", tokenId, accessId: otherAccess.id },
+    capture,
+  );
+  const [foreign] = takeMails();
+  const t3 = linkToken(foreign?.html ?? "");
+  if (t3) SECRETS.push(t3);
+  check(
+    "INVITE with another user's accessId names this user's own holder",
+    r3 === "SENT" &&
+      foreign?.to === user.email &&
+      foreign.log.stakeholderId === holderA.id &&
+      !(foreign.html ?? "").includes("Holder B"),
+    JSON.stringify(foreign?.log),
+  );
+
+  // A used token: nothing is sent, nothing is minted.
+  const set = await setPasswordWithToken(db, {
+    token: t3,
+    password: GOOD,
+    ...FACTS,
+  });
+  check("the latest link sets the password", set.ok);
+  if (set.ok) SECRETS.push(set.sessionToken);
+  const changed = takeEmits();
+  const usedHash = await tokenHashOf(tokenId);
+  eq(
+    "a used token: nothing sent",
+    await deliverPortalAccountEmail({ kind: "INVITE", tokenId }, capture),
+    "TOKEN_UNUSABLE",
+  );
+  check(
+    "a used token is not minted again",
+    (await tokenHashOf(tokenId)) === usedHash && takeMails().length === 0,
+  );
+
+  // An expired token.
+  const old = await issueOnly(
+    user.id,
+    "RESET_PASSWORD",
+    new Date(Date.now() - 2 * 60 * 60_000),
+  );
+  eq(
+    "an expired token: nothing sent",
+    await deliverPortalAccountEmail(
+      { kind: "RESET", tokenId: old.tokenId },
+      capture,
+    ),
+    "TOKEN_UNUSABLE",
+  );
+  eq("no email for the expired token", takeMails().length, 0);
+
+  // RESET: 60 minutes, no company named, no holder matched by address.
+  const reset = await issueOnly(user.id, "RESET_PASSWORD");
+  eq(
+    "RESET is sent",
+    await deliverPortalAccountEmail(
+      { kind: "RESET", tokenId: reset.tokenId },
+      capture,
+    ),
+    "SENT",
+  );
+  const [resetMail] = takeMails();
+  const t4 = linkToken(resetMail?.html ?? "");
+  if (t4) SECRETS.push(t4);
+  check(
+    "the reset email carries a working link valid 60 minutes",
+    t4 !== null &&
+      (await peekToken(db, t4)) !== null &&
+      (resetMail?.html ?? "").includes("60 minutes"),
+  );
+  check(
+    "RESET log context: kind only, no company or holder",
+    resetMail?.log.kind === "portal.password-reset" &&
+      resetMail.log.companyId === undefined &&
+      resetMail.log.stakeholderId === undefined,
+    JSON.stringify(resetMail?.log),
+  );
+  eq(
+    "RESET subject",
+    resetMail?.subject,
+    "Set a new password for the investor portal",
+  );
+
+  // PASSWORD_CHANGED from the set above: no link.
+  const changedJob = changed.find((e) => e.kind === "PASSWORD_CHANGED");
+  check(
+    "setting the password queued PASSWORD_CHANGED",
+    changedJob !== undefined,
+  );
+  if (changedJob) {
+    eq(
+      "PASSWORD_CHANGED is sent",
+      await deliverPortalAccountEmail(changedJob, capture),
+      "SENT",
+    );
+    const [pc] = takeMails();
+    check(
+      "the password-changed email carries no link",
+      pc !== undefined &&
+        !pc.html.includes("/portal/") &&
+        !/href="https?:/.test(pc.html) &&
+        pc.subject === "Your investor portal password was changed" &&
+        pc.log.kind === "portal.password-changed",
+    );
+    eq(
+      "an event id of another kind is not sent as LOCKED",
+      await deliverPortalAccountEmail(
+        { kind: "LOCKED", eventId: changedJob.eventId },
+        capture,
+      ),
+      "NOT_FOUND",
+    );
+  }
+
+  // LOCKED: five wrong passwords.
+  for (let i = 0; i < 5; i++) {
+    await verifySignIn(db, { email: user.email, password: WRONG, ...FACTS });
+  }
+  const lockJob = takeEmits().find((e) => e.kind === "LOCKED");
+  check("the lock queued LOCKED", lockJob !== undefined);
+  if (lockJob) {
+    eq(
+      "LOCKED is sent",
+      await deliverPortalAccountEmail(lockJob, capture),
+      "SENT",
+    );
+    const [lk] = takeMails();
+    check(
+      "the lock email says 15 minutes, how to reset, and has no link",
+      lk?.html.includes("15 minutes") === true &&
+        lk.html.includes("Forgot") &&
+        !lk.html.includes("/portal/") &&
+        lk.log.kind === "portal.account-locked",
+    );
+  }
+
+  // ACCESS_ADDED: sign-in link, no token.
+  eq(
+    "ACCESS_ADDED is sent",
+    await deliverPortalAccountEmail(
+      { kind: "ACCESS_ADDED", accessId: access.id },
+      capture,
+    ),
+    "SENT",
+  );
+  const [added] = takeMails();
+  check(
+    "ACCESS_ADDED links to the sign-in page only",
+    added?.html.includes(`${BASE}/portal/sign-in`) === true &&
+      linkToken(added.html) === null &&
+      added.subject === "You now have access to Holder A" &&
+      added.log.stakeholderId === holderA.id,
+    added?.subject,
+  );
+
+  // No ACTIVE access (P9): nothing minted, nothing sent.
+  await db.portalAccess.update({
+    where: { id: access.id },
+    data: { status: "DISABLED" },
+  });
+  const p9 = await issueOnly(user.id, "RESET_PASSWORD");
+  const p9Hash = await tokenHashOf(p9.tokenId);
+  eq(
+    "RESET for a user without ACTIVE access: nothing sent",
+    await deliverPortalAccountEmail(
+      { kind: "RESET", tokenId: p9.tokenId },
+      capture,
+    ),
+    "NO_ACTIVE_ACCESS",
+  );
+  check(
+    "and the token was not minted",
+    (await tokenHashOf(p9.tokenId)) === p9Hash && takeMails().length === 0,
+  );
+  eq(
+    "ACCESS_ADDED for a disabled access: nothing sent",
+    await deliverPortalAccountEmail(
+      { kind: "ACCESS_ADDED", accessId: access.id },
+      capture,
+    ),
+    "NO_ACTIVE_ACCESS",
+  );
+  await db.portalAccess.update({
+    where: { id: access.id },
+    data: { status: "ACTIVE" },
+  });
+
+  // Production with the mail catcher: nothing minted, nothing sent.
+  const guard = await issueOnly(user.id, "RESET_PASSWORD");
+  const guardHash = await tokenHashOf(guard.tokenId);
+  const savedNodeEnv = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "production" });
+  let blocked: string;
+  try {
+    blocked = await deliverPortalAccountEmail(
+      { kind: "RESET", tokenId: guard.tokenId },
+      capture,
+    );
+  } finally {
+    Object.assign(process.env, { NODE_ENV: savedNodeEnv });
+  }
+  eq("production with the mail catcher: nothing sent", blocked, "MAIL_BLOCKED");
+  check(
+    "and nothing minted",
+    (await tokenHashOf(guard.tokenId)) === guardHash &&
+      takeMails().length === 0,
+  );
+
+  // One real send through sendMail: the EmailLog row and the mail catcher.
+  eq(
+    "a real RESET send through sendMail",
+    await deliverPortalAccountEmail({ kind: "RESET", tokenId: guard.tokenId }),
+    "SENT",
+  );
+  const logs = await db.emailLog.findMany({
+    where: { toAddress: user.email, kind: "portal.password-reset" },
+  });
+  check(
+    "one EmailLog row, SENT, no company or holder",
+    logs.length === 1 &&
+      logs[0]?.status === "SENT" &&
+      logs[0].companyId === null &&
+      logs[0].stakeholderId === null,
+    JSON.stringify(logs.map((l) => [l.status, l.companyId, l.stakeholderId])),
+  );
+  const caught = await mailCatcherBody(user.email);
+  const t5 = caught === null ? null : linkToken(caught);
+  if (t5) SECRETS.push(t5);
+  check("the mail catcher received the reset email", t5 !== null);
+  check("its link works", t5 !== null && (await peekToken(db, t5)) !== null);
+  check(
+    "the EmailLog row carries no token",
+    t5 !== null && !JSON.stringify(logs).includes(t5),
+  );
+  check(
+    "other user untouched",
+    (await db.portalAccountToken.count({
+      where: { portalUserId: other.id },
+    })) === 0,
+  );
+}
+
+/** The HTML of the newest message to `address` in the local mail catcher (Mailpit), or null. */
+async function mailCatcherBody(address: string): Promise<string | null> {
+  try {
+    const search = await fetch(
+      `http://localhost:8025/api/v1/search?query=${encodeURIComponent(`to:"${address}"`)}&limit=1`,
+    );
+    const found = (await search.json()) as { messages?: { ID: string }[] };
+    const id = found.messages?.[0]?.ID;
+    if (!id) return null;
+    const message = await fetch(`http://localhost:8025/api/v1/message/${id}`);
+    const body = (await message.json()) as { HTML?: string };
+    return body.HTML ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 9. Route handlers (P2b): Origin, cookie, next, neutral refusals, sign-out
+
+function post(
+  path: string,
+  opts: {
+    body?: unknown;
+    raw?: string;
+    origin?: string | null;
+    cookie?: string;
+    contentType?: string;
+    base?: string;
+  } = {},
+) {
+  const base = opts.base ?? BASE;
+  const headers = new Headers({
+    "content-type": opts.contentType ?? "application/json",
+    "user-agent": FACTS.userAgent,
+    "x-forwarded-for": FACTS.ip,
+  });
+  const origin = opts.origin === undefined ? base : opts.origin;
+  if (origin !== null) headers.set("origin", origin);
+  if (opts.cookie) headers.set("cookie", opts.cookie);
+  return new NextRequest(`${base}${path}`, {
+    method: "POST",
+    headers,
+    body:
+      opts.raw ??
+      (opts.body === undefined ? undefined : JSON.stringify(opts.body)),
+  });
+}
+
+/** The portal session cookie's value from a response, or null. */
+function sessionFrom(response: Response): string | null {
+  for (const line of response.headers.getSetCookie()) {
+    const [pair] = line.split(";");
+    const [name, value] = (pair ?? "").split("=");
+    if (name === portalCookieName() && value) return value;
+  }
+  return null;
+}
+
+function cookieLine(response: Response): string {
+  return (
+    response.headers
+      .getSetCookie()
+      .find((l) => l.startsWith(`${portalCookieName()}=`)) ?? ""
+  );
+}
+
+async function timed<T>(fn: () => Promise<T>): Promise<[T, number]> {
+  const start = Date.now();
+  const value = await fn();
+  return [value, Date.now() - start];
+}
+
+async function handlers() {
+  section("9. route handlers");
+  const { user } = await withPassword("route");
+  const sessionsBefore = await liveSessions(user.id);
+
+  // Origin first (S17): missing, "null", foreign, other scheme or port.
+  for (const [label, origin] of [
+    ["no Origin", null],
+    ["Origin: null", "null"],
+    ["a foreign Origin", "https://evil.example"],
+    ["another port", "http://localhost:3001"],
+    ["another scheme", "https://localhost:3000"],
+  ] as const) {
+    const res = await signInPOST(
+      post("/portal/auth/sign-in", {
+        origin,
+        body: { email: user.email, password: GOOD },
+      }),
+    );
+    check(
+      `sign-in with ${label} is refused 403, no cookie`,
+      res.status === 403 && sessionFrom(res) === null,
+    );
+  }
+  const afterOrigin = await db.portalUser.findUniqueOrThrow({
+    where: { id: user.id },
+  });
+  check(
+    "refused origins created no session and counted nothing",
+    (await liveSessions(user.id)) === sessionsBefore &&
+      afterOrigin.failedSignIns === 0,
+  );
+  for (const [name, handler, path] of [
+    ["set-password", setPasswordPOST, "/portal/auth/set-password"],
+    ["sign-out", signOutPOST, "/portal/auth/sign-out"],
+  ] as const) {
+    const res = await handler(
+      post(path, { origin: "https://evil.example", body: {} }),
+    );
+    eq(`${name} with a foreign Origin is refused 403`, res.status, 403);
+  }
+
+  // Success: cookie attributes on http (5.2 "Cookie").
+  const ok = await signInPOST(
+    post("/portal/auth/sign-in", {
+      body: {
+        email: user.email.toUpperCase(),
+        password: GOOD,
+        next: "/portal/go/report/r1",
+      },
+    }),
+  );
+  const okBody = (await ok.json()) as { ok: boolean; next: string };
+  const session = sessionFrom(ok);
+  if (session) SECRETS.push(session);
+  check(
+    "sign-in answers 200 with the safe next",
+    ok.status === 200 && okBody.ok && okBody.next === "/portal/go/report/r1",
+    JSON.stringify(okBody),
+  );
+  const line = cookieLine(ok).toLowerCase();
+  check(
+    "cookie portal_session; HttpOnly; SameSite=Lax; Path=/; Max-Age 7 days; no Domain; not Secure on http",
+    portalCookieName() === "portal_session" &&
+      line.includes("httponly") &&
+      line.includes("samesite=lax") &&
+      line.includes("path=/") &&
+      line.includes("max-age=604800") &&
+      !line.includes("domain=") &&
+      !line.includes("secure"),
+    line.replace(session ?? "@@", "<value>"),
+  );
+  check(
+    "Cache-Control: no-store",
+    ok.headers.get("cache-control") === "no-store",
+  );
+  check(
+    "the cookie is a live session of that user",
+    session !== null &&
+      (await loadPortalSession(db, `${portalCookieName()}=${session}`))
+        ?.portalUser.id === user.id,
+  );
+
+  // Open-redirect attempts all become /portal (S16).
+  for (const next of [
+    "//evil.example",
+    "https://evil.example/portal/",
+    "/\\evil.example",
+    "/portal/../login",
+    "/portal//evil.example",
+    "/portal/auth/sign-out",
+    "/portal/sign-in?next=//evil.example",
+    "/login",
+    "/portal%2F..%2Flogin",
+    "javascript:alert(1)",
+  ]) {
+    const res = await signInPOST(
+      post("/portal/auth/sign-in", {
+        body: { email: user.email, password: GOOD, next },
+      }),
+    );
+    const body = (await res.json()) as { next?: string };
+    const s = sessionFrom(res);
+    if (s) SECRETS.push(s);
+    eq(`next ${JSON.stringify(next)} becomes /portal`, body.next, "/portal");
+  }
+
+  // Every refusal: one status, one body, at least the floor (S10).
+  const refusals: [string, NextRequest][] = [
+    [
+      "unknown address",
+      post("/portal/auth/sign-in", {
+        body: { email: `${EMAIL_PREFIX}nobody@example.com`, password: GOOD },
+      }),
+    ],
+    [
+      "wrong password",
+      post("/portal/auth/sign-in", {
+        body: { email: user.email, password: WRONG },
+      }),
+    ],
+    [
+      "no password field",
+      post("/portal/auth/sign-in", { body: { email: user.email } }),
+    ],
+    ["malformed JSON", post("/portal/auth/sign-in", { raw: "{not json" })],
+    [
+      "a form body",
+      post("/portal/auth/sign-in", {
+        raw: `email=${user.email}&password=${GOOD}`,
+        contentType: "application/x-www-form-urlencoded",
+      }),
+    ],
+    [
+      "an oversized body",
+      post("/portal/auth/sign-in", {
+        body: { email: user.email, password: GOOD, pad: "x".repeat(5000) },
+      }),
+    ],
+  ];
+  const shapes = new Set<string>();
+  for (const [label, request] of refusals) {
+    const [res, ms] = await timed(() => signInPOST(request));
+    const body = await res.text();
+    shapes.add(`${res.status} ${body}`);
+    check(
+      `${label}: 401, no cookie, not before ${SIGN_IN_MIN_RESPONSE_MS} ms`,
+      res.status === 401 &&
+        sessionFrom(res) === null &&
+        ms >= SIGN_IN_MIN_RESPONSE_MS - 5,
+      `${res.status} in ${ms} ms`,
+    );
+  }
+  check(
+    "every refusal has the same status and body",
+    shapes.size === 1 &&
+      [...shapes][0] ===
+        `401 ${JSON.stringify({ ok: false, error: SIGN_IN_REFUSED_MESSAGE })}`,
+    [...shapes].join(" | "),
+  );
+  await db.portalUser.update({
+    where: { id: user.id },
+    data: { failedSignIns: 0 },
+  });
+
+  // Timing: a known address with a wrong password and an unknown address.
+  const known: number[] = [];
+  const unknown: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    known.push(
+      (
+        await timed(() =>
+          signInPOST(
+            post("/portal/auth/sign-in", {
+              body: { email: user.email, password: WRONG },
+            }),
+          ),
+        )
+      )[1],
+    );
+    unknown.push(
+      (
+        await timed(() =>
+          signInPOST(
+            post("/portal/auth/sign-in", {
+              body: {
+                email: `${EMAIL_PREFIX}ghost${i}@example.com`,
+                password: WRONG,
+              },
+            }),
+          ),
+        )
+      )[1],
+    );
+  }
+  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  check(
+    "known and unknown addresses answer in the same time (within 100 ms)",
+    Math.abs(avg(known) - avg(unknown)) < 100,
+    `known ${known.join("/")} ms, unknown ${unknown.join("/")} ms`,
+  );
+  await db.portalUser.update({
+    where: { id: user.id },
+    data: { failedSignIns: 0 },
+  });
+
+  // Set password through the handler.
+  const fresh = await newPortalUser("route-set");
+  await grant(fresh.id, companyA.id, holderA.id);
+  const link = await emailedToken(fresh.id, "SET_PASSWORD", {
+    nextPath: "/portal/go/report/r9",
+  });
+  const setReq = (password: string, confirm: string) =>
+    setPasswordPOST(
+      post("/portal/auth/set-password", {
+        body: { token: link.token, password, confirm },
+      }),
+    );
+  for (const [label, pw, confirm, reason] of [
+    ["a short password", "Short-pw-1", "Short-pw-1", "TOO_SHORT"],
+    ["a common password", "password1234", "password1234", "COMMON"],
+    ["a mismatched repeat", GOOD_2, `${GOOD_2}x`, "MISMATCH"],
+    [
+      "the email name",
+      `${fresh.email.split("@")[0]}-Long-1`,
+      `${fresh.email.split("@")[0]}-Long-1`,
+      "CONTAINS_EMAIL_NAME",
+    ],
+  ] as const) {
+    const res = await setReq(pw, confirm);
+    const body = (await res.json()) as { reason?: string; error?: string };
+    check(
+      `${label}: 400 ${reason} with a sentence, no cookie`,
+      res.status === 400 &&
+        body.reason === reason &&
+        typeof body.error === "string" &&
+        sessionFrom(res) === null,
+      JSON.stringify(body),
+    );
+  }
+  check(
+    "after the refusals the link still works",
+    (await peekToken(db, link.token)) !== null,
+  );
+  const setOk = await setReq(GOOD_2, GOOD_2);
+  const setBody = (await setOk.json()) as { ok: boolean; next: string };
+  const setSession = sessionFrom(setOk);
+  if (setSession) SECRETS.push(setSession);
+  check(
+    "a good password: 200, the token's next, a session cookie",
+    setOk.status === 200 &&
+      setBody.next === "/portal/go/report/r9" &&
+      setSession !== null,
+    JSON.stringify(setBody),
+  );
+  const again = await setReq(GOOD_3, GOOD_3);
+  const againBody = (await again.json()) as { reason?: string; error?: string };
+  check(
+    "the same link again: 410 EXPIRED",
+    again.status === 410 &&
+      againBody.reason === "EXPIRED" &&
+      againBody.error === TOKEN_EXPIRED_MESSAGE,
+  );
+  const bogus = await setPasswordPOST(
+    post("/portal/auth/set-password", {
+      body: { token: "x".repeat(43), password: GOOD_3, confirm: GOOD_3 },
+    }),
+  );
+  eq("an unknown token: 410", bogus.status, 410);
+  takeEmits();
+
+  // Sign-out.
+  const cookie = `${portalCookieName()}=${setSession}`;
+  const before = await logCount(fresh.id, "SIGNED_OUT");
+  const out = await signOutPOST(
+    post("/portal/auth/sign-out", { cookie, body: {} }),
+  );
+  const clear = cookieLine(out).toLowerCase();
+  check(
+    "sign-out: 303 to /portal/sign-in",
+    out.status === 303 && out.headers.get("location") === "/portal/sign-in",
+  );
+  check(
+    "sign-out clears the cookie with the same attributes",
+    clear.startsWith(`${portalCookieName()}=;`) &&
+      clear.includes("max-age=0") &&
+      clear.includes("httponly") &&
+      clear.includes("samesite=lax") &&
+      clear.includes("path=/"),
+    clear,
+  );
+  check(
+    "sign-out revokes the session",
+    (await loadPortalSession(db, cookie)) === null,
+  );
+  eq(
+    "SIGNED_OUT logged once",
+    (await logCount(fresh.id, "SIGNED_OUT")) - before,
+    1,
+  );
+  const out2 = await signOutPOST(
+    post("/portal/auth/sign-out", { cookie, body: {} }),
+  );
+  check(
+    "signing out again: the same 303, no second log row",
+    out2.status === 303 &&
+      (await logCount(fresh.id, "SIGNED_OUT")) - before === 1,
+  );
+  const anon = await signOutPOST(post("/portal/auth/sign-out", { body: {} }));
+  eq("sign-out without a cookie: the same 303", anon.status, 303);
+
+  // A duplicated cookie with two values is no session (parseCookie).
+  const s1 = await verifySignIn(db, {
+    email: fresh.email,
+    password: GOOD_2,
+    ...FACTS,
+  });
+  if (s1.ok) SECRETS.push(s1.sessionToken);
+  const dup = `${portalCookieName()}=${s1.ok ? s1.sessionToken : ""}; ${portalCookieName()}=${"y".repeat(43)}`;
+  await signOutPOST(post("/portal/auth/sign-out", { cookie: dup, body: {} }));
+  check(
+    "a doubled cookie signs nothing out",
+    s1.ok &&
+      (await loadPortalSession(
+        db,
+        `${portalCookieName()}=${s1.sessionToken}`,
+      )) !== null,
+  );
+
+  // https: run the cookie checks in a child process whose base URL is https
+  // (the env is read once per process).
+  const child = spawnSync(
+    process.execPath,
+    [...process.execArgv, ...process.argv.slice(1)],
+    {
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_BASE_URL: HTTPS_BASE,
+        PORTAL_HTTPS_CHILD: "1",
+        PORTAL_HTTPS_EMAIL: fresh.email,
+      },
+      encoding: "utf8",
+      timeout: 120_000,
+    },
+  );
+  const resultLine = (child.stdout ?? "")
+    .split("\n")
+    .find((l) => l.startsWith("HTTPS_RESULT "));
+  const results = resultLine
+    ? (JSON.parse(resultLine.slice("HTTPS_RESULT ".length)) as [
+        string,
+        boolean,
+        string,
+      ][])
+    : [];
+  check(
+    "the https child ran",
+    results.length > 0,
+    (child.stderr ?? "").slice(-400),
+  );
+  for (const [label, passed, detail] of results)
+    check(`https: ${label}`, passed, detail);
+  output.push(child.stdout ?? "", child.stderr ?? "");
+}
+
+const HTTPS_BASE = "https://portal.example.test";
+
+/** Runs in the child process (PORTAL_HTTPS_CHILD=1) with an https base URL. */
+async function httpsChild() {
+  const results: [string, boolean, string][] = [];
+  const add = (label: string, ok: boolean, detail = "") =>
+    results.push([label, ok, detail]);
+  try {
+    const email = process.env.PORTAL_HTTPS_EMAIL ?? "";
+    add(
+      "cookie name is __Host-portal_session",
+      portalCookieName() === "__Host-portal_session",
+    );
+    const plain = await signInPOST(
+      post("/portal/auth/sign-in", {
+        base: HTTPS_BASE,
+        origin: "http://portal.example.test",
+        body: { email, password: GOOD_2 },
+      }),
+    );
+    add("an http Origin is refused for an https app", plain.status === 403);
+    const res = await signInPOST(
+      post("/portal/auth/sign-in", {
+        base: HTTPS_BASE,
+        body: { email, password: GOOD_2 },
+      }),
+    );
+    const line = cookieLine(res).toLowerCase();
+    const value = sessionFrom(res);
+    add(
+      "sign-in sets __Host-portal_session; Secure; HttpOnly; SameSite=Lax; Path=/; no Domain",
+      res.status === 200 &&
+        line.startsWith("__host-portal_session=") &&
+        line.includes("; secure") &&
+        line.includes("httponly") &&
+        line.includes("samesite=lax") &&
+        line.includes("path=/") &&
+        !line.includes("domain="),
+      line.replace((value ?? "@@").toLowerCase(), "<value>"),
+    );
+    const out = await signOutPOST(
+      post("/portal/auth/sign-out", {
+        base: HTTPS_BASE,
+        cookie: `__Host-portal_session=${value}`,
+        body: {},
+      }),
+    );
+    const clear = cookieLine(out).toLowerCase();
+    add(
+      "sign-out clears it with Secure, HttpOnly, SameSite=Lax, Path=/, Max-Age=0",
+      out.status === 303 &&
+        clear.startsWith("__host-portal_session=;") &&
+        clear.includes("; secure") &&
+        clear.includes("httponly") &&
+        clear.includes("samesite=lax") &&
+        clear.includes("path=/") &&
+        clear.includes("max-age=0"),
+      clear,
+    );
+    add(
+      "and revokes the session",
+      value !== null &&
+        (await loadPortalSession(db, `__Host-portal_session=${value}`)) ===
+          null,
+    );
+  } catch (error) {
+    add(
+      "child ran without error",
+      false,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  console.log(`HTTPS_RESULT ${JSON.stringify(results)}`);
+  await db.$disconnect();
+}
+
+// ---------------------------------------------------------------------------
 
 async function cleanupPortal() {
   const sweep = await db.portalUser.findMany({
@@ -1123,6 +2012,9 @@ async function cleanupPortal() {
   });
   await db.portalAccess.deleteMany({ where: { portalUserId: { in: ids } } });
   await db.portalUser.deleteMany({ where: { id: { in: ids } } });
+  await db.emailLog.deleteMany({
+    where: { toAddress: { startsWith: EMAIL_PREFIX } },
+  });
   const left =
     (await db.portalUser.count({ where: { id: { in: ids } } })) +
     (await db.portalAccessLog.count({ where: { portalUserId: { in: ids } } })) +
@@ -1134,14 +2026,20 @@ async function cleanupPortal() {
   eq("portal rows removed", left, 0);
 }
 
-await runScenarios([
-  ["setup", setup],
-  ["invitation", invitationFlow],
-  ["lockout", lockout],
-  ["races", races],
-  ["expiry", expiry],
-  ["change password", change],
-  ["neutral answers and throttle", neutralAndThrottle],
-  ["no secrets", noSecrets],
-  ["portal cleanup", cleanupPortal],
-]);
+if (process.env.PORTAL_HTTPS_CHILD === "1") {
+  await httpsChild();
+} else {
+  await runScenarios([
+    ["setup", setup],
+    ["invitation", invitationFlow],
+    ["lockout", lockout],
+    ["races", races],
+    ["expiry", expiry],
+    ["change password", change],
+    ["neutral answers and throttle", neutralAndThrottle],
+    ["account-email worker", worker],
+    ["route handlers", handlers],
+    ["no secrets", noSecrets],
+    ["portal cleanup", cleanupPortal],
+  ]);
+}
