@@ -54,8 +54,14 @@ export function PortalShell(props: {
                     props.current === "account" ? "page" : undefined
                   }
                   id="change-password-link"
+                  aria-label="Change password"
                 >
-                  Change password
+                  {/* The narrowest phones (under 360px) get the short label
+                      so the three header items fit on one line. */}
+                  <span className="min-[360px]:hidden">Password</span>
+                  <span className="hidden min-[360px]:inline">
+                    Change password
+                  </span>
                 </Link>
               </Button>
               <SignOutButton size="sm" />
