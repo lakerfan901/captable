@@ -9,16 +9,18 @@
 // at once); the quarters and years of those months, each with the public id
 // of the report of that period it may open; the restatement notes of what it
 // sees (P35); the term clock. Without a published period: empty arrays, null
-// dates and no term clock. Holder records are read by `ctx.holder` only
-// (P36) and carry `holderId: "self"`, never an internal id (G4).
+// dates and no term clock. Read in one REPEATABLE READ transaction (one
+// state even while a Release or Restate commits). Holder records are read by
+// `ctx.holder` only (P36) and carry `holderId: "self"`, never an internal id
+// (G4).
 //
 // A query: the RSC page loads it, so it writes no access-log row (the plan
 // defines no event for viewing the dashboard; exporting it, P17, writes
 // FINANCIALS_EXPORTED).
 
-import { holderFinancialView } from "@/server/portal/financial-view";
+import { readHolderFinancialView } from "@/server/portal/financial-view";
 import { investorProcedure } from "@/trpc/api/portal-procedure";
 
 export const financialsGetProcedure = investorProcedure.query(({ ctx }) =>
-  holderFinancialView(ctx.db, ctx.holder, ctx.company),
+  readHolderFinancialView(ctx.db, ctx.holder, ctx.company),
 );

@@ -37,7 +37,11 @@ import type { Session } from "next-auth";
 import { reportFileJob } from "@/jobs/governance-report-file";
 import { fromDateOnly, toDateOnly } from "@/lib/date-only";
 import { todayInZone } from "@/lib/governance/dates";
-import { SELF_HOLDER_ID } from "@/lib/llc/financial-dashboard-core";
+import {
+  RESTATE_REASON_MAX_LENGTH,
+  RESTATE_REASON_MIN_LENGTH,
+  SELF_HOLDER_ID,
+} from "@/lib/llc/financial-dashboard-core";
 import { monthEnd, monthsBetween } from "@/lib/llc/financial-periods";
 import {
   type FundMonth,
@@ -75,6 +79,10 @@ import {
 } from "@/server/llc/economics/distributions";
 import { getPositions } from "@/server/llc/economics/ledger";
 import { getTermClock } from "@/server/llc/economics/term";
+import {
+  RESTATE_REASON_MAX,
+  RESTATE_REASON_MIN,
+} from "@/server/portal/financial-snapshot-write";
 import { createPortalSession, portalCookieName } from "@/server/portal/session";
 import { createCallerFactory } from "@/trpc/api/trpc";
 import { financialDashboardRouter } from "@/trpc/routers/financial-dashboard-router/router";
@@ -985,6 +993,11 @@ async function driftAndRestate() {
   );
 
   section("T-DASH-9: restate permissions and validation");
+  eq(
+    "the browser-safe reason bounds equal the write module's",
+    [RESTATE_REASON_MIN_LENGTH, RESTATE_REASON_MAX_LENGTH],
+    [RESTATE_REASON_MIN, RESTATE_REASON_MAX],
+  );
   const finOnly = dashboard(
     await customTeamContext(c, [
       { subject: "llc-financials", actions: ["read", "update"] },

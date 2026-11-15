@@ -21,6 +21,15 @@ import {
   type HolderMonthJson,
 } from "./financial-series";
 
+/**
+ * P35: the length of a Restate reason after trimming. The same numbers as
+ * `RESTATE_REASON_MIN` / `RESTATE_REASON_MAX` of the (server-only) write
+ * module, here so a browser form can validate with the router's input schema
+ * (the integration script checks the two agree).
+ */
+export const RESTATE_REASON_MIN_LENGTH = 10;
+export const RESTATE_REASON_MAX_LENGTH = 500;
+
 // ---------------------------------------------------------------------------
 // Holder records as they leave the server
 

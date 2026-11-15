@@ -1,12 +1,13 @@
 // Inputs of the team's financial dashboard procedures (04-investor-portal.md
-// 5.9 "Procedures"; package P13b).
+// 5.9 "Procedures"; package P13b). Safe for the browser (no server import),
+// so a form can validate with these schemas.
 import { z } from "zod";
 import { ZDateOnly } from "@/lib/date-only";
-import { isMonthKey } from "@/lib/llc/financial-periods";
 import {
-  RESTATE_REASON_MAX,
-  RESTATE_REASON_MIN,
-} from "@/server/portal/financial-snapshot-write";
+  RESTATE_REASON_MAX_LENGTH as RESTATE_REASON_MAX,
+  RESTATE_REASON_MIN_LENGTH as RESTATE_REASON_MIN,
+} from "@/lib/llc/financial-dashboard-core";
+import { isMonthKey } from "@/lib/llc/financial-periods";
 
 /** A month, as its first day ("2026-02-01"). */
 export const ZMonthKey = z

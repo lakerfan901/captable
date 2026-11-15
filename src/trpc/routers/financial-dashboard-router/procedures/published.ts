@@ -6,7 +6,7 @@
 // month, every restated month, the released quarterly and annual reports of
 // the periods; no holder records). With `asHolder` (a `Stakeholder.id`):
 // "Preview as", exactly the answer of `portal.financials.get` for that
-// holder, built by the same function (`holderFinancialView`); it also needs
+// holder, built by the same function (`readHolderFinancialView`); it also needs
 // `portal: read` (FORBIDDEN otherwise), and the holder is loaded by
 // `{ id, companyId }` (another company's id is NOT_FOUND).
 
@@ -15,7 +15,7 @@ import { RBAC } from "@/lib/rbac";
 import type { TPermission } from "@/lib/rbac/schema";
 import {
   companyPublishedView,
-  holderFinancialView,
+  readHolderFinancialView,
 } from "@/server/portal/financial-view";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZPublishedInput } from "../schema";
@@ -51,7 +51,7 @@ export const publishedProcedure = withLlcAccessControl
     if (holder === null) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Holder not found." });
     }
-    return holderFinancialView(
+    return readHolderFinancialView(
       ctx.db,
       { companyId: holder.companyId, stakeholderId: holder.id },
       ctx.company,

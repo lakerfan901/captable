@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { fromDateOnly, toDateOnly } from "@/lib/date-only";
 import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
 import { OA_DEFAULTS } from "@/lib/llc/config";
@@ -25,7 +25,7 @@ import {
   type ReportHolder,
   visibleReportWhere,
 } from "@/lib/portal/report-visibility-core";
-import type { TPrismaOrTransaction } from "@/server/db";
+import type { TPrisma, TPrismaOrTransaction } from "@/server/db";
 import {
   latestSnapshotMonth,
   publishedThroughFor,
@@ -235,6 +235,25 @@ export async function holderFinancialView(
     restatements,
     termClock,
   };
+}
+
+/**
+ * `holderFinancialView` in one REPEATABLE READ transaction, so the
+ * published-through date, the fund rows, the holder rows and the
+ * restatement notes are one state of the database even while a Release or
+ * a Restate commits. Used by `portal.financials.get` and by
+ * `financialDashboard.published({ asHolder })`.
+ */
+export function readHolderFinancialView(
+  db: TPrisma,
+  holder: ReportHolder,
+  company: { timezone: string | null },
+): Promise<FinancialView> {
+  return db.$transaction((tx) => holderFinancialView(tx, holder, company), {
+    isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    maxWait: 10_000,
+    timeout: 30_000,
+  });
 }
 
 /**
