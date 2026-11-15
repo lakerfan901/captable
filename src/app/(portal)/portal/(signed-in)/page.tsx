@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { AuthCard, SignOutButton } from "@/components/portal/auth-card";
 import { PortalShell } from "@/components/portal/portal-shell";
 import { api } from "@/trpc/server";
@@ -19,6 +20,11 @@ export const metadata: Metadata = {
 };
 
 export default async function PortalHomePage() {
+  // Per request only (it reads the portal cookie); also keeps the build from
+  // trying to prerender it.
+  await connection();
+  // The layout already required a session; a session that ended between the
+  // two reads (UNAUTHORIZED) goes back to sign-in.
   const me = await api.portal.me().catch(() => null);
   if (me === null) redirect("/portal/sign-in");
 

@@ -12,9 +12,7 @@ const plus = (ms: number) => new Date(NOW.getTime() + ms);
 describe("expiryPhrase", () => {
   it("names a fresh invitation link 7 days, also minutes after issue", () => {
     expect(expiryPhrase(plus(7 * 86_400_000), NOW)).toBe("7 days");
-    expect(expiryPhrase(plus(7 * 86_400_000 - 9 * 60_000), NOW)).toBe(
-      "7 days",
-    );
+    expect(expiryPhrase(plus(7 * 86_400_000 - 9 * 60_000), NOW)).toBe("7 days");
     expect(expiryPhrase(plus(6 * 86_400_000 + 12 * 3_600_000), NOW)).toBe(
       "6 days",
     );
