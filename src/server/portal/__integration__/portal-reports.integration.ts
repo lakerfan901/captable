@@ -223,6 +223,9 @@ interface World {
   k1: Record<"A" | "B" | "C", { id: string; key: string; bucketId: string }>;
   nShared: { id: string; key: string; bucketId: string };
   nPrivateA: { id: string; key: string; bucketId: string };
+  /** A notice released to A only, with one shared file. */
+  OA: string;
+  oaFile: { id: string; key: string; bucketId: string };
   frozenQTitle: string;
 }
 let w: World;
@@ -400,6 +403,15 @@ async function setup() {
   const D = await noticeDraft(reports1, "Draft notice");
   await handRecipient((await reportRow(c1.id, D)).id, c1.id, A);
 
+  // OA: a notice to A only (B, held by the same portal user, is not selected).
+  const OA = await noticeDraft(reports1, "Notice for A only");
+  const oaFile = await attach(c1, OA, "A only letter", null, "GENERAL");
+  await reports1.release({
+    publicId: OA,
+    stakeholderIds: [A.id],
+    email: false,
+  });
+
   // X: company 2's notice to F, and a stray recipient row for A on it.
   const X = await noticeDraft(reports2, "Company two notice");
   await reports2.release({ publicId: X, stakeholderIds: [F.id], email: false });
@@ -440,6 +452,8 @@ async function setup() {
     k1,
     nShared,
     nPrivateA,
+    OA,
+    oaFile,
     frozenQTitle,
   };
   const q = await reportRow(c1.id, Q);
@@ -467,8 +481,9 @@ async function visibility() {
 
   const aList = await listIds(w.U1.session, w.accA.publicId);
   eq(
-    "A sees Q, K and N (not L, D or X)",
-    [w.Q, w.K, w.N].every((id) => aList.includes(id)) && aList.length === 3,
+    "A sees Q, K, N and OA (not L, D or X)",
+    [w.Q, w.K, w.N, w.OA].every((id) => aList.includes(id)) &&
+      aList.length === 4,
     true,
   );
   const bList = await listIds(w.U1.session, w.accB.publicId);
@@ -818,6 +833,48 @@ async function k1Privacy() {
     ].join("|"),
   );
 
+  section("4a. report-level separation: one portal user, holders A and B");
+  check(
+    "acting as B: OA (released to A only) is not listed",
+    !(await listIds(w.U1.session, w.accB.publicId)).includes(w.OA),
+  );
+  for (const [label, fn] of [
+    ["get", () => u1.reports.get({ access: w.accB.publicId, reportId: w.OA })],
+    [
+      "markViewed",
+      () => u1.reports.markViewed({ access: w.accB.publicId, reportId: w.OA }),
+    ],
+    [
+      "fileUrl",
+      () =>
+        u1.reports.fileUrl({
+          access: w.accB.publicId,
+          reportId: w.OA,
+          attachmentId: w.oaFile.id,
+        }),
+    ],
+  ] as const) {
+    eq(
+      `acting as B: ${label} of OA is NOT_FOUND`,
+      await codeOf(fn),
+      "NOT_FOUND",
+    );
+  }
+  eq(
+    "acting as A: get of OA works",
+    await codeOf(() =>
+      u1.reports.get({ access: w.accA.publicId, reportId: w.OA }),
+    ),
+    "OK",
+  );
+  eq(
+    "findReport(OA) for U1: only A's access",
+    (await keep(u1.findReport({ reportId: w.OA }))).matches
+      .map((m) => m.access)
+      .join(","),
+    w.accA.publicId,
+  );
+
   section("4b. attachments on a notice");
   const nA = await keep(
     u1.reports.get({ access: w.accA.publicId, reportId: w.N }),
@@ -1121,7 +1178,10 @@ function noKeys(): Promise<void> {
     w.k1.C.key,
     w.nShared.key,
     w.nPrivateA.key,
-    ...[w.k1.A, w.k1.B, w.k1.C, w.nShared, w.nPrivateA].map((a) => a.bucketId),
+    w.oaFile.key,
+    ...[w.k1.A, w.k1.B, w.k1.C, w.nShared, w.nPrivateA, w.oaFile].map(
+      (a) => a.bucketId,
+    ),
   ];
   const json = JSON.stringify(responses, (_k, v) =>
     typeof v === "bigint" ? v.toString() : v,
