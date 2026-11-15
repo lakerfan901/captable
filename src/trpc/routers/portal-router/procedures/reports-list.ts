@@ -1,14 +1,13 @@
-// portal.reports.list (04-investor-portal.md 5.4, 5.9).
-// P0 stub: package P5a replaces this file; router.ts stays as it is.
-// P2a set the base to `investorProcedure` (src/trpc/api/portal-procedure.ts), so
-// even the stub requires a portal session and a resolved holder. A stub reads nothing.
+// portal.reports.list (04-investor-portal.md 5.4; package P5a).
+//
+// The reports visible to the holder of `input.access` (P11), newest release
+// first. The holder and company come only from `ctx.holder` (P10, G2); the
+// rule is `visibleReportWhere` (src/server/portal/visibility-reports.ts).
+// A query: it writes no log row (opening a report is logged by markViewed).
 
-import { TRPCError } from "@trpc/server";
+import { listVisibleReports } from "@/server/portal/visibility-reports";
 import { investorProcedure } from "@/trpc/api/portal-procedure";
 
-export const reportsListProcedure = investorProcedure.query(() => {
-  throw new TRPCError({
-    code: "NOT_IMPLEMENTED",
-    message: "portal.reports.list is not implemented yet.",
-  });
-});
+export const reportsListProcedure = investorProcedure.query(({ ctx }) =>
+  listVisibleReports(ctx.db, ctx.holder),
+);
