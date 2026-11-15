@@ -245,7 +245,7 @@ export async function loadLedger(
 }
 
 /** R8 windows, used when `accrueOnDefaulterCapital` is false: one per non-voided default. */
-async function loadAccrualPauses(
+export async function loadAccrualPauses(
   tx: Tx,
   companyId: string,
 ): Promise<NonNullable<PositionOptions["accrualPauses"]>> {
