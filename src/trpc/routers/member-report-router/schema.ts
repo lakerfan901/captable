@@ -102,10 +102,6 @@ export const ZMemberReportDeleteSchema = z
   .object({ publicId: zPublicId })
   .strict();
 
-export const ZMemberReportSendSchema = z
-  .object({ publicId: zPublicId })
-  .strict();
-
 /** 04-investor-portal.md 5.5: the audience of a release is 1–500 holders. */
 export const MAX_RELEASE_AUDIENCE = 500;
 

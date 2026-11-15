@@ -15,15 +15,14 @@ import { removeAttachmentProcedure } from "./procedures/remove-attachment";
 import { removeRecipientProcedure } from "./procedures/remove-recipient";
 import { replaceLinkProcedure } from "./procedures/replace-link";
 import { resendProcedure } from "./procedures/resend";
-import { sendProcedure } from "./procedures/send";
 import { unpublishProcedure } from "./procedures/unpublish";
 import { updateProcedure } from "./procedures/update";
 
 // Manager procedures for member reports (03-governance.md G12;
 // 04-investor-portal.md 5.5). Every procedure is `withLlcAccessControl` with
 // the `governance` RBAC subject; `companyId` always comes from the session's
-// membership. `send` is the legacy entry point of `release` (default
-// audience, email) until the release dialog (P4c) replaces its caller.
+// membership. `send` was replaced by `release` (P4a); its last caller, the
+// review dialog, was replaced by the release dialog (P4c), and it was removed.
 export const memberReportRouter = createTRPCRouter({
   list: listProcedure,
   get: getProcedure,
@@ -40,7 +39,6 @@ export const memberReportRouter = createTRPCRouter({
   unpublish: unpublishProcedure,
   addRecipients: addRecipientsProcedure,
   removeRecipient: removeRecipientProcedure,
-  send: sendProcedure,
   resend: resendProcedure,
   replaceLink: replaceLinkProcedure,
   exportXlsx: exportXlsxProcedure,

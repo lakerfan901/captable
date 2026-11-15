@@ -26,8 +26,8 @@ import { listCurrentMembers } from "@/server/governance/recipients";
 // the pure checks of `@/lib/portal/audience-core` need (status, units, K-1,
 // notice address, portal state), and the presets that fill the picker.
 // The rule-based audience below (`deriveAudience`, 03-governance.md G12 send
-// step 2; R22, R22a) is the DEFAULT of that picker: the legacy
-// `memberReport.send` entry point releases to exactly it, and `get` lists it
+// step 2; R22, R22a) is the DEFAULT of that picker: the former
+// `memberReport.send` entry point released to exactly it, and `get` lists it
 // as the draft's candidates. The two agree (asserted by
 // release.integration.ts):
 //
