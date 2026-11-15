@@ -4,6 +4,16 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -141,6 +151,7 @@ export function ReportRecipientTable({
   const router = useRouter();
   const resend = api.memberReport.resend.useMutation();
   const [replacing, setReplacing] = useState<Recipient | null>(null);
+  const [confirmAll, setConfirmAll] = useState(false);
 
   const doResend = async (recipientId?: string) => {
     try {
@@ -165,10 +176,37 @@ export function ReportRecipientTable({
             size="sm"
             variant="outline"
             disabled={resend.isPending}
-            onClick={() => void doResend()}
+            onClick={() => setConfirmAll(true)}
           >
             Resend to all
           </Button>
+          <AlertDialog open={confirmAll} onOpenChange={setConfirmAll}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Resend this report to all {recipients.length}{" "}
+                  {recipients.length === 1 ? "recipient" : "recipients"}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Every recipient is emailed the report again, at the address
+                  shown in the table. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={resend.isPending}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setConfirmAll(false);
+                    void doResend();
+                  }}
+                >
+                  Resend to all
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       ) : null}
       <div className="overflow-x-auto">
