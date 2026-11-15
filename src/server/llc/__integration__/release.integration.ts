@@ -2308,6 +2308,52 @@ async function invitationsOnRelease() {
     /needs the portal permission/,
     "FORBIDDEN",
   );
+  const other = await f.reports.create({
+    type: "NOTICE",
+    noticeKind: "GENERAL",
+  });
+  await f.reports.update({
+    publicId: other.publicId,
+    title: "Notice",
+    figures: {},
+    commentary: [paragraph("A notice.")],
+  });
+  const plain = await errorOf(() =>
+    governanceOnly.release({
+      publicId: other.publicId,
+      stakeholderIds: [f.A.id],
+      email: false,
+    }),
+  );
+  check(
+    "the same caller without inviteMissing is accepted",
+    plain === null,
+    plain?.message ?? "",
+  );
+  const plainAdd = await errorOf(() =>
+    governanceOnly.addRecipients({
+      publicId: other.publicId,
+      stakeholderIds: [f.B.id],
+      email: false,
+    }),
+  );
+  check(
+    "and may add recipients without inviteMissing",
+    plainAdd === null,
+    plainAdd?.message ?? "",
+  );
+  await expectRefused(
+    "but not add recipients with inviteMissing",
+    () =>
+      governanceOnly.addRecipients({
+        publicId: other.publicId,
+        stakeholderIds: [f.C.id],
+        email: false,
+        inviteMissing: true,
+      }),
+    /needs the portal permission/,
+    "FORBIDDEN",
+  );
   // Mail guard: production with the mail catcher refuses the invitations
   // even for a portal-only release.
   const penv = process.env as Record<string, string | undefined>;
@@ -2341,25 +2387,35 @@ async function invitationsOnRelease() {
 
   section("P4b: two concurrent releases with inviteMissing");
   const a0 = accountEmails.length;
-  const runs = await Promise.all([
-    errorOf(() =>
-      f.reports.release({
-        publicId,
-        stakeholderIds: ids,
-        email: true,
-        inviteMissing: true,
-      }),
-    ),
-    errorOf(() =>
-      f.reports.release({
-        publicId,
-        stakeholderIds: ids,
-        email: true,
-        inviteMissing: true,
-      }),
-    ),
+  const runs = await Promise.allSettled([
+    f.reports.release({
+      publicId,
+      stakeholderIds: ids,
+      email: true,
+      inviteMissing: true,
+    }),
+    f.reports.release({
+      publicId,
+      stakeholderIds: ids,
+      email: true,
+      inviteMissing: true,
+    }),
   ]);
-  eq("exactly one release", runs.filter((r) => r === null).length, 1);
+  const won = runs.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  eq("exactly one release", won.length, 1);
+  eq(
+    "the result lists each holder's invitation: A and F created, B already active, C left disabled",
+    (won[0]?.invitations ?? [])
+      .map((l) => `${f.holders.get(l.stakeholderId)}:${l.outcome}`)
+      .sort()
+      .join(","),
+    "A:CREATED,B:ALREADY_ACTIVE,C:LEFT_DISABLED,F:CREATED",
+  );
+  eq(
+    "one invitation email queued (one person), four report emails",
+    [won[0]?.invitationsQueued, won[0]?.queued].join(","),
+    "1,4",
+  );
   const sharedUser = await db.portalUser.findUniqueOrThrow({
     where: { email: shared },
   });
@@ -2406,7 +2462,11 @@ async function invitationsOnRelease() {
     2,
   );
   const releasedAudit = await db.audit.findFirst({
-    where: { companyId: f.c.id, action: "memberReport.released" },
+    where: {
+      companyId: f.c.id,
+      action: "memberReport.released",
+      summary: { contains: "Q3 2026 report to Members" },
+    },
   });
   check(
     "the release audit lists the invitations and the access left disabled",
@@ -2442,6 +2502,61 @@ async function invitationsOnRelease() {
     stakeholderIds: [g.A.id],
     email: false,
   });
+  const gRows = async () =>
+    (await recipientsOf(g, q)).map((r) => g.holders.get(r.stakeholderId));
+  const gEnv = process.env as Record<string, string | undefined>;
+  const gPrevious = gEnv.NODE_ENV;
+  gEnv.NODE_ENV = "production";
+  try {
+    await expectRefused(
+      "addRecipients with email in production with the mail catcher is refused",
+      () =>
+        g.reports.addRecipients({
+          publicId: q,
+          stakeholderIds: [g.B.id],
+          email: true,
+        }),
+      /Emails to Members would only reach the local mail catcher/,
+      "BAD_REQUEST",
+    );
+    await expectRefused(
+      "addRecipients with inviteMissing (no email) is refused too",
+      () =>
+        g.reports.addRecipients({
+          publicId: q,
+          stakeholderIds: [g.B.id],
+          email: false,
+          inviteMissing: true,
+        }),
+      /Emails to Members would only reach the local mail catcher/,
+      "BAD_REQUEST",
+    );
+    eq(
+      "nothing written: A is the only recipient, B has no access",
+      [
+        (await gRows()).join("+"),
+        await db.portalAccess.count({
+          where: { companyId: g.c.id, stakeholderId: g.B.id },
+        }),
+      ].join(","),
+      "A,0",
+    );
+    const portalOnly = await errorOf(() =>
+      g.reports.addRecipients({
+        publicId: q,
+        stakeholderIds: [g.F.id],
+        email: false,
+      }),
+    );
+    check(
+      "addRecipients without email or invitations needs no mail service",
+      portalOnly === null,
+      portalOnly?.message ?? "",
+    );
+  } finally {
+    gEnv.NODE_ENV = gPrevious;
+  }
+  eq("F was added", (await gRows()).join("+"), "A+F");
   const g0 = accountEmails.length;
   const both = await Promise.all([
     g.reports.addRecipients({
