@@ -172,7 +172,7 @@ async function sessionFor(portalUserId: string): Promise<string> {
   return token;
 }
 
-/** The public link router as a browser on the token page calls it (no-referrer: `Origin: null`). */
+/** The public link router as a browser on the token page may call it (no-referrer: `Origin` may be `null`). */
 const link = (cookie?: string) => {
   const headers = new Headers({ origin: "null" });
   if (cookie) headers.set("cookie", `${portalCookieName()}=${cookie}`);
@@ -267,7 +267,7 @@ type Holder = { id: string; name: string; email: string };
 interface World {
   c: TestCompany;
   reports: ReportsCaller;
-  h: Record<"A" | "B" | "C" | "D" | "E" | "H" | "P" | "Q", Holder>;
+  h: Record<"A" | "B" | "C" | "D" | "E" | "H" | "J" | "P" | "Q", Holder>;
   R: string;
   rId: string;
   L: string;
@@ -276,7 +276,7 @@ interface World {
   lr: Record<string, string>;
   files: { shared: string; privateE: string };
   users: Record<
-    "A" | "B" | "C" | "H" | "M" | "X",
+    "A" | "B" | "C" | "H" | "J" | "M" | "X",
     { id: string; email: string }
   >;
   acc: Record<"A" | "B" | "C" | "H" | "MP" | "MQ" | "XD", string>;
@@ -295,7 +295,7 @@ async function tokenOf(recipientId: string): Promise<string> {
 async function setup() {
   section("setup");
   const c = await createCompany("one");
-  const names = ["A", "B", "C", "D", "E", "H", "P", "Q"] as const;
+  const names = ["A", "B", "C", "D", "E", "H", "J", "P", "Q"] as const;
   const h = {} as World["h"];
   for (const n of names) {
     h[n] = await newMember(c, `${n} Member`);
@@ -411,6 +411,7 @@ async function setup() {
   const uB = await newPortalUser(h.B.email, false);
   const uC = await newPortalUser(h.C.email, true);
   const uH = await newPortalUser(h.H.email, false);
+  const uJ = await newPortalUser(h.J.email, false);
   const uM = await newPortalUser(h.P.email, true);
   const uX = await newPortalUser(
     `${EMAIL_PREFIX}accountant.${randomUUID().slice(0, 8)}@example.com`,
@@ -420,6 +421,7 @@ async function setup() {
   const accB = await grant(uB.id, c.id, h.B.id);
   const accC = await grant(uC.id, c.id, h.C.id, "DISABLED");
   const accH = await grant(uH.id, c.id, h.H.id);
+  await grant(uJ.id, c.id, h.J.id);
   const accMP = await grant(uM.id, c.id, h.P.id);
   const accMQ = await grant(uM.id, c.id, h.Q.id);
   const accXD = await grant(uX.id, c.id, h.D.id);
@@ -439,6 +441,7 @@ async function setup() {
       B: uB,
       C: uC,
       H: uH,
+      J: uJ,
       M: uM,
       X: uX,
     },
@@ -823,11 +826,47 @@ async function setupLinks() {
     1,
   );
 
-  section("3d. concurrent requests issue at most what the throttle allows");
-  // H is at its limit; a burst of 5 adds nothing.
+  section("3d. at the limit, a burst adds nothing");
   await Promise.all(Array.from({ length: 5 }, () => setupOf(hToken)));
   eq("H: still 3 tokens", (await tokensOf(w.users.H.id)).length, 3);
   eq("H: no email queued", takeEmits().length, 0);
+
+  section("3e. concurrent requests from zero: exactly the throttle's 3");
+  const jToken = await tokenOf(w.rr.J as string);
+  eq("J: no token yet", (await tokensOf(w.users.J.id)).length, 0);
+  const burst = await Promise.all(
+    Array.from({ length: 5 }, () => setupOf(jToken)),
+  );
+  check(
+    "five concurrent requests: the same answer each time",
+    burst.every((r) => isDeepStrictEqual(r, { ok: true })),
+  );
+  eq("J: exactly 3 tokens", (await tokensOf(w.users.J.id)).length, 3);
+  eq("J: exactly 3 emails queued", takeEmits().length, 3);
+
+  section(
+    "3f. production with the mail catcher: UNAVAILABLE before any look-up",
+  );
+  const env = process.env as Record<string, string | undefined>;
+  const nodeEnv = env.NODE_ENV;
+  const bCount = (await tokensOf(w.users.B.id)).length;
+  const jCount = (await tokensOf(w.users.J.id)).length;
+  env.NODE_ENV = "production";
+  try {
+    same("garbage token: UNAVAILABLE", await setupOf("z".repeat(48)), {
+      ok: false,
+      reason: "UNAVAILABLE",
+    });
+    same("J's token: UNAVAILABLE", await setupOf(jToken), {
+      ok: false,
+      reason: "UNAVAILABLE",
+    });
+  } finally {
+    env.NODE_ENV = nodeEnv;
+  }
+  eq("no token issued", (await tokensOf(w.users.J.id)).length, jCount);
+  eq("B unchanged", (await tokensOf(w.users.B.id)).length, bCount);
+  eq("no email queued", takeEmits().length, 0);
 }
 
 // ---------------------------------------------------------------------------

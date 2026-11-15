@@ -107,19 +107,23 @@ async function loadAddressee(
   db: TPrismaOrTransaction,
   recipient: { companyId: string; stakeholderId: string; email: string },
 ): Promise<Addressee> {
-  const rows = await db.portalAccess.findMany({
-    where: {
-      companyId: recipient.companyId,
-      stakeholderId: recipient.stakeholderId,
-    },
-    select: {
-      id: true,
-      status: true,
-      portalUser: {
-        select: { id: true, email: true, passwordHash: true },
+  // No foreign keys (`relationMode = "prisma"`): an access whose portal
+  // user row is gone is ignored rather than failing every link of the holder.
+  const rows = (
+    await db.portalAccess.findMany({
+      where: {
+        companyId: recipient.companyId,
+        stakeholderId: recipient.stakeholderId,
       },
-    },
-  });
+      select: {
+        id: true,
+        status: true,
+        portalUser: {
+          select: { id: true, email: true, passwordHash: true },
+        },
+      },
+    })
+  ).filter((r) => (r.portalUser as typeof r.portalUser | null) !== null);
   const state = addresseeAccess(
     rows.map((r) => ({
       email: r.portalUser.email,

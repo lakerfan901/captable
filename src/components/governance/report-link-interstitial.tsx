@@ -20,10 +20,12 @@ import { getUrl, transformer } from "@/trpc/shared";
 //
 // No report content is shown in any of them (P26), not even the title. The
 // set-up request is a token-credentialed public mutation, like `markViewed`
-// on the read-only page, so it works from this `no-referrer` page (whose
-// POSTs carry `Origin: null`); nothing here posts to an Origin-checked
-// portal endpoint. Its answer is the same whatever happened, and the page
-// says the same sentence after every click.
+// on the read-only page: it does not depend on the `Origin` header, which a
+// browser may send as `null` from this `no-referrer` page (Chromium sent
+// the real origin on this `fetch` in the P5b browser pass; a form POST is
+// the classic `null` case). Nothing here posts to an Origin-checked portal
+// endpoint: Sign in is a plain link. The set-up answer is the same whatever
+// happened, and the page says the same sentence after every click.
 
 export type ReportLinkInterstitialProps =
   | { state: "WITHDRAWN"; companyName: string }
