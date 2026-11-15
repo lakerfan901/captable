@@ -6,7 +6,9 @@
 // person's other accesses, so everything shown here is derived from facts
 // that belong to this company's access row, plus the account-wide sign-in
 // lock (which anyone who types the address can cause, so it reveals
-// nothing about other accesses).
+// nothing about other accesses). Residual outside this module: the plan's
+// "access added" email is logged on the member's Emails tab, from which a
+// team can infer that the address already had a portal password.
 
 export type PortalAccessState = "INVITED" | "ACTIVE" | "DISABLED";
 

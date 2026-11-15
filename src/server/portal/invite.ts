@@ -30,6 +30,9 @@ import { emitPortalAccountEmail } from "./account-email";
 // only company-scoped facts (`describeAccess`): this access's status, its
 // invitation and last-seen times, whether the person has set up THIS access.
 // Never the user's name, sign-in time, or anything about other accesses.
+// Residual: the plan's "access added" email (5.2) is logged on the member's
+// Emails tab by the account-email worker (P2b), which still lets the team
+// infer that the address already had a portal password.
 
 export type InviteOutcome =
   /** A new access row. */

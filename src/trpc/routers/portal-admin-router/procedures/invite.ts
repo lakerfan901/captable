@@ -6,7 +6,9 @@
 // Refused before any write while production mail goes to the mail catcher.
 // The answer says only whether something was sent: never which email
 // (invitation or "access added"), because that would tell the team the
-// person already has a portal account elsewhere.
+// person already has a portal account elsewhere. (The email log row that
+// the worker writes on the member's Emails tab still names the kind; see
+// src/lib/portal/access-admin-core.ts.)
 import { TRPCError } from "@trpc/server";
 import { assertMailDeliverable } from "@/server/mail-delivery";
 import {

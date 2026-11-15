@@ -1,7 +1,8 @@
 // portalAdmin.unlock (04-investor-portal.md 5.6; rule P6, S9; package P3).
 //
-// Clears the sign-in lock and the failure counter of the person behind one
-// ACTIVE access of the caller's company. The lock is account-wide (P6), so
+// Clears a sign-in lock in force (and the failure counter) of the person
+// behind one ACTIVE access of the caller's company; without a lock in force
+// nothing is written. The lock is account-wide (P6), so
 // this lifts it for every holder the person may use; a team may lift it
 // only for a person it has itself given active access. Under the user's row
 // lock, the lock sign-in takes, so a concurrent wrong password is counted
@@ -36,31 +37,30 @@ export const unlockProcedure = withLlcAccessControl
       const now = new Date();
       const wasLocked =
         user.lockedUntil !== null && user.lockedUntil.getTime() > now.getTime();
-      if (user.lockedUntil === null && user.failedSignIns === 0) {
-        return { email: user.email, unlocked: false };
-      }
+      // Only a lock in force is lifted. Not locked: nothing is written, so
+      // the failure counter cannot be reset (to allow more guesses) without
+      // a lock and an audit row.
+      if (!wasLocked) return { email: user.email, unlocked: false };
       await tx.portalUser.update({
         where: { id: user.id },
         data: { lockedUntil: null, failedSignIns: 0 },
         select: { id: true },
       });
-      if (wasLocked) {
-        await Audit.create(
-          {
-            action: "portal.account-unlocked",
-            companyId,
-            actor: { type: "user", id: ctx.session.user.id },
-            context,
-            target: [
-              { type: "portalAccess", id: access.id },
-              { type: "stakeholder", id: access.stakeholderId },
-            ],
-            summary: `${ctx.session.user.name ?? "A user"} unlocked the investor portal sign-in of ${user.email}`,
-          },
-          tx,
-        );
-      }
-      return { email: user.email, unlocked: wasLocked };
+      await Audit.create(
+        {
+          action: "portal.account-unlocked",
+          companyId,
+          actor: { type: "user", id: ctx.session.user.id },
+          context,
+          target: [
+            { type: "portalAccess", id: access.id },
+            { type: "stakeholder", id: access.stakeholderId },
+          ],
+          summary: `${ctx.session.user.name ?? "A user"} unlocked the investor portal sign-in of ${user.email}`,
+        },
+        tx,
+      );
+      return { email: user.email, unlocked: true };
     }, TX_OPTIONS);
     if (result === null) accessNotFound();
 

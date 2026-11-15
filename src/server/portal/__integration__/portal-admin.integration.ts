@@ -806,6 +806,23 @@ async function resendAndUnlock() {
     await auditCount(companyA.id, "portal.account-unlocked"),
     1,
   );
+  // Two wrong passwords (no lock yet): unlock must not reset the counter.
+  for (let i = 0; i < 2; i++) {
+    await verifySignIn(db, { email: EMAIL_X, password: WRONG, ...FACTS });
+  }
+  const partial = await admin(adminA).unlock({ accessId: accessA2 });
+  check("unlock without a lock in force writes nothing", !partial.unlocked);
+  eq(
+    "the failure counter is kept",
+    (await db.portalUser.findUniqueOrThrow({ where: { email: EMAIL_X } }))
+      .failedSignIns,
+    2,
+  );
+  eq(
+    "and no audit row",
+    await auditCount(companyA.id, "portal.account-unlocked"),
+    1,
+  );
   await admin(adminA).setAccessStatus({ accessId: accessA1, status: "ACTIVE" });
   takeEmits();
 }
