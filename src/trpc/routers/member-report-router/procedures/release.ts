@@ -3,6 +3,7 @@ import { emitReportEmails } from "@/jobs/governance-report-email";
 import { emitReportFile } from "@/jobs/governance-report-file";
 import { formatDateOnly } from "@/lib/date-only";
 import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
+import { ReconciliationRefusal } from "@/lib/governance/reconcile-refusal";
 import {
   refusalMessage,
   releaseAuditSummary,
@@ -13,6 +14,7 @@ import {
   ReportFiguresSchema,
   reportChecklist,
 } from "@/lib/governance/report-figures";
+import { reconcileFigures } from "@/lib/governance/report-reconcile";
 import {
   canonicalJson,
   isDocEmpty,
@@ -35,9 +37,10 @@ import {
   k1DedupeKeys,
   loadK1Coverage,
 } from "@/server/governance/k1-coverage";
-import { closeBooksThrough } from "@/server/llc/economics";
+import { closeBooksThrough, getPeriodEconomics } from "@/server/llc/economics";
 import { lockCompanyLedgerAndUnitClasses } from "@/server/llc/economics/scope";
 import { assertMailDeliverable } from "@/server/mail-delivery";
+import { writeSnapshotsThrough } from "@/server/portal/financial-snapshot-write";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportReleaseSchema } from "../schema";
 import { loadAudienceContext } from "./audience";
@@ -74,6 +77,12 @@ import {
 //    after all of them and must be DRAFT.
 // 1. Content: commentary normalizes; the checklist (R23–R26) is complete;
 //    a QUARTERLY / ANNUAL period has ended.
+// 1b. P38 (package P13a), QUARTERLY / ANNUAL: the stored figures are
+//    compared with the period data read under the ledger lock
+//    (`reconcileFigures`); any difference in a ledger-derived figure refuses
+//    the release before anything is written: PRECONDITION_FAILED whose cause
+//    is a `ReconciliationRefusal`, so `error.data.reconciliation` lists the
+//    differences (the tRPC error formatter) and the message names them.
 // 2. Audience (P18): every holder of the company is loaded under the locks;
 //    the confirmed ids are checked with `audienceProblems` against them
 //    (unknown or foreign id, duplicate, prospect, other status, a TAX_K1
@@ -95,6 +104,11 @@ import {
 //    complete them on the compliance page.
 // 6. QUARTERLY / ANNUAL: `closeBooksThrough(periodEnd)`, with or without
 //    email (P17). Not caught: if it throws, the whole release rolls back.
+// 6a. QUARTERLY / ANNUAL (P34, package P13a): the month snapshots
+//    (`writeSnapshotsThrough`): every month after the latest snapshot (from
+//    inception when there is none) through the period end, under the same
+//    locks, after the books are closed. A period already covered writes
+//    nothing. Not caught either.
 // 7. Audit `memberReport.released`.
 // After commit: one `governance.report-email` job per recipient (seq 0)
 // only when emailing; the filing job always. A failed emit is logged, never
@@ -151,6 +165,8 @@ export interface ReleaseResult {
   invitations: InvitationLine[];
   /** Invitation emails handed to the queue (one per person). */
   invitationsQueued: number;
+  /** P34: the months whose financial snapshots this release wrote ([] for notices, K-1s and covered periods). */
+  snapshotMonths: string[];
 }
 
 export async function releaseReport(
@@ -237,6 +253,23 @@ export async function releaseReport(
       const today = todayInZone(now, zone);
       if (usesFigures(type) && periodEnd !== null && !(periodEnd < today)) {
         badRequest(periodNotEndedMessage(periodEnd));
+      }
+
+      // 1b. P38 — inserted by P13a: the ledger-derived figures must equal
+      //     the ledger for the period (read under the ledger lock).
+      if (usesFigures(type) && periodStart !== null && periodEnd !== null) {
+        const differences = reconcileFigures(
+          figures,
+          await getPeriodEconomics(tx, companyId, { periodStart, periodEnd }),
+        );
+        if (differences.length > 0) {
+          const refusal = new ReconciliationRefusal(differences);
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: refusal.message,
+            cause: refusal,
+          });
+        }
       }
 
       // 2. Audience: every holder under the locks, then the checks.
@@ -426,6 +459,18 @@ export async function releaseReport(
         await closeBooksThrough(tx, companyId, periodEnd);
       }
 
+      // 6a. P34 — inserted by P13a: month snapshots through the period end.
+      let snapshotMonths: string[] = [];
+      if (booksClosed) {
+        const written = await writeSnapshotsThrough(tx, companyId, periodEnd, {
+          reportId: report.id,
+          memberId,
+          today,
+          now,
+        });
+        snapshotMonths = written.months;
+      }
+
       // 6b. Invitations (P27): after every report write, so a refusal above
       //     leaves no access behind; portal-user locks come last.
       let invitations: InvitationRun | null = null;
@@ -477,6 +522,7 @@ export async function releaseReport(
         deadlinesLeftOpen,
         warnings: checked.warnings,
         invitations,
+        snapshotMonths,
       };
     },
     { maxWait: 10_000, timeout: 60_000 },
@@ -516,6 +562,7 @@ export async function releaseReport(
     warnings: result.warnings,
     invitations: result.invitations?.lines ?? [],
     invitationsQueued,
+    snapshotMonths: result.snapshotMonths,
   };
 }
 

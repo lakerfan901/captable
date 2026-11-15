@@ -9,6 +9,7 @@ import { exportXlsxProcedure } from "./procedures/export-xlsx";
 import { getProcedure } from "./procedures/get";
 import { listProcedure } from "./procedures/list";
 import { publishProcedure } from "./procedures/publish";
+import { reconcileProcedure } from "./procedures/reconcile";
 import { refreshFiguresProcedure } from "./procedures/refresh-figures";
 import { releaseProcedure } from "./procedures/release";
 import { removeAttachmentProcedure } from "./procedures/remove-attachment";
@@ -28,6 +29,7 @@ export const memberReportRouter = createTRPCRouter({
   get: getProcedure,
   create: createProcedure,
   refreshFigures: refreshFiguresProcedure,
+  reconcile: reconcileProcedure,
   update: updateProcedure,
   addAttachment: addAttachmentProcedure,
   removeAttachment: removeAttachmentProcedure,

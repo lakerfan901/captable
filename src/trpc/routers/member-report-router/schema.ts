@@ -69,6 +69,11 @@ export const ZMemberReportRefreshFiguresSchema = z
   .object({ publicId: zPublicId })
   .strict();
 
+/** memberReport.reconcile (04-investor-portal.md P38, 5.9; package P13a). */
+export const ZMemberReportReconcileSchema = z
+  .object({ publicId: zPublicId })
+  .strict();
+
 export const ZMemberReportUpdateSchema = z
   .object({
     publicId: zPublicId,

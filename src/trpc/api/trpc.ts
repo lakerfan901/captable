@@ -12,6 +12,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { isSentryEnabled } from "@/constants/sentry";
+import { reconciliationErrorData } from "@/lib/governance/reconcile-refusal";
 import "@/lib/zod-error-map";
 import * as Sentry from "@sentry/nextjs";
 import { getIp, getUserAgent } from "@/lib/headers";
@@ -138,6 +139,8 @@ const t = initTRPC
           ...shape.data,
           zodError:
             error.cause instanceof ZodError ? error.cause.flatten() : null,
+          // P38 (04-investor-portal.md): the figures a release refused on.
+          reconciliation: reconciliationErrorData(error.cause),
         },
       };
     },
