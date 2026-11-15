@@ -496,7 +496,7 @@ export function ReleaseDialog({
   const title = data?.report.title ?? "report";
   return (
     <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Release {title}</DialogTitle>
           <DialogDescription>
@@ -676,7 +676,7 @@ export function AddRecipientsDialog({
 
   return (
     <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Add recipients</DialogTitle>
           <DialogDescription>

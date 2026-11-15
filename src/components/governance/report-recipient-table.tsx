@@ -45,6 +45,7 @@ import {
   replaceLinkEmailCount,
   resendRound,
 } from "@/lib/governance/release-view";
+import { MAIL_BLOCKED_MESSAGE } from "@/lib/mail-delivery";
 import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
 import { AddRecipientsDialog, EmailConfirm } from "./release-dialog";
@@ -209,6 +210,7 @@ export function ReportRecipientTable({
   state,
   addable,
   noticeEmails,
+  mailBlocked,
 }: {
   publicId: string;
   title: string;
@@ -226,6 +228,8 @@ export function ReportRecipientTable({
   addable: number;
   /** stakeholderId → notice address on file (for the replace-link count). */
   noticeEmails: Record<string, string>;
+  /** Production with the mail catcher: the reason; no email action is offered. */
+  mailBlocked: string | null;
 }) {
   const router = useRouter();
   const resend = api.memberReport.resend.useMutation();
@@ -233,7 +237,7 @@ export function ReportRecipientTable({
   const [replacing, setReplacing] = useState<Recipient | null>(null);
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
-  const emailing = canUpdate && mayEmail(state);
+  const emailing = canUpdate && mayEmail(state) && mailBlocked === null;
   const notEmailed = resendRound(recipients, "NOT_EMAILED");
   const all = resendRound(recipients, "ALL");
   const anyEmailed = recipients.some((r) => r.emailedAt !== null);
@@ -366,14 +370,18 @@ export function ReportRecipientTable({
               </TableRow>
             ) : null}
             {recipients.map((r) => {
-              const actions = recipientActions(r, { canUpdate, state });
+              const actions = recipientActions(r, {
+                canUpdate,
+                state,
+                mailBlocked: mailBlocked !== null,
+              });
               return (
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">
                     {r.name}
                     <LinkState r={r} />
                   </TableCell>
-                  <TableCell className="break-all">
+                  <TableCell className="whitespace-nowrap">
                     {r.hasAddress ? (
                       r.email
                     ) : (
@@ -447,6 +455,11 @@ export function ReportRecipientTable({
         <p className="text-xs text-muted-foreground">
           Remove is offered while the holder has not been emailed and has not
           opened the report.
+        </p>
+      ) : null}
+      {canUpdate && mailBlocked ? (
+        <p className="text-xs text-muted-foreground">
+          {MAIL_BLOCKED_MESSAGE.MEMBER_EMAIL}
         </p>
       ) : null}
 

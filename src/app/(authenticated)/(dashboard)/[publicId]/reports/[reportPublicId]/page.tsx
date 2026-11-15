@@ -229,6 +229,7 @@ export default async function ReportPage({
             state={state}
             addable={addable}
             noticeEmails={noticeEmails}
+            mailBlocked={data.mailDelivery.blockedReason}
           />
         </CardContent>
       </Card>

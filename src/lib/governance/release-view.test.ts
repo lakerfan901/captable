@@ -125,12 +125,12 @@ describe("filterHolders / unitsText", () => {
   it("formats units", () => {
     expect(
       unitsText({ preferredUnits: "1234.500000", commonUnits: "0.000000" }),
-    ).toBe("Preferred 1,234.5");
-    expect(unitsText({ preferredUnits: "0", commonUnits: "50.000000" })).toBe(
-      "Common 50",
+    ).toBe("Preferred · 1,234.5 units");
+    expect(unitsText({ preferredUnits: "0", commonUnits: "1.000000" })).toBe(
+      "Common · 1 unit",
     );
     expect(unitsText({ preferredUnits: "10", commonUnits: "2" })).toBe(
-      "Preferred 10 · Common 2",
+      "Preferred · 10 units, Common · 2 units",
     );
     expect(
       unitsText({ preferredUnits: "0.000000", commonUnits: "0.000000" }),
@@ -389,6 +389,11 @@ describe("report page", () => {
     expect(
       recipientActions(r({}), { canUpdate: true, state: "UNPUBLISHED" }),
     ).toEqual({
+      email: null,
+      replaceLink: false,
+      remove: true,
+    });
+    expect(recipientActions(r({}), { ...pub, mailBlocked: true })).toEqual({
       email: null,
       replaceLink: false,
       remove: true,

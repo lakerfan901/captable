@@ -401,7 +401,7 @@ export function audienceProblems(
     warn(
       "NOT_MEMBERS_SELECTED",
       notMembers,
-      `${plural(notMembers.length, "selected holder is", "selected holders are")} not Members.`,
+      `${plural(notMembers.length, "selected holder is not a Member", "selected holders are not Members")}.`,
     );
     if (transfer) {
       const outside = valid

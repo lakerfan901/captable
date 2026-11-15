@@ -98,7 +98,7 @@ export function filterHolders<T extends { name: string; noticeEmail: string }>(
   );
 }
 
-/** "Preferred 1,000 · Common 50", "No units". */
+/** "Preferred · 1,000 units", "Preferred · 10 units, Common · 2 units", "No units" (as the prototype). */
 export function unitsText(h: {
   preferredUnits: string;
   commonUnits: string;
@@ -108,13 +108,14 @@ export function unitsText(h: {
     const [int = "0", frac = ""] = v.split(".");
     const trimmed = frac.replace(/0+$/, "");
     const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return trimmed ? `${grouped}.${trimmed}` : grouped;
+    const n = trimmed ? `${grouped}.${trimmed}` : grouped;
+    return `${n} ${n === "1" ? "unit" : "units"}`;
   };
   const nonZero = (v: string) => /[1-9]/.test(v);
   if (nonZero(h.preferredUnits))
-    parts.push(`Preferred ${fmt(h.preferredUnits)}`);
-  if (nonZero(h.commonUnits)) parts.push(`Common ${fmt(h.commonUnits)}`);
-  return parts.length > 0 ? parts.join(" · ") : "No units";
+    parts.push(`Preferred · ${fmt(h.preferredUnits)}`);
+  if (nonZero(h.commonUnits)) parts.push(`Common · ${fmt(h.commonUnits)}`);
+  return parts.length > 0 ? parts.join(", ") : "No units";
 }
 
 export const PORTAL_STATE_LABEL: Readonly<Record<HolderPortalState, string>> = {
@@ -453,7 +454,12 @@ function asResendRow(r: RecipientFacts) {
 /** The row actions of a recipient (6.2), each absent when not allowed. */
 export function recipientActions(
   r: RecipientFacts,
-  ctx: { canUpdate: boolean; state: PublishState },
+  ctx: {
+    canUpdate: boolean;
+    state: PublishState;
+    /** Production with the mail catcher: the server refuses every email. */
+    mailBlocked?: boolean;
+  },
 ): {
   /** "Email" (never emailed) or "Resend"; null: not offered. */
   email: "Email" | "Resend" | null;
@@ -463,7 +469,7 @@ export function recipientActions(
   if (!ctx.canUpdate || ctx.state === "DRAFT") {
     return { email: null, replaceLink: false, remove: false };
   }
-  const emailing = mayEmail(ctx.state);
+  const emailing = mayEmail(ctx.state) && ctx.mailBlocked !== true;
   const plan = resendPlan([asResendRow(r)], "ALL");
   return {
     email:

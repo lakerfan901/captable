@@ -134,8 +134,10 @@ export function AudiencePicker({
                 <span className="sr-only">Select</span>
               </TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Class and units</TableHead>
-              <TableHead>Notice email</TableHead>
+              <TableHead className="whitespace-nowrap">
+                Class and units
+              </TableHead>
+              <TableHead className="whitespace-nowrap">Notice email</TableHead>
               {showPortal ? <TableHead>Portal</TableHead> : null}
               {showK1 ? <TableHead>K-1 attached</TableHead> : null}
             </TableRow>

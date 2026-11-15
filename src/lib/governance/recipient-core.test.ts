@@ -145,7 +145,9 @@ describe("planAddRecipients", () => {
       ["NOT_MEMBERS_SELECTED", ["f"]],
       ["RECEIVES_NOTHING", ["f"]],
     ]);
-    expect(plan.warnings[1]?.message).toBe("1 selected holder is not Members.");
+    expect(plan.warnings[1]?.message).toBe(
+      "1 selected holder is not a Member.",
+    );
   });
 });
 
