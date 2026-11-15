@@ -1,36 +1,21 @@
-import { TRPCError } from "@trpc/server";
-import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { connection } from "next/server";
 import { AuthCard, SignOutButton } from "@/components/portal/auth-card";
+import { loadPortalMe } from "@/components/portal/portal-me";
 import { PortalShell } from "@/components/portal/portal-shell";
-import { api } from "@/trpc/server";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { accessBasePath, companyInitials } from "@/lib/portal/portal-nav";
 
-// /portal (04-investor-portal.md 6.1; package P2b, finished by P8): the
-// signed-in landing. The holders come from `portal.me` (ACTIVE accesses of
-// LLC companies whose holder row exists). None: "Your access has been turned
-// off." (P9). One or more: a card per holder.
-//
-// P8 replaces the cards with the plan's behaviour: one holder redirects to
-// `/portal/[access]`, several become a chooser linking there. Those pages do
-// not exist yet, so the cards link nowhere in this package.
-
-export const metadata: Metadata = {
-  title: { absolute: "Investor portal" },
-  robots: { index: false, follow: false },
-};
+// /portal (04-investor-portal.md 6.1; packages P2b, P8a): the signed-in
+// landing. The holders come from `portal.me` (ACTIVE accesses of LLC
+// companies whose holder row exists). None: "Your access has been turned
+// off." (P9). One: straight to that holder. Several: a chooser of cards
+// "{holder name} — {company name}", each linking to `/portal/[access]`.
 
 export default async function PortalHomePage() {
-  // Per request only (it reads the portal cookie); also keeps the build from
-  // trying to prerender it.
-  await connection();
   // The layout already required a session; a session that ended between the
-  // two reads (UNAUTHORIZED) goes back to sign-in.
-  const me = await api.portal.me().catch((error: unknown) => {
-    if (error instanceof TRPCError && error.code === "UNAUTHORIZED")
-      return null;
-    throw error;
-  });
+  // two reads goes back to sign-in.
+  const me = await loadPortalMe();
   if (me === null) redirect("/portal/sign-in");
 
   if (me.holders.length === 0) {
@@ -44,26 +29,38 @@ export default async function PortalHomePage() {
     );
   }
 
+  const only = me.holders.length === 1 ? me.holders[0] : undefined;
+  if (only) redirect(accessBasePath(only.access));
+
   return (
     <PortalShell email={me.email}>
       <div className="flex flex-col gap-y-3">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {me.holders.length > 1 ? "Choose a holder" : "Your access"}
+          Choose a holder
         </h1>
         <p className="text-sm text-muted-foreground">
-          {me.holders.length > 1
-            ? "You have access to more than one holder."
-            : "You have access to this holder."}
+          You have access to more than one holder.
         </p>
         <ul className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2" id="holders">
           {me.holders.map((holder) => (
-            <li
-              key={holder.access}
-              className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm"
-            >
-              <span className="block text-base font-semibold">
-                {holder.holderName} — {holder.companyName}
-              </span>
+            <li key={holder.access}>
+              <Link
+                href={accessBasePath(holder.access)}
+                className="flex h-full items-center gap-4 rounded-lg border bg-card p-6 text-card-foreground shadow-xs transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                data-testid="holder-card"
+              >
+                <Avatar className="h-10 w-10 rounded">
+                  {holder.companyLogo ? (
+                    <AvatarImage src={holder.companyLogo} alt="" />
+                  ) : null}
+                  <AvatarFallback className="rounded bg-indigo-100 text-sm font-medium text-indigo-700">
+                    {companyInitials(holder.companyName)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="min-w-0 text-base font-semibold">
+                  {holder.holderName} — {holder.companyName}
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
