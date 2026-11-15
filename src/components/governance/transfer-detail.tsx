@@ -288,6 +288,24 @@ interface TimelineItem {
   detail?: string;
 }
 
+/**
+ * "Released {date}; emailed to {n} of {m}" (04-investor-portal.md 5.5): the
+ * report's release is not an email; a portal-only release emails nobody.
+ */
+function noticeCopyDelivery(
+  report: {
+    releasedAt: Date | null;
+    recipientCount: number;
+    emailedCount: number;
+  },
+  timeZone: string,
+): string {
+  const released = report.releasedAt
+    ? `Released ${formatInstantDate(report.releasedAt, timeZone)}`
+    : "Not released";
+  return `${released}; emailed to ${report.emailedCount} of ${report.recipientCount}`;
+}
+
 function Timeline({ data, timeZone }: { data: TransferGet; timeZone: string }) {
   const involuntary = data.kind === "INVOLUNTARY";
   const right = involuntary ? "purchase option" : "right of first refusal";
@@ -298,10 +316,10 @@ function Timeline({ data, timeZone }: { data: TransferGet; timeZone: string }) {
     items.push({
       label: "Copy to the other Preferred Members due",
       date: data.noticeCopyDueOn,
-      detail: data.noticeCopyReport?.sentAt
-        ? `Sent ${formatInstantDate(data.noticeCopyReport.sentAt, timeZone)}`
+      detail: data.noticeCopyReport?.releasedAt
+        ? noticeCopyDelivery(data.noticeCopyReport, timeZone)
         : data.noticeCopyReport
-          ? "Prepared, not sent"
+          ? "Prepared, not released"
           : "Not prepared",
     });
     items.push({
@@ -629,9 +647,9 @@ function NoticeCopyCard({
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <ReportStatusBadge status={report.status} />
           <span className="text-muted-foreground">
-            {report.sentAt
-              ? `Sent ${formatInstantDate(report.sentAt, timeZone)}`
-              : "Prepared. Attach the notice and send it from the report page."}
+            {report.releasedAt
+              ? noticeCopyDelivery(report, timeZone)
+              : "Prepared. Attach the notice and release it from the report page."}
           </span>
           <Button asChild size="sm" variant="outline">
             <Link href={reportHref(report.publicId)}>Open the report</Link>

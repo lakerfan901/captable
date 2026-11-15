@@ -14,8 +14,9 @@ import {
 } from "react-email";
 import { noticeFooter } from "./BallotInviteEmail";
 
-// Member report delivery (03-governance.md G12, "Email copy") and the
-// "your report link was re-issued to another address" security notice.
+// Member report delivery (03-governance.md G12, "Email copy"; reworded for
+// the investor portal, 04-investor-portal.md 5.5 and 5.8) and the "your
+// report link was re-issued to another address" security notice.
 
 export type MemberReportEmailType =
   | "QUARTERLY"
@@ -36,6 +37,16 @@ export interface MemberReportEmailProps {
   validUntil: string;
   link: string;
 }
+
+/**
+ * 04-investor-portal.md 5.5, P25: the link is unchanged; where it leads
+ * depends on the report and on whether this address has portal access to
+ * the holder, which the email does not know. So the sentence is
+ * conditional and true in every case (a report sent before the portal, an
+ * address never invited, an invitation not completed yet).
+ */
+export const PORTAL_ACCESS_LINE =
+  "If you have access to the investor portal, you will be asked to sign in with your password, or to set one up if you have not done so yet. Otherwise the link opens the report directly.";
 
 export const CONFIDENTIALITY_LINE =
   "Confidential. Provided under Section 8.3 of the Operating Agreement.";
@@ -94,9 +105,12 @@ export const MemberReportEmail = (props: MemberReportEmailProps) => {
                 className="rounded bg-black px-5 py-3 text-center text-[12px] font-semibold text-white no-underline"
                 href={link}
               >
-                View
+                View in the investor portal
               </Button>
             </Section>
+            <Text className="text-[14px] leading-[24px] text-black">
+              {PORTAL_ACCESS_LINE}
+            </Text>
 
             <Text className="text-[14px]! leading-[24px] text-black">
               or copy and paste this URL into your browser:{" "}

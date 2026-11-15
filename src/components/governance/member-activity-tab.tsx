@@ -152,7 +152,7 @@ export async function MemberActivityTab({
         title="Reports and notices"
         empty={
           data.reports.length === 0
-            ? "No report or notice has been sent to this member."
+            ? "No report or notice has been released to this member."
             : null
         }
       >
@@ -161,7 +161,8 @@ export async function MemberActivityTab({
             <TableRow>
               <TableHead>Report</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead>Sent</TableHead>
+              <TableHead>Released</TableHead>
+              <TableHead>Emailed</TableHead>
               <TableHead>First opened</TableHead>
             </TableRow>
           </TableHeader>
@@ -177,7 +178,10 @@ export async function MemberActivityTab({
                   </Link>
                 </TableCell>
                 <TableCell>{REPORT_TYPE_LABEL[r.type] ?? r.type}</TableCell>
-                <TableCell>{date(r.sentAt)}</TableCell>
+                <TableCell>{date(r.releasedAt)}</TableCell>
+                <TableCell>
+                  {r.emailedAt ? date(r.emailedAt) : "Not emailed"}
+                </TableCell>
                 <TableCell>
                   {r.firstViewedAt ? date(r.firstViewedAt) : "Not opened"}
                 </TableCell>

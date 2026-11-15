@@ -1,5 +1,6 @@
 import { createTRPCRouter } from "@/trpc/api/trpc";
 import { addAttachmentProcedure } from "./procedures/add-attachment";
+import { addRecipientsProcedure } from "./procedures/add-recipients";
 import { attachmentUrlProcedure } from "./procedures/attachment-url";
 import { audienceOptionsProcedure } from "./procedures/audience-options";
 import { createProcedure } from "./procedures/create";
@@ -11,6 +12,7 @@ import { publishProcedure } from "./procedures/publish";
 import { refreshFiguresProcedure } from "./procedures/refresh-figures";
 import { releaseProcedure } from "./procedures/release";
 import { removeAttachmentProcedure } from "./procedures/remove-attachment";
+import { removeRecipientProcedure } from "./procedures/remove-recipient";
 import { replaceLinkProcedure } from "./procedures/replace-link";
 import { resendProcedure } from "./procedures/resend";
 import { sendProcedure } from "./procedures/send";
@@ -36,6 +38,8 @@ export const memberReportRouter = createTRPCRouter({
   release: releaseProcedure,
   publish: publishProcedure,
   unpublish: unpublishProcedure,
+  addRecipients: addRecipientsProcedure,
+  removeRecipient: removeRecipientProcedure,
   send: sendProcedure,
   resend: resendProcedure,
   replaceLink: replaceLinkProcedure,

@@ -31,7 +31,13 @@ export interface MemberActivityReport {
   reportPublicId: string;
   title: string;
   type: string;
-  sentAt: Date | null;
+  /**
+   * When the report was released (frozen, audience fixed): the report's
+   * `sentAt` (04-investor-portal.md 5.5). Not an email date.
+   */
+  releasedAt: Date | null;
+  /** When this Member's email was accepted; null: never emailed (a portal-only release). */
+  emailedAt: Date | null;
   firstViewedAt: Date | null;
 }
 
@@ -78,8 +84,8 @@ export const memberActivityProcedure = withLlcAccessControl
           },
         },
       }),
-      // Recipients are created when a report is sent; a DRAFT has none worth
-      // showing on the Member's page.
+      // Recipients are created when a report is released (or added to its
+      // audience later); a DRAFT has none worth showing on the Member's page.
       ctx.db.memberReportRecipient.findMany({
         where: {
           companyId,
@@ -146,7 +152,10 @@ export const memberActivityProcedure = withLlcAccessControl
           reportPublicId: r.report.publicId,
           title: r.report.title,
           type: r.report.type,
-          sentAt: r.sentAt ?? r.report.sentAt,
+          // Kept apart: a recipient of a portal-only release was never
+          // emailed, so the release date must not read as an email date.
+          releasedAt: r.report.sentAt,
+          emailedAt: r.sentAt,
           firstViewedAt: r.firstViewedAt,
         }),
       ),
