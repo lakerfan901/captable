@@ -22,8 +22,9 @@
 //   is private to one holder (a K-1).
 //
 // A file tied to two different holders, or tied to a holder that no longer
-// exists (a member-page kind with the holder column cleared by the holder's
-// deletion, `onDelete: SetNull`), can be shared with nobody.
+// exists (a member-page kind, or a subscription envelope, whose holder
+// column was cleared by the holder's deletion, `onDelete: SetNull`), can be
+// shared with nobody.
 
 export type BindingSource =
   | "DOCUMENT"

@@ -14,9 +14,11 @@
 //   they then opened in another company is never shown.
 //
 // Filters are company-scoped: a `stakeholderId` or `targetId` of another
-// company simply matches nothing. `targetId` is the id the portal stored:
-// `Document.id` for `document` rows (P6), the report's and attachment's ids
-// for the report rows (P5). Paging is keyset on `(createdAt, id)` with an
+// company simply matches nothing. `targetId` is matched exactly as the
+// portal stored it: for `document` rows that is the internal `Document.id`
+// (portal.documents.fileUrl, P6); the report rows are written by P5, which
+// decides its own ids. `documentPublicId` filters the opens of one document
+// by the public id the team screens hold. Paging is keyset on `(createdAt, id)` with an
 // opaque `nextCursor`.
 
 import type { Prisma } from "@prisma/client";
@@ -37,6 +39,8 @@ export const ZAccessLogInput = z.object({
     .enum(["memberReport", "memberReportAttachment", "document"])
     .optional(),
   targetId: z.string().min(1).max(64).optional(),
+  /** Opens of one document, by the public id the team screens use. */
+  documentPublicId: z.string().min(1).max(64).optional(),
   cursor: z.string().min(1).max(100).optional(),
 });
 
@@ -53,6 +57,16 @@ export const accessLogProcedure = withLlcAccessControl
       throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid cursor." });
     }
 
+    // A document of another company (or none) matches no row.
+    const documentTarget =
+      input.documentPublicId === undefined
+        ? null
+        : ((
+            await db.document.findFirst({
+              where: { companyId, publicId: input.documentPublicId },
+              select: { id: true },
+            })
+          )?.id ?? "");
     const companyRows: Prisma.PortalAccessLogWhereInput = {
       companyId,
       ...(input.stakeholderId !== undefined && {
@@ -60,9 +74,16 @@ export const accessLogProcedure = withLlcAccessControl
       }),
       ...(input.targetType !== undefined && { targetType: input.targetType }),
       ...(input.targetId !== undefined && { targetId: input.targetId }),
+      ...(documentTarget !== null && {
+        AND: [{ targetType: "document" }, { targetId: documentTarget }],
+      }),
     };
     const branches: Prisma.PortalAccessLogWhereInput[] = [companyRows];
-    if (input.targetType === undefined && input.targetId === undefined) {
+    if (
+      input.targetType === undefined &&
+      input.targetId === undefined &&
+      documentTarget === null
+    ) {
       const accesses = await db.portalAccess.findMany({
         where: {
           companyId,

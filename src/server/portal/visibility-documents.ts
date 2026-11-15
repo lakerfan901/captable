@@ -170,7 +170,13 @@ export async function loadDocumentFacts(
           { signedDocumentId: { in: docIds } },
         ],
       },
-      select: { bucketId: true, signedDocumentId: true, stakeholderId: true },
+      select: {
+        bucketId: true,
+        signedDocumentId: true,
+        stakeholderId: true,
+        workflow: true,
+        isMaster: true,
+      },
     }),
     tx.memberReportAttachment.findMany({
       where: {
@@ -223,6 +229,11 @@ export async function loadDocumentFacts(
       if (t.signedDocumentId === doc.id) esignOutput = true;
       if (t.stakeholderId !== null) {
         ties.push({ source: "ESIGN_PACKET", stakeholderId: t.stakeholderId });
+      } else if (t.workflow === "SUBSCRIPTION" && !t.isMaster) {
+        // A subscription envelope is always sent for one holder
+        // (admission send); none left means that holder was deleted
+        // (`Template.stakeholderId` is SetNull).
+        holderRemoved = true;
       }
     }
     for (const a of attachments) {

@@ -383,8 +383,59 @@ async function setup() {
       key: `not-${c1.name}/generic-documents-x.pdf`,
     }),
   );
+  // A K-1 file (private report attachment of A) and an untied Document on it.
+  const k1Bucket = await bucket(c1, "k1");
+  const report = await db.memberReport.create({
+    data: {
+      publicId: generatePublicId(),
+      companyId: c1.id,
+      type: "TAX_K1",
+      title: "K-1 2026",
+      authorId: actor1.memberId,
+    },
+  });
+  await db.memberReportAttachment.create({
+    data: {
+      reportId: report.id,
+      companyId: c1.id,
+      kind: "K1",
+      name: "K-1 A.pdf",
+      bucketId: k1Bucket.id,
+      stakeholderId: A.id,
+    },
+  });
+  await document(c1, "k1Alias", k1Bucket);
+  // A file filed on A's convertible note.
+  const note = await db.convertibleNote.create({
+    data: {
+      publicId: "CN-01",
+      capital: 1000,
+      stakeholderId: A.id,
+      companyId: c1.id,
+      issueDate: new Date("2026-11-01"),
+      boardApprovalDate: new Date("2026-11-01"),
+    },
+  });
+  const noteDoc = await document(c1, "noteA", await bucket(c1, "note"));
+  await db.document.update({
+    where: { id: noteDoc.id },
+    data: { convertibleNoteId: note.id },
+  });
   await document(c2, "docF", await bucket(c2, "doc-f"));
   check("fixtures created", true);
+}
+
+/**
+ * "POLICY" for an RBAC refusal (UNAUTHORIZED with the RBAC message, as
+ * opposed to a missing session or a role that failed to load), else the code.
+ */
+async function policyOf(fn: () => Promise<unknown>): Promise<string> {
+  const e = await errorOf(fn);
+  if (e === null) return "OK";
+  return e.code === "UNAUTHORIZED" &&
+    /^(No matching permissions|Permission denied)/.test(e.message)
+    ? "POLICY"
+    : `${e.code}:${e.message}`;
 }
 
 async function codeOf(fn: () => Promise<unknown>): Promise<string> {
@@ -442,20 +493,20 @@ async function rbacAndSessions() {
   );
   eq(
     "portal: read may not share",
-    await codeOf(() =>
+    await policyOf(() =>
       read.shareDocuments({
         documentPublicIds: [free],
         stakeholderIds: [A.id],
       }),
     ),
-    "UNAUTHORIZED",
+    "POLICY",
   );
   eq(
     "portal: read may not unshare",
-    await codeOf(() =>
+    await policyOf(() =>
       read.unshareDocument({ documentPublicId: free, stakeholderIds: [A.id] }),
     ),
-    "UNAUTHORIZED",
+    "POLICY",
   );
   for (const [label, run] of [
     ["shareOptions", () => none.shareOptions({ documentPublicIds: [free] })],
@@ -479,8 +530,8 @@ async function rbacAndSessions() {
   ] as const) {
     eq(
       `a role without portal is refused ${label}`,
-      await codeOf(run),
-      "UNAUTHORIZED",
+      await policyOf(run),
+      "POLICY",
     );
   }
   eq(
@@ -751,6 +802,18 @@ async function holderBound() {
     "MEMBER_LIST",
   );
   eq("a plain upload carries none", by.get(free.publicId)?.warnings.length, 0);
+  const { k1Alias, noteA } = docs;
+  if (!k1Alias || !noteA) throw new Error("fixture");
+  const more = await team1.shareOptions({
+    documentPublicIds: [k1Alias.publicId, noteA.publicId],
+  });
+  for (const d of more.documents) {
+    eq(
+      `${d.name}: ${d.source === "SECURITY_FILE" ? "a convertible note file" : "a Document on A's K-1 object"} is HOLDER_ONLY A`,
+      JSON.stringify(d.shareability),
+      sh(w9A.publicId),
+    );
+  }
 
   const before = await db.portalDocumentGrant.count({
     where: { companyId: c1.id },
@@ -771,6 +834,8 @@ async function holderBound() {
     ["the alias", w9Alias.publicId],
     ["the packet file", packetA.publicId],
     ["the orphaned W-9 (even with A)", orphan.publicId],
+    ["the K-1 alias", k1Alias.publicId],
+    ["the convertible note file", noteA.publicId],
   ] as const) {
     eq(
       `sharing ${label} with B is refused`,
@@ -821,6 +886,94 @@ async function holderBound() {
     "B's fileUrl for the W-9 is NOT_FOUND",
     await codeOf(() => openUrl(U2, B, w9A.publicId)),
     "NOT_FOUND",
+  );
+}
+
+async function holderDeleted() {
+  section("5b. a holder is deleted: its files can be shared with nobody");
+  const H = await newMember(c1, "H Leaving");
+  const w9 = await document(c1, "w9H", await bucket(c1, "w9-h"), {
+    stakeholderId: H.id,
+    kind: "w9",
+  });
+  const packetBucket = await bucket(c1, "packet-h", { tags: ["esign"] });
+  const envelope = await db.template.create({
+    data: {
+      publicId: generatePublicId(),
+      name: "Subscription packet H",
+      bucketId: packetBucket.id,
+      uploaderId: actor1.memberId,
+      companyId: c1.id,
+      workflow: "SUBSCRIPTION",
+      stakeholderId: H.id,
+    },
+  });
+  const packet = await document(c1, "packetH", packetBucket);
+  await team1.shareDocuments({
+    documentPublicIds: [w9.publicId],
+    stakeholderIds: [H.id],
+  });
+  await db.stakeholder.delete({ where: { id: H.id } });
+  const after = await db.document.findUnique({
+    where: { id: w9.id },
+    select: { stakeholderId: true },
+  });
+  const envAfter = await db.template.findUnique({
+    where: { id: envelope.id },
+    select: { stakeholderId: true },
+  });
+  check(
+    "deleting the holder cleared Document and Template holder columns",
+    after?.stakeholderId === null && envAfter?.stakeholderId === null,
+    JSON.stringify([after, envAfter]),
+  );
+  const options = await team1.shareOptions({
+    documentPublicIds: [w9.publicId, packet.publicId],
+  });
+  for (const d of options.documents) {
+    eq(
+      `${d.name} is NONE / HOLDER_REMOVED`,
+      JSON.stringify(d.shareability),
+      JSON.stringify({ kind: "NONE", reason: "HOLDER_REMOVED" }),
+    );
+  }
+  const refused = await errorOf(() =>
+    team1.shareDocuments({
+      documentPublicIds: [w9.publicId],
+      stakeholderIds: [A.id],
+    }),
+  );
+  check(
+    "sharing the deleted holder's W-9 with A is refused",
+    refused?.code === "BAD_REQUEST" &&
+      /holder that no longer exists/.test(refused.message),
+    JSON.stringify(refused),
+  );
+  eq(
+    "and with A, the packet file too",
+    await codeOf(() =>
+      team1.shareDocuments({
+        documentPublicIds: [packet.publicId],
+        stakeholderIds: [A.id],
+      }),
+    ),
+    "BAD_REQUEST",
+  );
+  const left = await team1.shareOptions({ documentPublicIds: [w9.publicId] });
+  eq(
+    "the deleted holder's leftover grant is listed without a name",
+    JSON.stringify(left.documents[0]?.sharedWith.map((s) => s.name)),
+    "[null]",
+  );
+  eq(
+    "and can be removed",
+    (
+      await team1.unshareDocument({
+        documentPublicId: w9.publicId,
+        stakeholderIds: [H.id],
+      })
+    ).removed,
+    1,
   );
 }
 
@@ -1221,6 +1374,18 @@ async function accessLog() {
       .rows.length,
     1,
   );
+  eq(
+    "filtered by its public id: the same open",
+    (await team1.accessLog({ documentPublicId: docs.real?.publicId })).rows
+      .length,
+    1,
+  );
+  eq(
+    "filtered by company 2's document: nothing",
+    (await team1.accessLog({ documentPublicId: docs.docF?.publicId })).rows
+      .length,
+    0,
+  );
 
   // Paging: 60 more rows.
   for (let i = 0; i < 60; i++) {
@@ -1321,6 +1486,7 @@ await runScenarios([
   ["share and see", shareAndSee],
   ["presets", presetsFrozen],
   ["holder-bound", holderBound],
+  ["holder deleted", holderDeleted],
   ["cross-company", crossCompany],
   ["concurrent share", concurrentShare],
   ["open a real file", openRealFile],
