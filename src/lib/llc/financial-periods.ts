@@ -304,6 +304,34 @@ export function changeOf(
   };
 }
 
+/** A period's metric values by key, as compared by `comparePeriods`. */
+export interface ComparablePeriod {
+  partial: boolean;
+  /** null when the period has no data */
+  values: Readonly<Record<string, bigint | number | null>> | null;
+}
+
+/**
+ * 5.9 "Comparison": the change of every metric of `current` against
+ * `previous` (the previous period or the same period a year earlier), by
+ * `changeOf`. A metric missing from `previous` is NOT_AVAILABLE.
+ */
+export function comparePeriods(
+  current: ComparablePeriod | null,
+  previous: ComparablePeriod | null,
+): Record<string, Change> {
+  const side = (p: ComparablePeriod | null, key: string) => {
+    if (p === null) return null;
+    const raw = p.values?.[key] ?? null;
+    return { value: raw === null ? null : BigInt(raw), partial: p.partial };
+  };
+  const out: Record<string, Change> = {};
+  for (const key of Object.keys(current?.values ?? {})) {
+    out[key] = changeOf(side(current, key), side(previous, key));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Published-through date (P33)
 

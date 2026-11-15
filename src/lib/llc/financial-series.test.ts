@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { monthEnd } from "./financial-periods";
+import { comparePeriods, monthEnd } from "./financial-periods";
 import {
   aggregate,
   aggregateHolder,
@@ -16,6 +16,7 @@ import {
   fundMonthToJson,
   HOLDER_METRICS,
   type HolderMonth,
+  holderComparison,
   holderMonthFromJson,
   holderMonthToJson,
   holderSlice,
@@ -345,6 +346,69 @@ describe("aggregate", () => {
         to: "2027-01-01",
       }),
     ).toThrow(/Two fund records/);
+  });
+});
+
+describe("holder comparison", () => {
+  it("previous quarter of a holder on the fund calendar; null without data", () => {
+    const fundMonths = [
+      "2027-01-01",
+      "2027-02-01",
+      "2027-03-01",
+      "2027-04-01",
+      "2027-05-01",
+      "2027-06-01",
+    ].map((m) => fm(m));
+    const rows = [
+      hm("2027-02-01", { grossDistributions: 100n }),
+      hm("2027-05-01", { grossDistributions: 150n }),
+    ];
+    const [q2] = aggregateHolder(rows, fundMonths, "quarter", {
+      from: "2027-04-01",
+      to: "2027-06-01",
+    });
+    if (!q2) throw new Error("no period");
+    const prev = holderComparison(rows, fundMonths, q2, "previous");
+    expect(prev?.key).toBe("2027-Q1");
+    expect(prev?.values?.grossDistributions).toBe(100n);
+    const c = comparePeriodValues(HOLDER_METRICS, q2, prev);
+    expect(c.grossDistributions).toMatchObject({
+      amount: 50n,
+      pctBps: 5_000n,
+      status: "OK",
+    });
+    expect(holderComparison(rows, fundMonths, q2, "yearAgo")).toBeNull();
+    expect(
+      holderComparison(
+        rows,
+        fundMonths,
+        { grain: "inception", start: "2027-01-01" },
+        "previous",
+      ),
+    ).toBeNull();
+  });
+
+  it("comparePeriodValues equals comparePeriods over the catalogue values", () => {
+    const months = ["2027-01-01", "2027-02-01"].map((m, i) =>
+      fm(m, {
+        grossRevenue: BigInt(100 + i * 50),
+        utilizationBps: i ? 5000 : null,
+      }),
+    );
+    const [jan, feb] = aggregate(months, "month", {
+      from: "2027-01-01",
+      to: "2027-02-01",
+    });
+    if (!jan?.values || !feb?.values) throw new Error("no values");
+    const flat = (p: NonNullable<typeof jan>) => ({
+      partial: p.partial,
+      values: Object.fromEntries(
+        FUND_METRICS.map((d) => [d.key, p.values ? d.get(p.values) : null]),
+      ),
+    });
+    expect(comparePeriodValues(FUND_METRICS, feb, jan)).toEqual(
+      comparePeriods(flat(feb), flat(jan)),
+    );
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   changeOf,
   clampRange,
+  comparePeriods,
   comparisonPeriod,
   cutAtPublishedThrough,
   groupByGrain,
@@ -148,6 +149,25 @@ describe("comparison", () => {
     expect(changeOf(full(5n), { value: 4n, partial: true }).status).toBe(
       "PARTIAL",
     );
+  });
+});
+
+describe("comparePeriods", () => {
+  it("compares every metric of the current period by changeOf", () => {
+    const c = comparePeriods(
+      { partial: false, values: { a: 120n, b: 7, c: null, d: 1n } },
+      { partial: false, values: { a: 100n, b: 0, c: 5n } },
+    );
+    expect(c.a).toMatchObject({ amount: 20n, pctBps: 2_000n, status: "OK" });
+    expect(c.b?.status).toBe("PREVIOUS_ZERO");
+    expect(c.c?.status).toBe("NOT_AVAILABLE");
+    expect(c.d?.status).toBe("NOT_AVAILABLE");
+    expect(
+      comparePeriods({ partial: true, values: { a: 1n } }, null).a?.status,
+    ).toBe("PARTIAL");
+    expect(
+      comparePeriods({ partial: false, values: { a: 1n } }, null).a?.status,
+    ).toBe("NOT_AVAILABLE");
   });
 });
 
