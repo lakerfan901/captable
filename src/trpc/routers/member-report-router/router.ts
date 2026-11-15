@@ -3,6 +3,7 @@ import { addAttachmentProcedure } from "./procedures/add-attachment";
 import { attachmentUrlProcedure } from "./procedures/attachment-url";
 import { createProcedure } from "./procedures/create";
 import { deleteProcedure } from "./procedures/delete";
+import { exportXlsxProcedure } from "./procedures/export-xlsx";
 import { getProcedure } from "./procedures/get";
 import { listProcedure } from "./procedures/list";
 import { refreshFiguresProcedure } from "./procedures/refresh-figures";
@@ -28,4 +29,5 @@ export const memberReportRouter = createTRPCRouter({
   send: sendProcedure,
   resend: resendProcedure,
   replaceLink: replaceLinkProcedure,
+  exportXlsx: exportXlsxProcedure,
 });
