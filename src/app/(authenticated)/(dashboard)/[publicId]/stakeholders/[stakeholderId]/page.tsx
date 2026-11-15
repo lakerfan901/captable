@@ -12,6 +12,7 @@ import {
   MemberProfileCard,
   MemberStatusBadge,
 } from "@/components/llc/member/member-profile-card";
+import { PortalAccessCard } from "@/components/llc/portal/portal-access-card";
 import { Allow } from "@/components/rbac/allow";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { serverAccessControl } from "@/lib/rbac/access-control";
 import { requireLlc } from "@/server/entity";
+import { currentMailDelivery } from "@/server/mail-delivery";
 import { api } from "@/trpc/server";
 
 export const metadata: Metadata = {
@@ -76,6 +78,8 @@ export default async function MemberPage(props: {
   }
 
   const documents = loadDocuments ? await loadDocuments() : null;
+  // Absent, not disabled, for a role without `portal: read` (P29).
+  const showPortalAccess = allow(true, ["portal", "read"], false);
 
   return (
     <div className="flex flex-col gap-y-3">
@@ -108,7 +112,17 @@ export default async function MemberPage(props: {
           <TabsTrigger value="governance">Governance</TabsTrigger>
         </TabsList>
         <TabsContent value="profile">
-          <MemberProfileCard member={member} />
+          <div className="flex flex-col gap-y-3">
+            <MemberProfileCard member={member} />
+            {showPortalAccess && (
+              <PortalAccessCard
+                stakeholderId={member.id}
+                holderName={member.name}
+                defaultEmail={member.effectiveNoticeEmail}
+                mailDelivery={currentMailDelivery("MEMBER_EMAIL")}
+              />
+            )}
+          </div>
         </TabsContent>
         <TabsContent value="commitments">
           <CommitmentsTab stakeholderId={member.id} />

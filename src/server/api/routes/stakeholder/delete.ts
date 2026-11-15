@@ -100,6 +100,21 @@ export const _delete = withAuthApiV1
         },
       });
 
+      // No foreign keys (relationMode "prisma"): the holder's portal access
+      // and document share rows go with it (04-investor-portal.md section 4).
+      await tx.portalAccess.deleteMany({
+        where: {
+          companyId: stakeholder.companyId,
+          stakeholderId: stakeholder.id,
+        },
+      });
+      await tx.portalDocumentGrant.deleteMany({
+        where: {
+          companyId: stakeholder.companyId,
+          stakeholderId: stakeholder.id,
+        },
+      });
+
       await audit.create(
         {
           action: "stakeholder.deleted",
