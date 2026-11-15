@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -25,7 +26,11 @@ export default async function PortalHomePage() {
   await connection();
   // The layout already required a session; a session that ended between the
   // two reads (UNAUTHORIZED) goes back to sign-in.
-  const me = await api.portal.me().catch(() => null);
+  const me = await api.portal.me().catch((error: unknown) => {
+    if (error instanceof TRPCError && error.code === "UNAUTHORIZED")
+      return null;
+    throw error;
+  });
   if (me === null) redirect("/portal/sign-in");
 
   if (me.holders.length === 0) {

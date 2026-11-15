@@ -13,9 +13,14 @@
  *     src/server/portal/__integration__/portal-auth.integration.ts
  *
  * Companies are named `zz-portal-auth-…`, portal users `zz-portal-auth.…@
- * example.com`. No email is sent: account-email jobs are captured (the
- * worker is package P2b), and the script stands in for the worker by calling
- * `mintTokenForDelivery`. Every row created is deleted at the end.
+ * example.com`. Account-email jobs are captured instead of queued; sections
+ * 1-7 stand in for the worker by calling `mintTokenForDelivery`, section 8
+ * runs the worker (`deliverPortalAccountEmail`) with a capturing sender and
+ * once with the real `sendMail`, which needs the local mail catcher (Mailpit:
+ * SMTP on 1025, API on 8025). Section 9 calls the three route handlers
+ * directly, and re-runs this file in a child process with an https base URL
+ * for the `__Host-` / `Secure` cookie checks. Every row created, and the
+ * caught email, is deleted at the end.
  *
  * Covers: invitation → set password → session; weak password keeps the
  * link; single use (also under two concurrent consumes); expired link; five
@@ -1500,6 +1505,29 @@ async function mailCatcherBody(address: string): Promise<string | null> {
   }
 }
 
+/** Removes this script's messages from the mail catcher (best effort). */
+async function deleteCaughtMail(): Promise<void> {
+  try {
+    const search = await fetch(
+      `http://localhost:8025/api/v1/search?query=${encodeURIComponent(`to:${EMAIL_PREFIX}`)}&limit=200`,
+    );
+    const found = (await search.json()) as {
+      messages?: { ID: string; To?: { Address: string }[] }[];
+    };
+    const ids = (found.messages ?? [])
+      .filter((m) => m.To?.some((t) => t.Address.startsWith(EMAIL_PREFIX)))
+      .map((m) => m.ID);
+    if (ids.length === 0) return;
+    await fetch("http://localhost:8025/api/v1/messages", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ IDs: ids }),
+    });
+  } catch {
+    // The catcher is not needed to clean the database.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 9. Route handlers (P2b): Origin, cookie, next, neutral refusals, sign-out
 
@@ -2015,6 +2043,7 @@ async function cleanupPortal() {
   await db.emailLog.deleteMany({
     where: { toAddress: { startsWith: EMAIL_PREFIX } },
   });
+  await deleteCaughtMail();
   const left =
     (await db.portalUser.count({ where: { id: { in: ids } } })) +
     (await db.portalAccessLog.count({ where: { portalUserId: { in: ids } } })) +
