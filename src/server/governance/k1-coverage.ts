@@ -24,6 +24,14 @@ import { guardedWrite } from "./guarded";
 // does not count, so the deadlines close from that job, once the last
 // holder's email has gone out.
 //
+// Since the investor portal (04-investor-portal.md P17–P22) a recipient row
+// no longer implies an email: it means the holder is in the audience a
+// Manager user confirmed (release or "Add recipients"), and a portal-only
+// release creates rows with `sentAt` null that may never be emailed. Such
+// rows show as `queued` (a recipient not emailed yet), never as delivered,
+// and `memberReport.resend` never creates rows (P21): the meaning
+// of delivered (emailed) is unchanged (P22; section 9.2 item 10).
+//
 // Read only, except `completeK1DeadlinesIfCovered`, which a caller runs
 // inside its own transaction AFTER taking ECONOMICS' company ledger lock and
 // the unit-class locks (`lockCompanyLedgerAndUnitClasses`; then, in the

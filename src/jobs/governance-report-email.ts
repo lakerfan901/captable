@@ -137,6 +137,10 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
   const { report } = recipient;
   if (report.status !== "SENT") return;
   if (recipient.tokenRevokedAt !== null) return;
+  // A portal-only recipient without a notice address (04-investor-portal.md
+  // P19): nothing to send to. The procedures never queue such a row; this
+  // only stops a job queued otherwise from failing (and retrying) forever.
+  if (recipient.email.trim() === "") return;
   // Already sent for this seq (or superseded by a later one): nothing to do,
   // except finishing a K-1 completion that failed after the email (a retry).
   if (recipient.sendCount > seq) {

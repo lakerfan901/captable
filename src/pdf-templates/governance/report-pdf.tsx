@@ -28,7 +28,11 @@ export interface ReportPdfData {
   periodEnd: string | null;
   fiscalQuarter: number | null;
   fiscalYear: number | null;
-  /** Pre-formatted send time in the company time zone. */
+  /**
+   * Pre-formatted RELEASE time (`MemberReport.sentAt`) in the company time
+   * zone, printed as "Released …": a report can be released without email
+   * (04-investor-portal.md 5.5).
+   */
   sent: string;
   /** QUARTERLY / ANNUAL only. */
   figures: ReportFigures | null;
@@ -411,7 +415,7 @@ export function ReportPdf({ data }: { data: ReportPdfData }) {
           <Text style={styles.period}>
             {period ? `${data.typeLabel} · ${period}` : data.typeLabel}
           </Text>
-          <Text style={styles.sent}>{`Sent ${data.sent}`}</Text>
+          <Text style={styles.sent}>{`Released ${data.sent}`}</Text>
 
           {data.figures &&
           (data.type === "QUARTERLY" || data.type === "ANNUAL") ? (

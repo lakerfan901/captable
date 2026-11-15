@@ -119,9 +119,30 @@ export const ZMemberReportReleaseSchema = z
     stakeholderIds: z.array(zId).min(1).max(MAX_RELEASE_AUDIENCE),
     /** "Also send by email" (P19). */
     email: z.boolean(),
-    /** P27, package P4b: inviting holders without portal access is not available yet. */
-    inviteMissing: z.literal(false).optional(),
+    /**
+     * P27: invite each selected holder's notice address to the portal for
+     * that holder when that address has no access to it. Needs
+     * `portal: create` as well (checked in the procedure).
+     */
+    inviteMissing: z.boolean().optional(),
   })
+  .strict();
+
+/** 5.5 `addRecipients`: holders added to a released report (P19, P21). */
+export const ZMemberReportAddRecipientsSchema = z
+  .object({
+    publicId: zPublicId,
+    stakeholderIds: z.array(zId).min(1).max(MAX_RELEASE_AUDIENCE),
+    /** Email the added holders the link now. */
+    email: z.boolean(),
+    /** As `release` (P27). */
+    inviteMissing: z.boolean().optional(),
+  })
+  .strict();
+
+/** 5.5 `removeRecipient`: one never-emailed, never-opened recipient. */
+export const ZMemberReportRemoveRecipientSchema = z
+  .object({ publicId: zPublicId, recipientId: zId })
   .strict();
 
 export const ZMemberReportAudienceOptionsSchema = z
@@ -137,7 +158,17 @@ export const ZMemberReportUnpublishSchema = z
   .strict();
 
 export const ZMemberReportResendSchema = z
-  .object({ publicId: zPublicId, recipientId: zId.optional() })
+  .object({
+    publicId: zPublicId,
+    /** "Email this recipient". */
+    recipientId: zId.optional(),
+    /**
+     * Without `recipientId`: "ALL" (default, as before) emails every
+     * recipient again; "NOT_EMAILED" ("Email all not yet emailed") only the
+     * recipients whose email was never accepted.
+     */
+    scope: z.enum(["ALL", "NOT_EMAILED"]).optional(),
+  })
   .strict();
 
 export const ZMemberReportReplaceLinkSchema = z

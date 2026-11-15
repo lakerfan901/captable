@@ -1720,9 +1720,15 @@ async function k1DeadlinesFollowCoverage() {
     "OPEN,OPEN",
   );
 
-  // Late K-1 for B: the re-send adds B's row; queued is not delivered.
+  // Late K-1 for B: "Add recipients" adds B's row and queues its email
+  // (04-investor-portal.md P21: `resend` no longer adds recipients by
+  // itself); queued is not delivered.
   await attachK1(B.id);
-  await errorOf(() => reports.resend({ publicId }));
+  await reports.addRecipients({
+    publicId,
+    stakeholderIds: [B.id],
+    email: true,
+  });
   eq("B became a recipient", (await recipientOf(B.id)) !== null, true);
   const queuedView = await reports.get({ publicId });
   eq(
@@ -1746,9 +1752,14 @@ async function k1DeadlinesFollowCoverage() {
     "OPEN,OPEN",
   );
 
-  // F's late K-1, but the Manager re-sends to A only: F's row is created and
-  // F was never emailed, so the year is NOT complete.
+  // F's late K-1, added without email, and the Manager re-sends to A only:
+  // F's row exists and F was never emailed, so the year is NOT complete.
   await attachK1(F.id);
+  await reports.addRecipients({
+    publicId,
+    stakeholderIds: [F.id],
+    email: false,
+  });
   const aRow = await recipientOf(A.id);
   await errorOf(() =>
     reports.resend({ publicId, recipientId: aRow?.id ?? "" }),

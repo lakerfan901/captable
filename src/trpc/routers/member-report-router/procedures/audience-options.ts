@@ -2,7 +2,7 @@ import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
 import { currentMailDelivery } from "@/server/mail-delivery";
 import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportAudienceOptionsSchema } from "../schema";
-import { loadAudienceContext } from "./audience";
+import { loadAudienceContext, loadNoticeAddressAccess } from "./audience";
 import { asReportType, findReportRef } from "./shared";
 
 // memberReport.audienceOptions (04-investor-portal.md P18, 5.5; package P4a):
@@ -42,30 +42,39 @@ export const audienceOptionsProcedure = withLlcAccessControl
     const recipientOf = new Map(
       recipients.map((r) => [r.stakeholderId, r.sentAt]),
     );
+    const eligible = audience.holders.filter(
+      (h) =>
+        h.memberStatus === "MEMBER" ||
+        h.memberStatus === "FINANCIAL_INTEREST_ONLY",
+    );
+    const noticeAccess = await loadNoticeAddressAccess(
+      ctx.db,
+      companyId,
+      eligible,
+    );
 
     return {
       type: asReportType(report.type),
       status: report.status,
       today,
-      holders: audience.holders
-        .filter(
-          (h) =>
-            h.memberStatus === "MEMBER" ||
-            h.memberStatus === "FINANCIAL_INTEREST_ONLY",
-        )
-        .map((h) => ({
-          stakeholderId: h.stakeholderId,
-          name: h.name,
-          memberStatus: h.memberStatus,
-          preferredUnits: h.preferredUnits,
-          commonUnits: h.commonUnits,
-          noticeEmail: h.noticeEmail,
-          hasK1: h.hasK1,
-          isRecipient: recipientOf.has(h.stakeholderId),
-          emailedAt: recipientOf.get(h.stakeholderId) ?? null,
-          portal: h.portal,
-          transferor: h.stakeholderId === audience.transferorId,
-        })),
+      holders: eligible.map((h) => ({
+        stakeholderId: h.stakeholderId,
+        name: h.name,
+        memberStatus: h.memberStatus,
+        preferredUnits: h.preferredUnits,
+        commonUnits: h.commonUnits,
+        noticeEmail: h.noticeEmail,
+        hasK1: h.hasK1,
+        isRecipient: recipientOf.has(h.stakeholderId),
+        emailedAt: recipientOf.get(h.stakeholderId) ?? null,
+        portal: h.portal,
+        /**
+         * P27: the notice address's own access to this holder. "NONE":
+         * the release dialog's "Invite these addresses" line lists it.
+         */
+        noticeAddressAccess: noticeAccess.get(h.stakeholderId) ?? "NONE",
+        transferor: h.stakeholderId === audience.transferorId,
+      })),
       presets: audience.presets.presets,
       defaultPreset: audience.presets.defaultPreset,
       deadlineAudienceIds: audience.deadlineAudienceIds,

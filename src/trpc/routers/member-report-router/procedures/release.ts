@@ -42,6 +42,14 @@ import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZMemberReportReleaseSchema } from "../schema";
 import { loadAudienceContext } from "./audience";
 import {
+  assertMayInvite,
+  type InvitationLine,
+  type InvitationRun,
+  invitationSummary,
+  inviteSelectedHolders,
+  queueInvitations,
+} from "./invitations";
+import {
   asReportType,
   auditContext,
   badRequest,
@@ -95,6 +103,17 @@ import {
 // Production with the bundled mail catcher: a release WITH email is refused
 // before anything is written (P23); a portal-only release sends nothing and
 // needs no mail service.
+//
+// `inviteMissing` (P27, package P4b): the caller must also hold `portal:
+// create` (FORBIDDEN otherwise) and mail must be deliverable
+// (`MEMBER_EMAIL`), both checked before anything is written. Then, inside
+// the transaction after step 6, each selected holder's notice address is
+// invited to the portal for that holder when it has no access to it
+// (`inviteSelectedHolders`: a DISABLED access stays disabled and is listed,
+// an ACTIVE one is left alone). The invitation emails, one per person, are
+// queued after commit; their audit rows are `portal.access-invited`, and the
+// release's own audit summary lists them. Allowed with or without email (a
+// portal-only release to holders without access would reach nobody).
 
 /** Shown by `release` and by the review dialog when the period has not ended. */
 export function periodNotEndedMessage(periodEnd: string): string {
@@ -128,15 +147,27 @@ export interface ReleaseResult {
   deadlinesLeftOpen: string[];
   /** Departures from the default audience (S5); never block. */
   warnings: AudienceWarning[];
+  /** `inviteMissing`: one line per selected holder ([] without it). */
+  invitations: InvitationLine[];
+  /** Invitation emails handed to the queue (one per person). */
+  invitationsQueued: number;
 }
 
 export async function releaseReport(
   ctx: ReleaseContext,
-  input: { publicId: string; audience: ReleaseAudience; email: boolean },
+  input: {
+    publicId: string;
+    audience: ReleaseAudience;
+    email: boolean;
+    inviteMissing?: boolean;
+  },
 ): Promise<ReleaseResult> {
   // P23: with email, production with the bundled mail catcher is refused
   // before anything is written (Members would not receive the email).
   if (input.email) assertMailDeliverable("REPORT");
+  // P30: invitations likewise.
+  const inviting = input.inviteMissing === true;
+  if (inviting) assertMailDeliverable("MEMBER_EMAIL");
   const legacy = input.audience.kind === "DEFAULT";
   const companyId = ctx.membership.companyId;
   const memberId = ctx.membership.memberId;
@@ -395,7 +426,25 @@ export async function releaseReport(
         await closeBooksThrough(tx, companyId, periodEnd);
       }
 
+      // 6b. Invitations (P27): after every report write, so a refusal above
+      //     leaves no access behind; portal-user locks come last.
+      let invitations: InvitationRun | null = null;
+      if (inviting) {
+        invitations = await inviteSelectedHolders(tx, {
+          companyId,
+          invitedById: memberId,
+          candidates: members,
+          audit: {
+            actorUserId: ctx.session.user.id,
+            actorName: userName,
+            ...auditContext(ctx),
+          },
+          now,
+        });
+      }
+
       // 7. Audit.
+      const invited = invitationSummary(invitations);
       await Audit.create(
         {
           action: "memberReport.released",
@@ -403,17 +452,18 @@ export async function releaseReport(
           actor: { type: "user", id: ctx.session.user.id },
           context: auditContext(ctx),
           target: [{ type: "memberReport", id: report.id }],
-          summary: releaseAuditSummary({
-            userName,
-            title,
-            recipientNames: recipients.map((r) => r.name),
-            emailed: input.email,
-            booksClosedThrough: booksClosed ? periodEnd : null,
-            deadlinesDone,
-            k1Missing,
-            fiscalYear: report.fiscalYear,
-            deadlinesLeftOpen,
-          }),
+          summary:
+            releaseAuditSummary({
+              userName,
+              title,
+              recipientNames: recipients.map((r) => r.name),
+              emailed: input.email,
+              booksClosedThrough: booksClosed ? periodEnd : null,
+              deadlinesDone,
+              k1Missing,
+              fiscalYear: report.fiscalYear,
+              deadlinesLeftOpen,
+            }) + (invited !== null ? `; ${invited}` : ""),
         },
         tx,
       );
@@ -426,6 +476,7 @@ export async function releaseReport(
         deadlinesDone,
         deadlinesLeftOpen,
         warnings: checked.warnings,
+        invitations,
       };
     },
     { maxWait: 10_000, timeout: 60_000 },
@@ -452,6 +503,7 @@ export async function releaseReport(
     { reportId: result.reportId },
     () => emitReportFile(result.reportId),
   );
+  const invitationsQueued = await queueInvitations(result.invitations);
 
   return {
     publicId: result.publicId,
@@ -462,16 +514,20 @@ export async function releaseReport(
     deadlinesDone: result.deadlinesDone,
     deadlinesLeftOpen: result.deadlinesLeftOpen,
     warnings: result.warnings,
+    invitations: result.invitations?.lines ?? [],
+    invitationsQueued,
   };
 }
 
 export const releaseProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
   .input(ZMemberReportReleaseSchema)
-  .mutation(({ ctx, input }) =>
-    releaseReport(ctx, {
+  .mutation(({ ctx, input }) => {
+    if (input.inviteMissing === true) assertMayInvite(ctx.permissions);
+    return releaseReport(ctx, {
       publicId: input.publicId,
       audience: { kind: "SELECTED", stakeholderIds: input.stakeholderIds },
       email: input.email,
-    }),
-  );
+      inviteMissing: input.inviteMissing === true,
+    });
+  });

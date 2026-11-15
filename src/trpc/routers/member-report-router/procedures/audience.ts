@@ -2,6 +2,7 @@ import "server-only";
 import type { Ymd } from "@/lib/governance/dates";
 import { TRANSFER_NOTICE_KINDS } from "@/lib/governance/report-figures";
 import { fromMicro, toMicro } from "@/lib/llc/voting";
+import { describeAccess } from "@/lib/portal/access-admin-core";
 import {
   type AudienceHolder,
   type AudiencePresets,
@@ -12,6 +13,7 @@ import {
   isTransferNotice,
   type ReportType,
 } from "@/lib/portal/audience-core";
+import { normalizePortalEmail } from "@/lib/portal/visibility-core";
 import type { TPrismaOrTransaction } from "@/server/db";
 import { loadUnitPositions } from "@/server/governance/positions";
 import { listCurrentMembers } from "@/server/governance/recipients";
@@ -136,15 +138,20 @@ export async function k1Holders(
 }
 
 /**
- * Portal state per holder (holders without an entry: "NONE"): ACTIVE when an
- * ACTIVE access to the holder belongs to a portal user with a password set,
- * INVITED when the only ACTIVE accesses have no password yet. DISABLED
- * accesses do not count.
+ * Portal state per holder (holders without an entry: "NONE"), by the rule
+ * of the member page's "Portal access" card (`describeAccess`, package P3),
+ * so both screens agree: ACTIVE when one ACTIVE access of the holder has
+ * been set up (a password set at or after THIS access was invited, or the
+ * holder opened in the portal), INVITED when its ACTIVE accesses are not
+ * set up yet. DISABLED accesses do not count. Only facts of this company's
+ * access rows are read: a password the person set for another company does
+ * not make the holder ACTIVE here, so nothing about other companies shows.
  */
 export async function loadPortalStates(
   tx: TPrismaOrTransaction,
   companyId: string,
   stakeholderIds: readonly string[],
+  now: Date = new Date(),
 ): Promise<Map<string, HolderPortalState>> {
   const out = new Map<string, HolderPortalState>();
   if (stakeholderIds.length === 0) return out;
@@ -156,14 +163,59 @@ export async function loadPortalStates(
     },
     select: {
       stakeholderId: true,
-      portalUser: { select: { passwordHash: true } },
+      status: true,
+      invitedAt: true,
+      lastSeenAt: true,
+      portalUser: { select: { passwordSetAt: true, lockedUntil: true } },
     },
   });
   for (const a of accesses) {
     if (out.get(a.stakeholderId) === "ACTIVE") continue;
+    const view = describeAccess(a, a.portalUser, now);
+    if (view.state === "DISABLED") continue;
+    out.set(a.stakeholderId, view.state);
+  }
+  return out;
+}
+
+/**
+ * P27: for each holder, the access of its NOTICE ADDRESS to that holder
+ * (not of anyone else, such as an accountant): "NONE" when that address was
+ * never given access to the holder, else the access's status. Read through
+ * this company's access rows only (by holder), so nothing is learned about
+ * the address's accesses elsewhere. The release dialog lists the holders
+ * whose notice address is "NONE" under "Invite these addresses".
+ */
+export async function loadNoticeAddressAccess(
+  tx: TPrismaOrTransaction,
+  companyId: string,
+  holders: readonly { stakeholderId: string; noticeEmail: string }[],
+): Promise<Map<string, "NONE" | "ACTIVE" | "DISABLED">> {
+  const out = new Map<string, "NONE" | "ACTIVE" | "DISABLED">();
+  if (holders.length === 0) return out;
+  const accesses = await tx.portalAccess.findMany({
+    where: {
+      companyId,
+      stakeholderId: { in: holders.map((h) => h.stakeholderId) },
+    },
+    select: {
+      stakeholderId: true,
+      status: true,
+      portalUser: { select: { email: true } },
+    },
+  });
+  const byHolder = new Map<string, Map<string, "ACTIVE" | "DISABLED">>();
+  for (const a of accesses) {
+    const m = byHolder.get(a.stakeholderId) ?? new Map();
+    m.set(a.portalUser.email, a.status);
+    byHolder.set(a.stakeholderId, m);
+  }
+  for (const h of holders) {
+    const address = normalizePortalEmail(h.noticeEmail);
     out.set(
-      a.stakeholderId,
-      a.portalUser.passwordHash !== null ? "ACTIVE" : "INVITED",
+      h.stakeholderId,
+      (address !== null && byHolder.get(h.stakeholderId)?.get(address)) ||
+        "NONE",
     );
   }
   return out;
@@ -174,7 +226,7 @@ export interface AudienceCandidate extends AudienceHolder {
   name: string;
   /** `noticeEmail ?? email`, trimmed ("" when the holder has none). */
   noticeEmail: string;
-  /** An ACTIVE access whose portal user has a password: ACTIVE; without one: INVITED. */
+  /** `loadPortalStates`: the member page card's rule (set up: ACTIVE; not yet: INVITED). */
   portal: HolderPortalState;
 }
 

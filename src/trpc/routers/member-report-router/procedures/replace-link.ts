@@ -3,6 +3,7 @@ import {
   emitReportEmails,
   type ReportEmailJobData,
 } from "@/jobs/governance-report-email";
+import { UNPUBLISHED_EMAIL_REFUSAL } from "@/lib/governance/recipient-core";
 import { reportTokenExpiry } from "@/lib/governance/token-payload";
 import { Audit } from "@/server/audit";
 import { emitAfterCommit } from "@/server/governance/emit";
@@ -24,6 +25,13 @@ import { auditContext, badRequest, loadLockedReport } from "./shared";
 // address and the holder's notice email on file are told that the link was
 // re-issued to a different address (no link in that notice; never sent to
 // the new address).
+//
+// Investor portal (04-investor-portal.md P24, package P4b): refused while
+// the report is UNPUBLISHED (its emailed link shows a withdrawn report).
+// A portal-only recipient without a notice address has an empty `email`:
+// replacing its link needs an address (`email`), refused naming the holder
+// otherwise, so nothing with a blank address is ever queued; the audit
+// then says the address was set (there was none before).
 
 export const replaceLinkProcedure = withLlcAccessControl
   .meta({ policies: { governance: { allow: ["update"] } } })
@@ -42,6 +50,9 @@ export const replaceLinkProcedure = withLlcAccessControl
         if (report.status !== "SENT") {
           badRequest("Links can be replaced only for a sent report.");
         }
+        if (report.unpublishedAt !== null) {
+          badRequest(UNPUBLISHED_EMAIL_REFUSAL);
+        }
         const recipient = await tx.memberReportRecipient.findFirst({
           where: { id: input.recipientId, reportId: report.id, companyId },
         });
@@ -51,9 +62,15 @@ export const replaceLinkProcedure = withLlcAccessControl
             message: "Recipient not found.",
           });
         }
+        const previousEmail = recipient.email.trim();
+        if (previousEmail === "" && input.email === undefined) {
+          badRequest(
+            `${recipient.name} has no email address. Enter one to send the new link.`,
+          );
+        }
         const newEmail =
           input.email !== undefined &&
-          input.email.toLowerCase() !== recipient.email.trim().toLowerCase()
+          input.email.toLowerCase() !== previousEmail.toLowerCase()
             ? input.email
             : null;
         const tokenVersion = recipient.tokenVersion + 1;
@@ -108,9 +125,11 @@ export const replaceLinkProcedure = withLlcAccessControl
         }
 
         const summary =
-          newEmail !== null
-            ? `${userName} replaced the report link of ${recipient.name} on "${report.title}" and changed the email from ${recipient.email} to ${newEmail}`
-            : `${userName} replaced the report link of ${recipient.name} on "${report.title}"`;
+          newEmail === null
+            ? `${userName} replaced the report link of ${recipient.name} on "${report.title}"`
+            : previousEmail === ""
+              ? `${userName} replaced the report link of ${recipient.name} on "${report.title}" and set the email to ${newEmail} (there was none)`
+              : `${userName} replaced the report link of ${recipient.name} on "${report.title}" and changed the email from ${previousEmail} to ${newEmail}`;
         await Audit.create(
           {
             action: "memberReport.resent",

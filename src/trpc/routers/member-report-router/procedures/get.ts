@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { REPORT_DELIVERY_KIND } from "@/jobs/governance-report-email";
 import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
+import { canRemoveRecipient } from "@/lib/governance/recipient-core";
 import {
   EMPTY_FIGURES,
   reportChecklist,
@@ -382,13 +383,17 @@ export const getProcedure = withLlcAccessControl
           /**
            * Removal is allowed only for a recipient never emailed (no claim
            * ever taken), never opened through the link and with no portal
-           * log row for this report (P19, 5.5 `removeRecipient`, P4b).
+           * log row for this report (P19, 5.5): the rule of
+           * `memberReport.removeRecipient` (`removalRefusal`).
            */
           canRemove:
-            r.sendCount === 0 &&
-            r.sentAt === null &&
-            r.firstViewedAt === null &&
-            !portalTouched.has(r.stakeholderId),
+            row.status === "SENT" &&
+            canRemoveRecipient({
+              ...r,
+              portalTouched: portalTouched.has(r.stakeholderId),
+            }),
+          /** "" for a portal-only recipient without a notice address: it cannot be emailed until its link is replaced with an address. */
+          hasAddress: r.email.trim() !== "",
         };
       }),
       emails,

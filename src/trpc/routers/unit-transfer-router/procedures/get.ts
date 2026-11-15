@@ -78,7 +78,12 @@ export const getProcedure = withLlcAccessControl
         ? Promise.resolve(null)
         : ctx.db.memberReport.findFirst({
             where: { id: row.noticeCopyReportId, companyId },
-            select: { publicId: true, status: true, sentAt: true },
+            select: {
+              id: true,
+              publicId: true,
+              status: true,
+              sentAt: true,
+            },
           }),
       row.requiredResolutionId === null
         ? Promise.resolve(null)
@@ -97,6 +102,21 @@ export const getProcedure = withLlcAccessControl
         select: { id: true, name: true, kind: true },
       }),
     ]);
+
+    // The notice copy's delivery (04-investor-portal.md 5.5): the report's
+    // `sentAt` is its RELEASE; who was emailed is per recipient. Display
+    // only: no deadline is derived from these.
+    const [recipientCount, emailedCount] =
+      report === null || report.status !== "SENT"
+        ? [0, 0]
+        : await Promise.all([
+            ctx.db.memberReportRecipient.count({
+              where: { reportId: report.id, companyId },
+            }),
+            ctx.db.memberReportRecipient.count({
+              where: { reportId: report.id, companyId, sentAt: { not: null } },
+            }),
+          ]);
 
     const effectiveOnIfCompleted =
       state.transferNoticeOn === null
@@ -161,7 +181,11 @@ export const getProcedure = withLlcAccessControl
         ? {
             publicId: report.publicId,
             status: report.status,
-            sentAt: report.sentAt,
+            /** When the copy was released; not an email date. */
+            releasedAt: report.sentAt,
+            recipientCount,
+            /** Recipients whose email was accepted. */
+            emailedCount,
           }
         : null,
     };
