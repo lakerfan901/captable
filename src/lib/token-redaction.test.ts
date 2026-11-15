@@ -21,6 +21,20 @@ describe("loggablePath", () => {
     expect(loggablePath(`/ballots/${JWT}`)).toBe("/ballots/[token]");
     expect(loggablePath("/acme/resolutions/abc")).toBe("/acme/resolutions/abc");
   });
+
+  it("redacts the investor portal set-password token (43 base64url characters, not a JWT)", () => {
+    const token = "Qm9yZWQtcmFuZG9tLWJ5dGVzLTMyLWJhc2U2NHVybC1f";
+    expect(loggablePath(`/portal/set-password/${token}`)).toBe(
+      "/portal/set-password/[token]",
+    );
+    expect(loggablePath("/portal/set-password/abc-_123")).toBe(
+      "/portal/set-password/[token]",
+    );
+    expect(loggablePath("/portal/sign-in")).toBe("/portal/sign-in");
+    expect(loggablePath("/portal/acc_123/reports")).toBe(
+      "/portal/acc_123/reports",
+    );
+  });
 });
 
 describe("redactTokens", () => {
@@ -34,6 +48,10 @@ describe("redactTokens", () => {
     [`https://app.example/w9/${JWT}`, "https://app.example/w9/[token]"],
     ["/w9/short-or-odd-token?x=1", "/w9/[token]?x=1"],
     ["acme/w9-docs-pkt-abc.pdf", "acme/w9-docs-pkt-abc.pdf"],
+    [
+      "https://app.example/portal/set-password/AbC-_xyz?next=/portal",
+      "https://app.example/portal/set-password/[token]?next=/portal",
+    ],
     [`GET /ballots/${JWT}`, "GET /ballots/[token]"],
     [
       `/api/trpc/ballot.view?input=${encodeURIComponent(JSON.stringify({ json: { token: JWT } }))}`,

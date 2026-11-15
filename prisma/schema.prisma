@@ -2473,6 +2473,14 @@ model MemberReport {
 
   filedDocumentId String? // Document.id of the filed PDF
 
+  // Investor portal (04-investor-portal.md section 4). Never published
+  // (publishedAt null) = sent before the portal existed; published =
+  // publishedAt set and unpublishedAt null; unpublished = unpublishedAt set.
+  publishedAt     DateTime?
+  publishedById   String? // Member.id
+  unpublishedAt   DateTime?
+  unpublishedById String? // Member.id
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2483,6 +2491,7 @@ model MemberReport {
   @@index([companyId, type])
   @@index([companyId, status])
   @@index([authorId])
+  @@index([companyId, publishedAt])
 }
 
 model MemberReportRecipient {
@@ -2504,6 +2513,8 @@ model MemberReportRecipient {
   sendCount     Int       @default(0)
   firstViewedAt DateTime?
   viewCount     Int       @default(0)
+
+  addedById String? // Member.id that confirmed this holder; null on rows created before the investor portal
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2677,4 +2688,194 @@ enum BooksRecordCategoryEnum {
   FINANCIAL_STATEMENTS
   CONSENTS_AND_MINUTES
   OTHER_STATUTORY
+}
+
+// ---------------------------------------------------------------------------
+// Investor portal (docs/llc-mode/04-investor-portal.md, section 4).
+// relationMode = "prisma": relations only among the portal models; references
+// to Stakeholder, Company, Document, Member and MemberReport are plain indexed
+// scalars, so no existing model gains a back-relation. A deleted holder leaves
+// rows behind: every read re-loads the holder and the document.
+// ---------------------------------------------------------------------------
+
+enum PortalAccessStatusEnum {
+  ACTIVE
+  DISABLED
+}
+
+enum PortalTokenPurposeEnum {
+  SET_PASSWORD // invitation, 7 days
+  RESET_PASSWORD // 60 minutes
+}
+
+enum PortalEventEnum {
+  SIGNED_IN
+  SIGNED_OUT
+  ACCOUNT_LOCKED
+  PASSWORD_SET
+  REPORT_VIEWED
+  REPORT_FILE_OPENED
+  REPORT_EXPORTED
+  FINANCIALS_EXPORTED
+  DOCUMENT_OPENED
+}
+
+model PortalUser {
+  id    String  @id @default(cuid())
+  email String  @unique // lower-cased, trimmed
+  name  String?
+
+  passwordHash     String? // bcrypt, cost 12; null until the invitation is completed
+  passwordSetAt    DateTime?
+  failedSignIns    Int       @default(0) // consecutive
+  lockedUntil      DateTime?
+  lockNoticeSentAt DateTime?
+  lastSignInAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accesses PortalAccess[]
+  sessions PortalSession[]
+  tokens   PortalAccountToken[]
+}
+
+model PortalAccess {
+  id       String @id @default(cuid())
+  publicId String @unique // the only access identifier that reaches a browser
+
+  portalUserId String
+  portalUser   PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  companyId     String
+  stakeholderId String
+
+  status       PortalAccessStatusEnum @default(ACTIVE)
+  invitedById  String // Member.id
+  invitedAt    DateTime               @default(now())
+  inviteSentAt DateTime?
+  disabledAt   DateTime?
+  disabledById String? // Member.id
+  lastSeenAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([portalUserId, stakeholderId])
+  @@index([portalUserId])
+  @@index([companyId, stakeholderId])
+}
+
+model PortalAccountToken {
+  id           String                 @id @default(cuid())
+  portalUserId String
+  portalUser   PortalUser             @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  tokenHash    String                 @unique // SHA-256 hex of the random token; the token is never stored
+  purpose      PortalTokenPurposeEnum
+  nextPath     String? // validated path under /portal to open after the password is set
+  expiresAt    DateTime
+  usedAt       DateTime?
+  requestIp    String?
+  createdAt    DateTime               @default(now())
+
+  @@index([portalUserId, createdAt])
+}
+
+model PortalSession {
+  id           String     @id @default(cuid())
+  portalUserId String
+  portalUser   PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  tokenHash    String     @unique // SHA-256 hex of the cookie value
+  expiresAt    DateTime // absolute end
+  lastSeenAt   DateTime   @default(now())
+  revokedAt    DateTime?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime   @default(now())
+
+  @@index([portalUserId])
+}
+
+model PortalDocumentGrant {
+  id            String   @id @default(cuid())
+  companyId     String
+  documentId    String
+  stakeholderId String
+  grantedById   String // Member.id
+  createdAt     DateTime @default(now())
+
+  @@unique([documentId, stakeholderId])
+  @@index([companyId, stakeholderId])
+  @@index([documentId])
+}
+
+model PortalAccessLog {
+  id             String          @id @default(cuid())
+  companyId      String? // null for sign-in, sign-out, lock and password events, which belong to no single company
+  portalUserId   String
+  portalAccessId String?
+  stakeholderId  String?
+  event          PortalEventEnum
+  targetType     String? // "memberReport" | "memberReportAttachment" | "document"
+  targetId       String?
+  targetName     String? // name at the time, so the log still reads after a delete
+  ip             String
+  userAgent      String
+  createdAt      DateTime        @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([companyId, stakeholderId, createdAt])
+  @@index([targetType, targetId])
+  @@index([portalUserId, createdAt])
+}
+
+model PortalNotification {
+  id           String    @id @default(cuid())
+  companyId    String
+  portalUserId String
+  kind         String // "portal.documents-shared"
+  batchKey     String // a new cuid per share action
+  subjectLine  String
+  claimedAt    DateTime?
+  sentAt       DateTime?
+  emailLogId   String?
+  createdAt    DateTime  @default(now())
+
+  @@unique([portalUserId, kind, batchKey])
+  @@index([companyId, createdAt])
+}
+
+// Financial snapshots (04-investor-portal.md section 5.9): written at release
+// of a quarterly or annual report, changed only by Restate (old rows kept and
+// marked superseded). The investor dashboard reads only these rows.
+
+model FinancialSnapshot {
+  id             String    @id @default(cuid())
+  companyId      String
+  month          DateTime  @db.Date // first day of the month
+  version        Int       @default(1)
+  supersededAt   DateTime? // set by Restate; the current row has null
+  sourceReportId String? // the MemberReport whose release wrote it; null for a restatement
+  restateReason  String?
+  data           Json // FundMonth, schemaVersion 1 (section 5.9); cents as JSON numbers
+  dataHash       String // SHA-256 of the canonical JSON
+  frozenAt       DateTime  @default(now())
+  frozenById     String // Member.id
+
+  @@unique([companyId, month, version])
+  @@index([companyId, supersededAt, month])
+}
+
+model HolderFinancialSnapshot {
+  id            String    @id @default(cuid())
+  companyId     String
+  stakeholderId String
+  month         DateTime  @db.Date
+  version       Int       @default(1)
+  supersededAt  DateTime?
+  data          Json // HolderMonth, schemaVersion 1
+  frozenAt      DateTime  @default(now())
+
+  @@unique([companyId, stakeholderId, month, version])
+  @@index([companyId, stakeholderId, supersededAt, month])
 }

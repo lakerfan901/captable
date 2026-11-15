@@ -13,8 +13,13 @@ export const TOKEN_SEGMENT = /^[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}$/;
 /** The same shape anywhere inside a string. */
 const TOKEN_ANYWHERE = /[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}/g;
 
-/** Path prefixes whose next segment is always a credential. */
-const TOKEN_ROUTES = /\/(ballots|member-reports|w9)\/[^/?#\s"']+/g;
+/**
+ * Path prefixes whose next segment is always a credential. The investor
+ * portal's set-password token (04-investor-portal.md 5.2) is 43 base64url
+ * characters, not a JWT, so only this rule catches it.
+ */
+const TOKEN_ROUTES =
+  /\/(ballots|member-reports|w9|portal\/set-password)\/[^/?#\s"']+/g;
 
 export const REDACTED_TOKEN = "[token]";
 export const REDACTED = "[Filtered]";
@@ -66,19 +71,24 @@ export function redactSignedUrls(value: string): string {
     .replace(SIGNATURE_PARAM_VALUE, `$1${REDACTED}`);
 }
 
-/** Access-log form of a path: every token-shaped segment becomes "[token]". */
+/**
+ * Access-log form of a path: every token-shaped segment, and the segment after
+ * a credential route prefix (`/ballots/`, `/member-reports/`, `/w9/`,
+ * `/portal/set-password/`), becomes "[token]".
+ */
 export function loggablePath(pathname: string): string {
   return pathname
     .split("/")
     .map((segment) => (TOKEN_SEGMENT.test(segment) ? REDACTED_TOKEN : segment))
-    .join("/");
+    .join("/")
+    .replace(TOKEN_ROUTES, `/$1/${REDACTED_TOKEN}`);
 }
 
 /**
  * Redacts credentials inside any string (full URL, path, transaction name,
  * span description, breadcrumb message): the query of a presigned storage
- * URL (`redactSignedUrls`), `/ballots/<x>`, `/member-reports/<x>` and `/w9/<x>`
- * segments, the values of `input` / `token` query parameters, and any
+ * URL (`redactSignedUrls`), `/ballots/<x>`, `/member-reports/<x>`, `/w9/<x>`
+ * and `/portal/set-password/<x>` segments, the values of `input` / `token` query parameters, and any
  * JWT-shaped run.
  */
 export function redactTokens(value: string): string {

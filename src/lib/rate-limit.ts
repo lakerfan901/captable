@@ -19,7 +19,12 @@
 //
 // LIMITS are loose on purpose: a whole office can sit behind one address.
 
-export type RateLimitBucket = "login" | "account" | "token-page" | "token-api";
+export type RateLimitBucket =
+  | "login"
+  | "account"
+  | "token-page"
+  | "token-api"
+  | "portal-login";
 
 export interface BucketRule {
   /** Requests allowed per window per client IP. */
@@ -36,6 +41,10 @@ export const RATE_LIMITS: Record<RateLimitBucket, BucketRule> = {
   "token-page": { limit: 120, windowMs: 60_000 },
   // The public tRPC procedures behind those pages.
   "token-api": { limit: 240, windowMs: 60_000 },
+  // Investor portal sign-in and set-password route handlers. Not the `login`
+  // bucket: the proxy answers that one with next-auth JSON pointing at the
+  // team /login; this one falls through to the plain-text 429.
+  "portal-login": { limit: 30, windowMs: 60_000 },
 };
 
 /** Unauthenticated tRPC procedures of the sign-up / password / sign-in flows. */
@@ -46,6 +55,8 @@ const ACCOUNT_PROCEDURES = new Set([
   "auth.forgotPassword",
   "auth.newPassword",
   "passkey.createSigninOptions",
+  "portalAuth.requestReset",
+  "memberReportView.requestSetup",
 ]);
 
 /** Unauthenticated tRPC procedures behind the emailed-link pages. */
@@ -57,6 +68,7 @@ const TOKEN_PROCEDURES = new Set([
   "memberReportView.view",
   "memberReportView.markViewed",
   "memberReportView.attachmentUrl",
+  "memberReportView.route",
   "template.sign",
   "template.getSigningFields",
   "admission.w9Info",
@@ -74,6 +86,7 @@ const TOKEN_PAGE_PREFIXES = [
   "/verify-email/",
   "/reset-password/",
   "/set-password/",
+  "/portal/set-password/",
   "/data-rooms/",
   "/updates/",
 ];
@@ -81,6 +94,12 @@ const TOKEN_PAGE_PREFIXES = [
 const LOGIN_PATHS = new Set([
   "/api/auth/callback/credentials",
   "/api/auth/callback/webauthn",
+]);
+
+/** Investor portal route handlers that check a password or set one (POST only). */
+const PORTAL_LOGIN_PATHS = new Set([
+  "/portal/auth/sign-in",
+  "/portal/auth/set-password",
 ]);
 
 const TRPC_PREFIX = "/api/trpc/";
@@ -104,6 +123,9 @@ export function classifyRequest(
 ): RateLimitBucket | null {
   if (LOGIN_PATHS.has(pathname)) {
     return method === "POST" ? "login" : null;
+  }
+  if (PORTAL_LOGIN_PATHS.has(pathname)) {
+    return method === "POST" ? "portal-login" : null;
   }
   const procedures = trpcProcedures(pathname);
   if (procedures.length > 0) {
