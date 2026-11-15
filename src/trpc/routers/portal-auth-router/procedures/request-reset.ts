@@ -20,15 +20,29 @@ export const ZRequestResetInput = z.object({
   email: z.string().max(254),
 });
 
+/**
+ * Every answer takes at least this long. An unknown address returns after
+ * one read, a known one after a locked transaction and an enqueue (tens of
+ * milliseconds); padding both to the same floor removes that difference
+ * (S10). Well above the measured work, well below what a person notices.
+ */
+export const RESET_MIN_RESPONSE_MS = 250;
+
 export const requestResetProcedure = withoutAuth
   .input(ZRequestResetInput)
   .mutation(async ({ ctx, input }) => {
     if (currentMailDelivery("MEMBER_EMAIL").blockedReason !== null) {
       return { ok: false as const, reason: "UNAVAILABLE" as const };
     }
-    await requestPasswordReset(ctx.db, {
-      email: input.email,
-      requestIp: ctx.requestIp,
-    });
+    const floor = Date.now() + RESET_MIN_RESPONSE_MS;
+    try {
+      await requestPasswordReset(ctx.db, {
+        email: input.email,
+        requestIp: ctx.requestIp,
+      });
+    } finally {
+      const wait = floor - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    }
     return { ok: true as const };
   });

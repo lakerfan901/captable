@@ -93,6 +93,18 @@ Object.assign(portalAccountEmailJob, {
 });
 const takeEmits = () => emitted.splice(0, emitted.length);
 
+// Everything written to stdout and stderr (console, Prisma's error log), to
+// prove that no token or password is ever printed.
+const output: string[] = [];
+for (const stream of [process.stdout, process.stderr]) {
+  const write = stream.write.bind(stream);
+  stream.write = ((chunk: unknown, ...rest: unknown[]) => {
+    output.push(typeof chunk === "string" ? chunk : String(chunk));
+    // biome-ignore lint/suspicious/noExplicitAny: pass-through of the original arguments
+    return (write as any)(chunk, ...rest);
+  }) as typeof stream.write;
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 
@@ -942,6 +954,14 @@ async function neutralAndThrottle() {
     await liveSessions(disabled.id),
     disabledSessionsBefore,
   );
+  const disabledRow = await db.portalUser.findUniqueOrThrow({
+    where: { id: disabled.id },
+  });
+  eq(
+    "a right password with no ACTIVE access is not counted as wrong",
+    disabledRow.failedSignIns,
+    0,
+  );
 
   // Reset requests: the same answer for everyone; email only when due.
   const auth = portalCaller(null, { origin: null }).portalAuth;
@@ -956,6 +976,33 @@ async function neutralAndThrottle() {
     answers.every((a) => JSON.stringify(a) === JSON.stringify({ ok: true })),
   );
   eq("and queues no email for them", takeEmits().length, 0);
+  // Timing: the answer takes as long whether or not a token is issued.
+  const median = (xs: number[]) =>
+    [...xs].sort((x, y) => x - y)[Math.floor(xs.length / 2)] ?? 0;
+  const resetTiming = async (email: string) => {
+    const times: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const t0 = performance.now();
+      await auth.requestReset({ email });
+      times.push(performance.now() - t0);
+    }
+    return median(times);
+  };
+  const timedKnown = await newPortalUser("timed");
+  await grant(timedKnown.id, companyA.id, holderA.id);
+  const resetTimes = {
+    unknown: await resetTiming(unknownEmail),
+    disabled: await resetTiming(disabled.email),
+    known: await resetTiming(timedKnown.email),
+  };
+  eq("the known address got its three reset emails", takeEmits().length, 3);
+  const rMin = Math.min(...Object.values(resetTimes));
+  const rMax = Math.max(...Object.values(resetTimes));
+  check(
+    "requestReset takes as long for unknown, disabled and known addresses",
+    rMin >= 245 && rMax - rMin < 60,
+    JSON.stringify(resetTimes),
+  );
   const setupAnswer = await auth.requestReset({
     email: `  ${noPassword.email.toUpperCase()} `,
   });
@@ -1044,6 +1091,12 @@ async function noSecrets() {
   check(
     "no job payload or singleton key carries a token, session value or password",
     ![...SECRETS, ...PASSWORDS].some((secret) => payloads.includes(secret)),
+  );
+  const printed = output.join("");
+  check(`${printed.length} characters of output captured`, printed.length > 0);
+  check(
+    "no token, session value or password was printed",
+    ![...SECRETS, ...PASSWORDS].some((secret) => printed.includes(secret)),
   );
   check(
     "job payloads carry row ids only",
