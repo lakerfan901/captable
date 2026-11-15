@@ -21,6 +21,13 @@ import { resolveRecipient } from "./resolve";
 // A MUTATION (POST), like every public report procedure: the token is a
 // credential and must never travel in a URL (tRPC sends query inputs in the
 // query string, which reaches access logs, proxies and Sentry).
+//
+// Content only for the read-only page (04-investor-portal.md P25 "LEGACY":
+// sent before the portal, or published to an addressee never invited at
+// this address). An unpublished report (WITHDRAWN), a report the addressee
+// opens in the portal (PORTAL) and a disabled addressee (ACCESS_OFF) are
+// the same NOT_FOUND as an invalid token (P26); the page learns which of
+// them applies from `memberReportView.route`, which returns no content.
 
 export const viewProcedure = withoutAuth
   .input(ZReportTokenSchema)
@@ -29,6 +36,7 @@ export const viewProcedure = withoutAuth
     if (resolved.kind === "REPLACED") {
       return { state: "REPLACED" as const, company: resolved.company };
     }
+    if (resolved.kind !== "OK") throw new TRPCError({ code: "NOT_FOUND" });
     const { recipient, report, company } = resolved;
 
     const frozen = readFrozenContent(report.frozenContent);
