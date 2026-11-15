@@ -8,6 +8,7 @@ import {
   ReportAttachments,
 } from "@/components/governance/report-attachments";
 import { ReportEditor } from "@/components/governance/report-editor";
+import { ReportExportButton } from "@/components/governance/report-export-button";
 import { ReportRecipientTable } from "@/components/governance/report-recipient-table";
 import { ReportStatusBadge } from "@/components/governance/report-table";
 import { ReportView } from "@/components/governance/report-view";
@@ -50,17 +51,27 @@ export default async function ReportPage({
   const canUpdate = allow(true, ["governance", "update"], false);
   const { report } = data;
 
+  // Excel export of the figures (04-investor-portal.md 5.7).
+  const exportable = report.type === "QUARTERLY" || report.type === "ANNUAL";
+
   if (report.status === "DRAFT") {
     return (
-      <ReportEditor
-        data={data}
-        base={base}
-        companyPublicId={entity.publicId}
-        today={todayInZone(new Date(), timeZone)}
-        canUpdate={canUpdate}
-        canDelete={allow(true, ["governance", "delete"], false)}
-        timeZone={timeZone}
-      />
+      <div className="flex flex-col gap-3">
+        {exportable ? (
+          <div className="flex justify-end">
+            <ReportExportButton mode="team" publicId={report.publicId} />
+          </div>
+        ) : null}
+        <ReportEditor
+          data={data}
+          base={base}
+          companyPublicId={entity.publicId}
+          today={todayInZone(new Date(), timeZone)}
+          canUpdate={canUpdate}
+          canDelete={allow(true, ["governance", "delete"], false)}
+          timeZone={timeZone}
+        />
+      </div>
     );
   }
 
@@ -85,13 +96,18 @@ export default async function ReportPage({
               Sent {formatInstant(report.sentAt, timeZone)}
             </span>
           </div>
-          {filedDocumentPublicId ? (
-            <FiledDocumentButton documentPublicId={filedDocumentPublicId} />
-          ) : report.filedDocumentId ? null : (
-            <span className="text-sm text-muted-foreground">
-              The PDF is being filed in Documents.
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {exportable ? (
+              <ReportExportButton mode="team" publicId={report.publicId} />
+            ) : null}
+            {filedDocumentPublicId ? (
+              <FiledDocumentButton documentPublicId={filedDocumentPublicId} />
+            ) : report.filedDocumentId ? null : (
+              <span className="text-sm text-muted-foreground">
+                The PDF is being filed in Documents.
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
