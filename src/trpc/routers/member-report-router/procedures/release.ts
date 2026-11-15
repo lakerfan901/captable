@@ -61,9 +61,9 @@ import {
 } from "./shared";
 
 // memberReport.release (04-investor-portal.md P17–P23, 5.5; package P4a).
-// Replaces `memberReport.send` (03-governance.md G12), which is now the
-// legacy entry point `send.ts`: a release to the default audience with
-// email, until the release dialog (P4c) calls `release` directly.
+// Replaces `memberReport.send` (03-governance.md G12). The legacy `send`
+// entry point (default audience, email) was removed in P4c with the review
+// dialog that called it; the `DEFAULT` audience kind below is kept, unused.
 //
 // Irreversible, in ONE transaction with `now` taken once, in the order and
 // with the locks of the former `send`:

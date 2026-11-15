@@ -1520,9 +1520,22 @@ async function review2MailCatcher() {
   const previous = penv.NODE_ENV;
   penv.NODE_ENV = "production";
   try {
+    // `memberReport.send` was removed (P4c): `release` with email is the
+    // same guarded step.
+    const holderIds = (
+      await db.stakeholder.findMany({
+        where: { companyId: c.id },
+        select: { id: true },
+      })
+    ).map((h) => h.id);
     await expectRefused(
-      "memberReport.send is refused",
-      () => reports.send({ publicId: report.publicId }),
+      "memberReport.release with email is refused",
+      () =>
+        reports.release({
+          publicId: report.publicId,
+          stakeholderIds: holderIds.slice(0, 1),
+          email: true,
+        }),
       /closes the books .* local mail catcher/,
       "BAD_REQUEST",
     );
@@ -1676,7 +1689,11 @@ async function k1DeadlinesFollowCoverage() {
   );
   eq("coverage: not complete", draftView.k1Coverage?.complete, false);
 
-  const sendErr = await errorOf(() => reports.send({ publicId }));
+  // The former `send` released to the default audience (the holders with a
+  // K-1 attached: A) with email; `send` was removed in P4c.
+  const sendErr = await errorOf(() =>
+    reports.release({ publicId, stakeholderIds: [A.id], email: true }),
+  );
   check("partial K-1 send succeeds", sendErr === null, sendErr?.message ?? "");
   eq(
     "after sending A's K-1 only, both K-1 deadlines are still OPEN (was: DONE)",

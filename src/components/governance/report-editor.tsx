@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,11 +49,11 @@ import {
   type ReportFigures,
   TRANSFER_NOTICE_KINDS,
 } from "@/lib/governance/report-figures";
-import { TEST_MODE_TEXT } from "@/lib/mail-delivery";
 import { api } from "@/trpc/react";
 import type { MemberReportTypeValue } from "@/trpc/routers/member-report-router/schema";
 import type { RouterOutputs } from "@/trpc/shared";
-import { K1CoverageCard, k1CompletionText } from "./k1-coverage-card";
+import { K1CoverageCard } from "./k1-coverage-card";
+import { ReleaseDialog } from "./release-dialog";
 import { ReportAttachments } from "./report-attachments";
 import { ReportFiguresForm } from "./report-figures-form";
 import { RichTextEditorLazy } from "./rich-text-editor-lazy";
@@ -76,9 +75,9 @@ function errorText(e: unknown, fallback: string): string {
   return e instanceof Error && e.message ? e.message : fallback;
 }
 
-/** Same text as the server's refusal in `memberReport.send` (owner ruling). */
+/** The period-end rule of `memberReport.release` (owner ruling). */
 export function periodNotEndedText(periodEnd: string): string {
-  return `This period has not ended yet. A report can be sent, and the books closed, only after ${formatDateOnly(periodEnd)}.`;
+  return `This period has not ended yet. A report can be released, and the books closed, only after ${formatDateOnly(periodEnd)}.`;
 }
 
 /** QUARTERLY / ANNUAL whose period end is not strictly before today. */
@@ -261,146 +260,6 @@ export function NewReportMenu({
 }
 
 // ---------------------------------------------------------------------------
-// Review and send
-
-function ReviewSendDialog({
-  publicId,
-  today,
-  onClose,
-  onSent,
-}: {
-  publicId: string;
-  today: string;
-  onClose: () => void;
-  onSent: () => void;
-}) {
-  const query = api.memberReport.get.useQuery(
-    { publicId },
-    { refetchOnWindowFocus: false, staleTime: 0 },
-  );
-  const send = api.memberReport.send.useMutation();
-  const data = query.data;
-
-  let body: React.ReactNode = (
-    <p className="text-sm text-muted-foreground">Loading…</p>
-  );
-  let blocked: string | null = "Loading…";
-  let n = 0;
-  if (query.error) {
-    body = <p className="text-sm text-red-600">{query.error.message}</p>;
-  } else if (data) {
-    const { report } = data;
-    const recipients =
-      report.type === "TAX_K1"
-        ? data.candidates.filter((c) => c.hasK1)
-        : data.candidates;
-    n = recipients.length;
-    const missing = data.checklist.filter((i) => !i.ok);
-    const notEnded =
-      periodNotEnded(report.type, report.periodEnd, today) &&
-      report.periodEnd !== null
-        ? periodNotEndedText(report.periodEnd)
-        : null;
-    blocked =
-      data.mailDelivery.blockedReason ??
-      notEnded ??
-      data.candidatesProblem ??
-      (missing.length > 0
-        ? `Incomplete: ${missing.map((i) => i.label).join(", ")}`
-        : n === 0
-          ? "No one would receive this report."
-          : null);
-    const isTransferCopy =
-      report.type === "NOTICE" &&
-      TRANSFER_NOTICE_KINDS.includes(report.noticeKind as NoticeKind);
-    body = (
-      <div className="space-y-3 text-sm">
-        {data.mailDelivery.testMode && !data.mailDelivery.blockedReason ? (
-          <Alert variant="destructive">
-            <AlertTitle>Test mode</AlertTitle>
-            <AlertDescription>{TEST_MODE_TEXT}</AlertDescription>
-          </Alert>
-        ) : null}
-        <p>
-          {report.type === "TAX_K1"
-            ? "Each holder receives only its own Schedule K-1."
-            : "Reports go to admitted Members only. Holders of a Financial Interest only are not sent this report (Sections 1.8, 7.9.2)."}
-        </p>
-        {data.k1Coverage ? (
-          <p className="font-medium">
-            {k1CompletionText(data.k1Coverage, report.status)}
-          </p>
-        ) : null}
-        {isTransferCopy ? (
-          <p>
-            Sent to the other Preferred Members only (Section{" "}
-            {report.noticeKind === "INVOLUNTARY_TRANSFER" ? "7.2" : "7.1"}).
-          </p>
-        ) : null}
-        {(report.type === "QUARTERLY" || report.type === "ANNUAL") &&
-        report.periodEnd ? (
-          <p className="font-medium">
-            Sending closes the books through {formatDateOnly(report.periodEnd)}:
-            ledger entries dated on or before that day can no longer be changed.
-          </p>
-        ) : null}
-        {n > 0 ? (
-          <ul className="max-h-56 space-y-1 overflow-y-auto rounded border p-2">
-            {recipients.map((r) => (
-              <li key={r.stakeholderId} className="flex justify-between gap-2">
-                <span>{r.name}</span>
-                <span className="break-all text-muted-foreground">
-                  {r.email || "no notice email"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {blocked ? <p className="font-medium text-red-600">{blocked}</p> : null}
-      </div>
-    );
-  }
-
-  const submit = async () => {
-    try {
-      const res = await send.mutateAsync({ publicId });
-      toast.success(
-        `Sent to ${res.recipientCount} ${res.recipientCount === 1 ? "recipient" : "recipients"}.`,
-      );
-      onSent();
-    } catch (e) {
-      toast.error(errorText(e, "The report could not be sent."));
-      void query.refetch();
-    }
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Review and send</DialogTitle>
-          <DialogDescription>
-            The content is frozen when sent and cannot be edited afterwards.
-          </DialogDescription>
-        </DialogHeader>
-        {body}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            disabled={blocked !== null || send.isPending || query.isFetching}
-            onClick={() => void submit()}
-          >
-            {send.isPending ? "Sending…" : `Send to ${n}`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Draft editor
 
 export function ReportEditor({
@@ -411,6 +270,8 @@ export function ReportEditor({
   canUpdate,
   canDelete,
   timeZone,
+  mayInvite,
+  showPortal,
 }: {
   data: Get;
   base: string;
@@ -419,6 +280,10 @@ export function ReportEditor({
   canUpdate: boolean;
   canDelete: boolean;
   timeZone: string;
+  /** `portal: create`: the release dialog's invitation line. */
+  mayInvite: boolean;
+  /** `portal: read`: the Portal column of the audience picker. */
+  showPortal: boolean;
 }) {
   const router = useRouter();
   const { report } = data;
@@ -683,18 +548,20 @@ export function ReportEditor({
           ) : null}
           {canUpdate ? (
             <Button onClick={() => void onReview()} disabled={busy}>
-              Review and send
+              Release…
             </Button>
           ) : null}
         </div>
       ) : null}
 
       {sendOpen ? (
-        <ReviewSendDialog
+        <ReleaseDialog
           publicId={report.publicId}
           today={today}
+          mayInvite={mayInvite}
+          showPortal={showPortal}
           onClose={() => setSendOpen(false)}
-          onSent={() => {
+          onReleased={() => {
             setSendOpen(false);
             router.refresh();
           }}

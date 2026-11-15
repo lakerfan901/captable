@@ -23,8 +23,8 @@
  * deadlines, the books, the queued jobs, and the same after the emails went
  * out, with ids replaced by holder names and times made relative to the
  * report's `sentAt`. The default run builds the same fixtures and compares a
- * `release` to every current Member with email, and the legacy `send`
- * entry point, field by field with that record.
+ * `release` to every current Member with email field by field with that
+ * record. (`send` itself was removed in P4c.)
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import type { Job } from "pg-boss";
@@ -459,7 +459,17 @@ async function runCase(kind: keyof typeof KINDS, how: Releaser) {
   return { f, publicId, draft, result, released, delivered };
 }
 
-const legacySend: Releaser = (f, publicId) => f.reports.send({ publicId });
+/**
+ * How the baseline was recorded (RELEASE_BASELINE=record) on the commit
+ * before P4a. `memberReport.send` no longer exists (removed in P4c), so a
+ * re-recording runs on that commit; the default run compares `release`.
+ */
+const legacySend: Releaser = (f, publicId) =>
+  (
+    f.reports as unknown as {
+      send: (input: { publicId: string }) => Promise<unknown>;
+    }
+  ).send({ publicId });
 
 async function record() {
   const out: Record<string, unknown> = {};
@@ -542,9 +552,10 @@ async function sameAsRecordedSend() {
   for (const kind of Object.keys(KINDS) as (keyof typeof KINDS)[]) {
     const expected = baseline[kind];
     if (!expected) throw new Error(`no baseline for ${kind}`);
+    // The second pass of the former legacy `send` entry point is gone with
+    // it (P4c); `release` to the default audience is compared alone.
     for (const [how, run] of [
       ["release to the default audience with email", fullRelease],
-      ["legacy send", legacySend],
     ] as const) {
       section(`T-REL ${kind}: ${how} = the recorded send`);
       const out = await runCase(kind, run);
@@ -1257,7 +1268,9 @@ async function concurrentRelease() {
     errorOf(() =>
       f.reports.release({ publicId, stakeholderIds: ids, email: false }),
     ),
-    errorOf(() => f.reports.send({ publicId })),
+    errorOf(() =>
+      f.reports.release({ publicId, stakeholderIds: ids, email: true }),
+    ),
   ]);
   eq("exactly one succeeds", outcomes.filter((o) => o === null).length, 1);
   check(
@@ -1289,12 +1302,6 @@ async function mailGuard() {
     await expectRefused(
       "release with email is refused",
       () => f.reports.release({ publicId, stakeholderIds: ids, email: true }),
-      /closes the books .* local mail catcher/,
-      "BAD_REQUEST",
-    );
-    await expectRefused(
-      "the legacy send is refused",
-      () => f.reports.send({ publicId }),
       /closes the books .* local mail catcher/,
       "BAD_REQUEST",
     );
@@ -2247,6 +2254,69 @@ async function unpublishedRefusals() {
   eq("published again: the three not yet emailed are queued", ok.queued, 3);
 }
 
+/**
+ * P4c review finding: a report email job that runs while the report is
+ * unpublished sends nothing, does not fail, and leaves the recipient "not
+ * emailed" (no claim, no `sentAt`, still removable). Published again, the
+ * same queued job delivers.
+ */
+async function unpublishedAtSendTime() {
+  section("P4c: the email job skips a report unpublished at send time");
+  const f = await fixtureCompany("p4c-unpublished-job");
+  const publicId = await quarterlyDraft(f);
+  const e0 = emitted.length;
+  await f.reports.release({
+    publicId,
+    stakeholderIds: [f.A.id, f.B.id],
+    email: true,
+  });
+  const jobs = emailJobsSince(e0);
+  eq("two report emails queued at release", jobs.length, 2);
+  await f.reports.unpublish({ publicId });
+  const report = await reportRow(f, publicId);
+  const deliveries = () =>
+    db.emailLog.count({
+      where: {
+        companyId: f.c.id,
+        relatedType: "memberReport",
+        relatedId: report.id,
+      },
+    });
+  for (const j of jobs) {
+    const err = await errorOf(() =>
+      runReportJob(String(j.data.recipientId), Number(j.data.seq)),
+    );
+    check("the job ends without an error", err === null, err?.message ?? "");
+  }
+  eq("no email was sent (no email-log row)", await deliveries(), 0);
+  const rows = await recipientsOf(f, publicId);
+  eq(
+    "no recipient is marked emailed or claimed",
+    JSON.stringify(rows.map((r) => [r.sentAt, r.sendCount, r.emailLogId])),
+    JSON.stringify(rows.map(() => [null, 0, null])),
+  );
+  const view = await f.reports.get({ publicId });
+  eq(
+    "get: both still not emailed and removable",
+    JSON.stringify(view.recipients.map((r) => [r.emailedAt, r.canRemove])),
+    JSON.stringify([
+      [null, true],
+      [null, true],
+    ]),
+  );
+  await f.reports.publish({ publicId });
+  for (const j of jobs) {
+    await runReportJob(String(j.data.recipientId), Number(j.data.seq));
+  }
+  const after = await recipientsOf(f, publicId);
+  eq(
+    "published again: the same jobs deliver (claimed once, emailed)",
+    JSON.stringify(after.map((r) => [r.sendCount, r.sentAt !== null])),
+    JSON.stringify(after.map(() => [1, true])),
+  );
+  eq("two delivery emails logged", await deliveries(), 2);
+}
+
 /** Invitations with a release (P27): outcomes, one email per person, RBAC, mail guard, concurrency. */
 async function invitationsOnRelease() {
   section("P4b: release with inviteMissing");
@@ -2781,6 +2851,7 @@ await runScenarios(
         ["P4b: add recipients", addRecipientsScenario],
         ["P4b: remove recipient", removeRecipientScenario],
         ["P4b: unpublished", unpublishedRefusals],
+        ["P4c: unpublished at send time", unpublishedAtSendTime],
         ["P4b: portal state", portalStateRule],
         ["P4b: sentAt readers", sentAtReaders],
         ["P4b: portal and team users", cleanupP4b],

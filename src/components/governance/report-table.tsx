@@ -1,3 +1,4 @@
+import { RiMailLine } from "@remixicon/react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -10,10 +11,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateOnly } from "@/lib/date-only";
+import { plural, reportChip } from "@/lib/governance/release-view";
 import type { RouterOutputs } from "@/trpc/shared";
 import { reportTypeLabel } from "./report-view";
 
-// Member report list (03-governance.md G13). Server-safe (no hooks).
+// Member report list (03-governance.md G13; 04-investor-portal.md 6.2:
+// Draft / Released / Unpublished, a mail icon when emailed). Server-safe.
 
 export type ReportRow = RouterOutputs["memberReport"]["list"][number];
 
@@ -31,12 +34,16 @@ export function reportPeriodShort(r: {
   return "—";
 }
 
-export function ReportStatusBadge({ status }: { status: string }) {
-  return status === "SENT" ? (
-    <Badge variant="success">Sent</Badge>
-  ) : (
-    <Badge variant="warning">Draft</Badge>
-  );
+/** Draft, Released or Unpublished (04-investor-portal.md 6.2). */
+export function ReportStatusBadge({
+  status,
+  unpublishedAt = null,
+}: {
+  status: string;
+  unpublishedAt?: Date | string | null;
+}) {
+  const chip = reportChip({ status, publishedAt: null, unpublishedAt });
+  return <Badge variant={chip.variant}>{chip.label}</Badge>;
 }
 
 function formatInstantDate(at: Date | string | null, timeZone: string) {
@@ -71,7 +78,7 @@ export function ReportTable({
             <TableHead>Period</TableHead>
             <TableHead>Due</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Sent</TableHead>
+            <TableHead>Released</TableHead>
             <TableHead>Viewed</TableHead>
           </TableRow>
         </TableHeader>
@@ -97,7 +104,23 @@ export function ReportTable({
                   {overdue ? " (overdue)" : ""}
                 </TableCell>
                 <TableCell>
-                  <ReportStatusBadge status={r.status} />
+                  <div className="flex items-center gap-2">
+                    <ReportStatusBadge
+                      status={r.status}
+                      unpublishedAt={r.unpublishedAt}
+                    />
+                    {r.emailedCount > 0 ? (
+                      <span
+                        className="text-muted-foreground"
+                        title={`Emailed to ${r.emailedCount} of ${plural(r.recipientCount, "recipient", "recipients")}`}
+                      >
+                        <span className="sr-only">
+                          Emailed to {r.emailedCount} of {r.recipientCount}
+                        </span>
+                        <RiMailLine className="h-4 w-4" aria-hidden />
+                      </span>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {formatInstantDate(r.sentAt, timeZone)}

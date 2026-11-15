@@ -115,6 +115,7 @@ async function loadRecipient(recipientId: string) {
           fiscalYear: true,
           fiscalQuarter: true,
           frozenContent: true,
+          unpublishedAt: true,
         },
       },
     },
@@ -136,6 +137,13 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
   if (!recipient) return;
   const { report } = recipient;
   if (report.status !== "SENT") return;
+  // Unpublished (04-investor-portal.md P24): its emailed link shows "This
+  // report is no longer available", so nothing is sent. The job ends without
+  // an error (no retry) and claims nothing: `sentAt` and `sendCount` stay as
+  // they are, so the recipient is still "not emailed" (and removable), and
+  // `resend` after publishing again queues it with the same seq. The claim
+  // below re-checks this at send time.
+  if (report.unpublishedAt !== null) return;
   if (recipient.tokenRevokedAt !== null) return;
   // A portal-only recipient without a notice address (04-investor-portal.md
   // P19): nothing to send to. The procedures never queue such a row; this
@@ -183,7 +191,13 @@ export const reportEmailWorker = defineWorker(config, async (job) => {
     WHERE "id" = ${recipient.id}
       AND "sendCount" <= ${seq}
       AND "tokenVersion" = ${recipient.tokenVersion}
-      AND "tokenRevokedAt" IS NULL`;
+      AND "tokenRevokedAt" IS NULL
+      AND EXISTS (
+        SELECT 1 FROM "MemberReport" r
+        WHERE r."id" = ${report.id}
+          AND r."status" = 'SENT'
+          AND r."unpublishedAt" IS NULL
+      )`;
   if (claimed !== 1) return;
 
   // 2. Send; 3. release on failure.
