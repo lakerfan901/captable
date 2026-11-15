@@ -641,8 +641,22 @@ async function unpublish() {
 
   section("2b. replaced links win over every report state");
   const oldA = tokens.A as string;
+  // A link cannot be replaced while the report is unpublished (it would email
+  // it), so it is replaced while published and the report unpublished again.
+  let refused = false;
+  try {
+    await w.reports.replaceLink({
+      publicId: w.R,
+      recipientId: w.rr.A as string,
+    });
+  } catch {
+    refused = true;
+  }
+  eq("replaceLink is refused while unpublished", refused, true);
+  await w.reports.publish({ publicId: w.R });
   await w.reports.replaceLink({ publicId: w.R, recipientId: w.rr.A as string });
   eq("replaceLink queued its report email (captured)", reportEmails.length, 1);
+  await w.reports.unpublish({ publicId: w.R });
   eq(
     "unpublished + replaced: REPLACED",
     (await routeOf(oldA)).state,
