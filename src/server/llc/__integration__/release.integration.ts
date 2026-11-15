@@ -2247,6 +2247,69 @@ async function unpublishedRefusals() {
   eq("published again: the three not yet emailed are queued", ok.queued, 3);
 }
 
+/**
+ * P4c review finding: a report email job that runs while the report is
+ * unpublished sends nothing, does not fail, and leaves the recipient "not
+ * emailed" (no claim, no `sentAt`, still removable). Published again, the
+ * same queued job delivers.
+ */
+async function unpublishedAtSendTime() {
+  section("P4c: the email job skips a report unpublished at send time");
+  const f = await fixtureCompany("p4c-unpublished-job");
+  const publicId = await quarterlyDraft(f);
+  const e0 = emitted.length;
+  await f.reports.release({
+    publicId,
+    stakeholderIds: [f.A.id, f.B.id],
+    email: true,
+  });
+  const jobs = emailJobsSince(e0);
+  eq("two report emails queued at release", jobs.length, 2);
+  await f.reports.unpublish({ publicId });
+  const report = await reportRow(f, publicId);
+  const deliveries = () =>
+    db.emailLog.count({
+      where: {
+        companyId: f.c.id,
+        relatedType: "memberReport",
+        relatedId: report.id,
+      },
+    });
+  for (const j of jobs) {
+    const err = await errorOf(() =>
+      runReportJob(String(j.data.recipientId), Number(j.data.seq)),
+    );
+    check("the job ends without an error", err === null, err?.message ?? "");
+  }
+  eq("no email was sent (no email-log row)", await deliveries(), 0);
+  const rows = await recipientsOf(f, publicId);
+  eq(
+    "no recipient is marked emailed or claimed",
+    JSON.stringify(rows.map((r) => [r.sentAt, r.sendCount, r.emailLogId])),
+    JSON.stringify(rows.map(() => [null, 0, null])),
+  );
+  const view = await f.reports.get({ publicId });
+  eq(
+    "get: both still not emailed and removable",
+    JSON.stringify(view.recipients.map((r) => [r.emailedAt, r.canRemove])),
+    JSON.stringify([
+      [null, true],
+      [null, true],
+    ]),
+  );
+  await f.reports.publish({ publicId });
+  for (const j of jobs) {
+    await runReportJob(String(j.data.recipientId), Number(j.data.seq));
+  }
+  const after = await recipientsOf(f, publicId);
+  eq(
+    "published again: the same jobs deliver (claimed once, emailed)",
+    JSON.stringify(after.map((r) => [r.sendCount, r.sentAt !== null])),
+    JSON.stringify(after.map(() => [1, true])),
+  );
+  eq("two delivery emails logged", await deliveries(), 2);
+}
+
 /** Invitations with a release (P27): outcomes, one email per person, RBAC, mail guard, concurrency. */
 async function invitationsOnRelease() {
   section("P4b: release with inviteMissing");
@@ -2781,6 +2844,7 @@ await runScenarios(
         ["P4b: add recipients", addRecipientsScenario],
         ["P4b: remove recipient", removeRecipientScenario],
         ["P4b: unpublished", unpublishedRefusals],
+        ["P4c: unpublished at send time", unpublishedAtSendTime],
         ["P4b: portal state", portalStateRule],
         ["P4b: sentAt readers", sentAtReaders],
         ["P4b: portal and team users", cleanupP4b],
