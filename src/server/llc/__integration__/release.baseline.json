@@ -1,0 +1,683 @@
+{
+  "quarterly": {
+    "released": {
+      "report": {
+        "status": "SENT",
+        "sentAtSet": true,
+        "sentByAdmin": true,
+        "title": "Q3 2026 report to Members",
+        "frozenHash": "93e4afbe4abcd6e30455abcddc7b85558fde3890ccd21aaf53682dcc8ce0e1b3",
+        "frozenContent": {
+          "doc": [
+            {
+              "t": "p",
+              "indent": 0,
+              "inlines": [
+                {
+                  "text": "Operations were steady in the quarter."
+                }
+              ]
+            }
+          ],
+          "type": "QUARTERLY",
+          "title": "Q3 2026 report to Members",
+          "period": {
+            "end": "2026-09-30",
+            "start": "2026-07-01"
+          },
+          "figures": {
+            "source": {
+              "fetchedAt": "2026-11-15T00:00:00.000Z",
+              "periodEnd": "2026-09-30",
+              "periodStart": "2026-07-01"
+            },
+            "revenue": {
+              "note": "",
+              "amountCents": 0
+            },
+            "expenses": {
+              "note": "",
+              "lines": [],
+              "totalCents": 0
+            },
+            "reserves": {
+              "note": "",
+              "balanceCents": 0,
+              "minimumRequiredCents": 5000000
+            },
+            "utilization": {
+              "bps": 8500,
+              "note": ""
+            },
+            "distributions": {
+              "none": true,
+              "note": "",
+              "totalCents": 0,
+              "residualCents": 0,
+              "preferredReturnCents": 0,
+              "returnOfCapitalCents": 0
+            },
+            "managementFee": {
+              "note": "",
+              "paidCents": 0,
+              "accruedCents": 0,
+              "unpaidAtEndCents": 0
+            },
+            "managerPayments": {
+              "lines": [],
+              "confirmedNone": true,
+              "grandTotalCents": 0,
+              "insiderLoanPayments": [],
+              "insiderDistributions": []
+            }
+          },
+          "noticeKind": null
+        }
+      },
+      "recipients": [
+        {
+          "holder": "A",
+          "name": "A Preferred",
+          "email": "A.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "B",
+          "name": "B Preferred",
+          "email": "B.notice",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "C",
+          "name": "C Common",
+          "email": "C.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        }
+      ],
+      "otherDeadlinesTouched": 0,
+      "deadlines": [
+        {
+          "key": "QUARTERLY_REPORT:2026Q3",
+          "status": "DONE",
+          "satisfiedByType": "MEMBER_REPORT",
+          "satisfiedByThisReport": true,
+          "completedByAdmin": true,
+          "completedAtIsSentAt": true
+        }
+      ],
+      "booksClosedThrough": "2026-09-30",
+      "jobs": [
+        "governance.report-email:A Preferred:seq0",
+        "governance.report-email:B Preferred:seq0",
+        "governance.report-email:C Common:seq0",
+        "governance.report-file:report"
+      ],
+      "audit": [
+        {
+          "action": "memberReport.sent",
+          "summary": "Integration sent the report \"Q3 2026 report to Members\" to 3 recipients; books closed through 2026-09-30; deadlines done: QUARTERLY_REPORT:2026Q3"
+        }
+      ],
+      "emailLog": []
+    },
+    "delivered": {
+      "report": {
+        "status": "SENT",
+        "sentAtSet": true,
+        "sentByAdmin": true,
+        "title": "Q3 2026 report to Members",
+        "frozenHash": "93e4afbe4abcd6e30455abcddc7b85558fde3890ccd21aaf53682dcc8ce0e1b3",
+        "frozenContent": {
+          "doc": [
+            {
+              "t": "p",
+              "indent": 0,
+              "inlines": [
+                {
+                  "text": "Operations were steady in the quarter."
+                }
+              ]
+            }
+          ],
+          "type": "QUARTERLY",
+          "title": "Q3 2026 report to Members",
+          "period": {
+            "end": "2026-09-30",
+            "start": "2026-07-01"
+          },
+          "figures": {
+            "source": {
+              "fetchedAt": "2026-11-15T00:00:00.000Z",
+              "periodEnd": "2026-09-30",
+              "periodStart": "2026-07-01"
+            },
+            "revenue": {
+              "note": "",
+              "amountCents": 0
+            },
+            "expenses": {
+              "note": "",
+              "lines": [],
+              "totalCents": 0
+            },
+            "reserves": {
+              "note": "",
+              "balanceCents": 0,
+              "minimumRequiredCents": 5000000
+            },
+            "utilization": {
+              "bps": 8500,
+              "note": ""
+            },
+            "distributions": {
+              "none": true,
+              "note": "",
+              "totalCents": 0,
+              "residualCents": 0,
+              "preferredReturnCents": 0,
+              "returnOfCapitalCents": 0
+            },
+            "managementFee": {
+              "note": "",
+              "paidCents": 0,
+              "accruedCents": 0,
+              "unpaidAtEndCents": 0
+            },
+            "managerPayments": {
+              "lines": [],
+              "confirmedNone": true,
+              "grandTotalCents": 0,
+              "insiderLoanPayments": [],
+              "insiderDistributions": []
+            }
+          },
+          "noticeKind": null
+        }
+      },
+      "recipients": [
+        {
+          "holder": "A",
+          "name": "A Preferred",
+          "email": "A.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "B",
+          "name": "B Preferred",
+          "email": "B.notice",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "C",
+          "name": "C Common",
+          "email": "C.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        }
+      ],
+      "otherDeadlinesTouched": 0,
+      "deadlines": [
+        {
+          "key": "QUARTERLY_REPORT:2026Q3",
+          "status": "DONE",
+          "satisfiedByType": "MEMBER_REPORT",
+          "satisfiedByThisReport": true,
+          "completedByAdmin": true,
+          "completedAtIsSentAt": true
+        }
+      ],
+      "booksClosedThrough": "2026-09-30",
+      "jobs": [
+        "governance.report-email:A Preferred:seq0",
+        "governance.report-email:B Preferred:seq0",
+        "governance.report-email:C Common:seq0",
+        "governance.report-file:report"
+      ],
+      "audit": [
+        {
+          "action": "memberReport.sent",
+          "summary": "Integration sent the report \"Q3 2026 report to Members\" to 3 recipients; books closed through 2026-09-30; deadlines done: QUARTERLY_REPORT:2026Q3"
+        }
+      ],
+      "emailLog": [
+        {
+          "kind": "memberReport.delivery",
+          "to": "A.email",
+          "status": "SENT",
+          "holder": "A"
+        },
+        {
+          "kind": "memberReport.delivery",
+          "to": "B.notice",
+          "status": "SENT",
+          "holder": "B"
+        },
+        {
+          "kind": "memberReport.delivery",
+          "to": "C.email",
+          "status": "SENT",
+          "holder": "C"
+        }
+      ]
+    }
+  },
+  "k1": {
+    "released": {
+      "report": {
+        "status": "SENT",
+        "sentAtSet": true,
+        "sentByAdmin": true,
+        "title": "FY2026 Schedule K-1",
+        "frozenHash": "5eee083c8d710cc6e684933fad18021f37814bd9cb4e242eba986a348cd2e225",
+        "frozenContent": {
+          "doc": [],
+          "type": "TAX_K1",
+          "title": "FY2026 Schedule K-1",
+          "period": {
+            "end": "2026-12-31",
+            "start": "2026-01-01"
+          },
+          "noticeKind": null
+        }
+      },
+      "recipients": [
+        {
+          "holder": "A",
+          "name": "A Preferred",
+          "email": "A.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "B",
+          "name": "B Preferred",
+          "email": "B.notice",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "C",
+          "name": "C Common",
+          "email": "C.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "F",
+          "name": "F Interest",
+          "email": "F.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        }
+      ],
+      "otherDeadlinesTouched": 0,
+      "deadlines": [
+        {
+          "key": "K1_FINAL:2026",
+          "status": "OPEN",
+          "satisfiedByType": null,
+          "satisfiedByThisReport": false,
+          "completedByAdmin": false,
+          "completedAtIsSentAt": false
+        },
+        {
+          "key": "K1_TARGET:2026",
+          "status": "OPEN",
+          "satisfiedByType": null,
+          "satisfiedByThisReport": false,
+          "completedByAdmin": false,
+          "completedAtIsSentAt": false
+        }
+      ],
+      "booksClosedThrough": null,
+      "jobs": [
+        "governance.report-email:A Preferred:seq0",
+        "governance.report-email:B Preferred:seq0",
+        "governance.report-email:C Common:seq0",
+        "governance.report-email:F Interest:seq0",
+        "governance.report-file:report"
+      ],
+      "audit": [
+        {
+          "action": "memberReport.sent",
+          "summary": "Integration sent the report \"FY2026 Schedule K-1\" to 4 recipients; FY2026 K-1 deadlines stay open, no K-1 delivered yet to: A Preferred, B Preferred, C Common, F Interest"
+        }
+      ],
+      "emailLog": []
+    },
+    "delivered": {
+      "report": {
+        "status": "SENT",
+        "sentAtSet": true,
+        "sentByAdmin": true,
+        "title": "FY2026 Schedule K-1",
+        "frozenHash": "5eee083c8d710cc6e684933fad18021f37814bd9cb4e242eba986a348cd2e225",
+        "frozenContent": {
+          "doc": [],
+          "type": "TAX_K1",
+          "title": "FY2026 Schedule K-1",
+          "period": {
+            "end": "2026-12-31",
+            "start": "2026-01-01"
+          },
+          "noticeKind": null
+        }
+      },
+      "recipients": [
+        {
+          "holder": "A",
+          "name": "A Preferred",
+          "email": "A.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "B",
+          "name": "B Preferred",
+          "email": "B.notice",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "C",
+          "name": "C Common",
+          "email": "C.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        },
+        {
+          "holder": "F",
+          "name": "F Interest",
+          "email": "F.email",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        }
+      ],
+      "otherDeadlinesTouched": 0,
+      "deadlines": [
+        {
+          "key": "K1_FINAL:2026",
+          "status": "DONE",
+          "satisfiedByType": "MEMBER_REPORT",
+          "satisfiedByThisReport": true,
+          "completedByAdmin": false,
+          "completedAtIsSentAt": false
+        },
+        {
+          "key": "K1_TARGET:2026",
+          "status": "DONE",
+          "satisfiedByType": "MEMBER_REPORT",
+          "satisfiedByThisReport": true,
+          "completedByAdmin": false,
+          "completedAtIsSentAt": false
+        }
+      ],
+      "booksClosedThrough": null,
+      "jobs": [
+        "governance.report-email:A Preferred:seq0",
+        "governance.report-email:B Preferred:seq0",
+        "governance.report-email:C Common:seq0",
+        "governance.report-email:F Interest:seq0",
+        "governance.report-file:report"
+      ],
+      "audit": [
+        {
+          "action": "memberReport.sent",
+          "summary": "Integration sent the report \"FY2026 Schedule K-1\" to 4 recipients; FY2026 K-1 deadlines stay open, no K-1 delivered yet to: A Preferred, B Preferred, C Common, F Interest"
+        }
+      ],
+      "emailLog": [
+        {
+          "kind": "memberReport.delivery",
+          "to": "A.email",
+          "status": "SENT",
+          "holder": "A"
+        },
+        {
+          "kind": "memberReport.delivery",
+          "to": "B.notice",
+          "status": "SENT",
+          "holder": "B"
+        },
+        {
+          "kind": "memberReport.delivery",
+          "to": "C.email",
+          "status": "SENT",
+          "holder": "C"
+        },
+        {
+          "kind": "memberReport.delivery",
+          "to": "F.email",
+          "status": "SENT",
+          "holder": "F"
+        }
+      ]
+    }
+  },
+  "transfer": {
+    "released": {
+      "report": {
+        "status": "SENT",
+        "sentAtSet": true,
+        "sentByAdmin": true,
+        "title": "Copy of Transfer Notice",
+        "frozenHash": "7f585750485378e1ced1ae934c9ba5a129a99a169657195a36136f0125111a03",
+        "frozenContent": {
+          "doc": [
+            {
+              "t": "p",
+              "indent": 0,
+              "inlines": [
+                {
+                  "text": "A Preferred gave notice of a transfer."
+                }
+              ]
+            }
+          ],
+          "type": "NOTICE",
+          "title": "Copy of Transfer Notice",
+          "period": null,
+          "noticeKind": "TRANSFER_NOTICE_COPY"
+        }
+      },
+      "recipients": [
+        {
+          "holder": "B",
+          "name": "B Preferred",
+          "email": "B.notice",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": false,
+          "sendCount": 0,
+          "emailLogSet": false,
+          "firstViewedAt": null,
+          "viewCount": 0
+        }
+      ],
+      "otherDeadlinesTouched": 0,
+      "deadlines": [
+        {
+          "key": "TRANSFER_NOTICE_COPY:*",
+          "status": "DONE",
+          "satisfiedByType": "MEMBER_REPORT",
+          "satisfiedByThisReport": true,
+          "completedByAdmin": true,
+          "completedAtIsSentAt": true
+        }
+      ],
+      "booksClosedThrough": null,
+      "jobs": [
+        "governance.report-email:B Preferred:seq0",
+        "governance.report-file:report"
+      ],
+      "audit": [
+        {
+          "action": "memberReport.sent",
+          "summary": "Integration sent the report \"Copy of Transfer Notice\" to 1 recipient; deadlines done: TRANSFER_NOTICE_COPY:*"
+        }
+      ],
+      "emailLog": []
+    },
+    "delivered": {
+      "report": {
+        "status": "SENT",
+        "sentAtSet": true,
+        "sentByAdmin": true,
+        "title": "Copy of Transfer Notice",
+        "frozenHash": "7f585750485378e1ced1ae934c9ba5a129a99a169657195a36136f0125111a03",
+        "frozenContent": {
+          "doc": [
+            {
+              "t": "p",
+              "indent": 0,
+              "inlines": [
+                {
+                  "text": "A Preferred gave notice of a transfer."
+                }
+              ]
+            }
+          ],
+          "type": "NOTICE",
+          "title": "Copy of Transfer Notice",
+          "period": null,
+          "noticeKind": "TRANSFER_NOTICE_COPY"
+        }
+      },
+      "recipients": [
+        {
+          "holder": "B",
+          "name": "B Preferred",
+          "email": "B.notice",
+          "tokenVersion": 1,
+          "tokenTtlMs": 34560000000,
+          "tokenRevoked": false,
+          "emailed": true,
+          "sendCount": 1,
+          "emailLogSet": true,
+          "firstViewedAt": null,
+          "viewCount": 0
+        }
+      ],
+      "otherDeadlinesTouched": 0,
+      "deadlines": [
+        {
+          "key": "TRANSFER_NOTICE_COPY:*",
+          "status": "DONE",
+          "satisfiedByType": "MEMBER_REPORT",
+          "satisfiedByThisReport": true,
+          "completedByAdmin": true,
+          "completedAtIsSentAt": true
+        }
+      ],
+      "booksClosedThrough": null,
+      "jobs": [
+        "governance.report-email:B Preferred:seq0",
+        "governance.report-file:report"
+      ],
+      "audit": [
+        {
+          "action": "memberReport.sent",
+          "summary": "Integration sent the report \"Copy of Transfer Notice\" to 1 recipient; deadlines done: TRANSFER_NOTICE_COPY:*"
+        }
+      ],
+      "emailLog": [
+        {
+          "kind": "memberReport.delivery",
+          "to": "B.notice",
+          "status": "SENT",
+          "holder": "B"
+        }
+      ]
+    }
+  }
+}

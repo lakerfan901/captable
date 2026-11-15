@@ -16,13 +16,15 @@ import { boundRequestMeta } from "../../ballot-router/access";
 // Concurrency rule of this router: every procedure that changes a report or
 // its children takes the report's row lock (`lockReport`, SELECT … FOR
 // UPDATE) and re-reads the row AFTER the lock, so an edit, an attachment
-// change or a delete racing `send` waits for it and then sees SENT. The
-// writes themselves are single-row guarded writes (never a guarded
-// `updateMany` / `deleteMany`, see server/governance/guarded.ts).
-// Lock order: `send` takes ECONOMICS' `lockCompanyLedgerAndUnitClasses` (the
-// ledger lock, then the unit-class locks) BEFORE the report lock (it closes
-// the books and reads the register); no procedure here takes the ledger or
-// a unit-class lock after the report lock.
+// change or a delete racing `release` (or its legacy entry point `send`)
+// waits for it and then sees SENT. The writes themselves are single-row
+// guarded writes (never a guarded `updateMany` / `deleteMany`, see
+// server/governance/guarded.ts).
+// Lock order: `release` takes ECONOMICS' `lockCompanyLedgerAndUnitClasses`
+// (the ledger lock, then the unit-class locks) BEFORE the report lock (it
+// closes the books and reads the register); `publish` / `unpublish` take the
+// report lock only; no procedure here takes the ledger or a unit-class lock
+// after the report lock.
 
 /** Audit context with the client-controlled IP and user agent bounded (M3). */
 export function auditContext(ctx: { requestIp: string; userAgent: string }): {

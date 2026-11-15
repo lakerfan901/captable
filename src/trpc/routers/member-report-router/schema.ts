@@ -106,6 +106,36 @@ export const ZMemberReportSendSchema = z
   .object({ publicId: zPublicId })
   .strict();
 
+/** 04-investor-portal.md 5.5: the audience of a release is 1–500 holders. */
+export const MAX_RELEASE_AUDIENCE = 500;
+
+export const ZMemberReportReleaseSchema = z
+  .object({
+    publicId: zPublicId,
+    /**
+     * The holders the Manager user confirmed (P18). Duplicates are not
+     * removed here: the server refuses a list that names a holder twice.
+     */
+    stakeholderIds: z.array(zId).min(1).max(MAX_RELEASE_AUDIENCE),
+    /** "Also send by email" (P19). */
+    email: z.boolean(),
+    /** P27, package P4b: inviting holders without portal access is not available yet. */
+    inviteMissing: z.literal(false).optional(),
+  })
+  .strict();
+
+export const ZMemberReportAudienceOptionsSchema = z
+  .object({ publicId: zPublicId })
+  .strict();
+
+export const ZMemberReportPublishSchema = z
+  .object({ publicId: zPublicId })
+  .strict();
+
+export const ZMemberReportUnpublishSchema = z
+  .object({ publicId: zPublicId })
+  .strict();
+
 export const ZMemberReportResendSchema = z
   .object({ publicId: zPublicId, recipientId: zId.optional() })
   .strict();
