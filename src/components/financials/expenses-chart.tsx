@@ -66,6 +66,7 @@ export function ExpensesChart({
         }
         parts={s.parts}
         total={s.total}
+        totalShare={s.totalShare}
       />
     );
   };

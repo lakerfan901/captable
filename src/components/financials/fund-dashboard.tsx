@@ -229,7 +229,11 @@ function FundDashboardBody({
         <DistributionsChart {...common("distributions")} />
         <CapitalChart {...common("capital")} />
         <PreferredReturnChart {...common("preferred-return")} />
-        <ReservesChart {...common("reserves")} colourSource={allMonths} />
+        <ReservesChart
+          {...common("reserves")}
+          colourSource={allMonths}
+          span="thirdLast"
+        />
         <CashFlowChart
           period={focus}
           opening={opening}

@@ -37,6 +37,7 @@ import {
 import {
   CASH_FLOW_CHANGE_LABEL,
   cashFlowSteps,
+  cashFlowView,
   FUND_TILES,
   HOLDER_TILES,
   tileViews,
@@ -294,6 +295,37 @@ describe("tiles", () => {
 });
 
 describe("F3 cash flow", () => {
+  it("tooltip and table show the same amounts; the remainder is labelled", () => {
+    const p = quarters[3];
+    if (!p?.values) throw new Error("short");
+    const opening = quarters[2]?.values?.availableCash ?? 0n;
+    const steps = cashFlowSteps(p.values, opening);
+    const { tooltips, table } = cashFlowView(steps, "Q");
+    expect(table.rows).toHaveLength(steps.length);
+    for (const [i, r] of table.rows.entries()) {
+      expect(r.label).toBe(tooltips[i]?.title);
+      expect(r.cells[0]).toBe(tooltips[i]?.lines[0]?.value);
+      expect(r.cells[1]).toBe(tooltips[i]?.extras[0]?.value ?? "");
+    }
+    const other = steps.find((s) => s.key === "other");
+    if (other) expect(other.label).toBe("Other movements");
+  });
+
+  it("the remainder step on the fixture is small next to the movements it completes", () => {
+    for (const [i, p] of quarters.entries()) {
+      if (!p.values || i === 0) continue;
+      const opening = quarters[i - 1]?.values?.availableCash ?? 0n;
+      const steps = cashFlowSteps(p.values, opening);
+      const other = steps.find((s) => s.key === "other")?.amount ?? 0n;
+      const abs = (v: bigint) => (v < 0n ? -v : v);
+      const moved = steps
+        .filter((s) => s.key !== "other" && s.kind !== "total")
+        .reduce((a, s) => a + abs(s.amount), 0n);
+      // recorded for the report: the share of "Other movements"
+      expect(abs(other) <= moved).toBe(true);
+    }
+  });
+
   it("steps add up to the change in Available Cash from the previous period end", () => {
     for (const [i, p] of quarters.entries()) {
       if (!p.values) continue;

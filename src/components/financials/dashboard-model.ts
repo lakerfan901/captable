@@ -20,7 +20,14 @@ import {
   plotNumber,
   type ValueUnit,
 } from "../charts/chart-format";
-import { type WaterfallStep, waterfall } from "../charts/chart-model";
+import {
+  type ChartSlot,
+  type TableModel,
+  type TooltipModel,
+  type WaterfallKind,
+  type WaterfallStep,
+  waterfall,
+} from "../charts/chart-model";
 
 /** Which direction of a change is good for the reader. */
 export type Direction = "up" | "down" | "neutral";
@@ -324,4 +331,64 @@ export function cashFlowSteps(
     v.availableCash - opening,
     { other: CASH_FLOW_OTHER_LABEL, change: CASH_FLOW_CHANGE_LABEL },
   );
+}
+
+export const CASH_FLOW_KIND_SLOT: Record<WaterfallKind, ChartSlot> = {
+  in: 1,
+  out: 2,
+  total: 7,
+};
+export const CASH_FLOW_KIND_LABEL: Record<WaterfallKind, string> = {
+  in: "Money in",
+  out: "Money out",
+  total: "Change in Available Cash",
+};
+
+/** F3's tooltip of each step and its table, from the same strings. */
+export function cashFlowView(
+  steps: readonly WaterfallStep[],
+  periodLabel: string,
+): { tooltips: TooltipModel[]; table: TableModel } {
+  const tooltips: TooltipModel[] = steps.map((s) => ({
+    title: s.label,
+    note: null,
+    lines: [
+      {
+        key: "amount",
+        label: s.kind === "total" ? periodLabel : CASH_FLOW_KIND_LABEL[s.kind],
+        value: formatValue("cents", s.amount),
+        slot: CASH_FLOW_KIND_SLOT[s.kind],
+      },
+    ],
+    total: null,
+    extras:
+      s.kind === "total"
+        ? []
+        : [
+            {
+              key: "run",
+              label: "Running total",
+              value: formatValue("cents", s.to),
+              slot: null,
+            },
+          ],
+  }));
+  return {
+    tooltips,
+    table: {
+      columns: [
+        { key: "amount", label: "Amount", slot: null },
+        { key: "run", label: "Running total", slot: null },
+      ],
+      rows: steps.map((s, i) => ({
+        key: s.key,
+        label: s.label,
+        cells: [
+          tooltips[i]?.lines[0]?.value ?? "—",
+          tooltips[i]?.extras[0]?.value ?? "",
+        ],
+      })),
+      totals: null,
+    },
+  };
 }

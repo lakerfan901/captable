@@ -1,3 +1,4 @@
+import type { ChartSpan } from "@/components/charts/chart-frame";
 import type { FocusRequest } from "@/components/charts/chart-hit-layer";
 import type { ChartActivation } from "@/components/charts/period-chart";
 import type { Grain } from "@/lib/llc/financial-periods";
@@ -13,7 +14,7 @@ export interface TrendChartProps<V> {
   activation?: ChartActivation | null;
   /** focus a period of this chart (focus returns there after Back) */
   focusRequest?: FocusRequest | null;
-  span?: "full" | "half" | "third";
+  span?: ChartSpan;
 }
 
 const GRAIN_WORDS: Record<Grain, string> = {

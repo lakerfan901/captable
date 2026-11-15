@@ -68,6 +68,9 @@ export function SegmentedControl<K extends string>({
 
 export type ChartView = "chart" | "table" | "share";
 
+/** Width of a chart card in the dashboard grid (`ChartGrid`). */
+export type ChartSpan = "full" | "half" | "third" | "thirdLast";
+
 export const CHART_VIEWS: readonly SegmentOption<ChartView>[] = [
   { key: "chart", label: "Chart" },
   { key: "table", label: "Table" },
@@ -100,7 +103,7 @@ export function ChartFrame({
   views?: readonly SegmentOption<ChartView>[];
   view: ChartView;
   onViewChange: (v: ChartView) => void;
-  span?: "full" | "half" | "third";
+  span?: ChartSpan;
   children: ReactNode;
 }) {
   return (
@@ -113,6 +116,8 @@ export function ChartFrame({
         span === "half" && "col-span-full @min-[52rem]:col-span-3",
         span === "third" &&
           "col-span-full @min-[52rem]:col-span-3 @min-[72rem]:col-span-2",
+        // the last of three thirds: full width where thirds become halves (no orphan)
+        span === "thirdLast" && "col-span-full @min-[72rem]:col-span-2",
       )}
     >
       <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">

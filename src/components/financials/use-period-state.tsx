@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FocusRequest } from "@/components/charts/chart-hit-layer";
 import type { ChartActivation } from "@/components/charts/period-chart";
@@ -15,30 +15,30 @@ import {
 /**
  * The dashboard's period state (grain, selected period, comparison, drill),
  * read from and written to the URL query, so a view can be bookmarked and
- * Back in the browser undoes a drill. Writes use `router.replace` for grain
- * and comparison changes and `router.push` for drill-downs. Other query keys
- * of the page are kept. A page using it must render it inside <Suspense>
- * (Next.js requires that for `useSearchParams`).
+ * Back in the browser undoes a drill. Writes go through the native History
+ * API (`replaceState` for grain, period and comparison, `pushState` for
+ * drill-downs), which Next.js feeds into `useSearchParams` WITHOUT a server
+ * request: the data is already in the browser and is re-aggregated there
+ * (5.9). Other query keys of the page are kept. A page using it must render
+ * it inside <Suspense> (Next.js requires that for `useSearchParams`).
  */
 export function usePeriodState(): [
   PeriodState,
   (next: PeriodState, opts?: { push?: boolean }) => void,
 ] {
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const state = useMemo(() => parsePeriodState((k) => params.get(k)), [params]);
   const set = useCallback(
     (next: PeriodState, opts: { push?: boolean } = {}) => {
       const qs = serializePeriodState(
         next,
-        new URLSearchParams(params.toString()),
+        new URLSearchParams(window.location.search),
       ).toString();
-      const url = qs ? `${pathname}?${qs}` : pathname;
-      if (opts.push) router.push(url, { scroll: false });
-      else router.replace(url, { scroll: false });
+      const url = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+      if (opts.push) window.history.pushState(null, "", url);
+      else window.history.replaceState(null, "", url);
     },
-    [params, pathname, router],
+    [],
   );
   return [state, set];
 }

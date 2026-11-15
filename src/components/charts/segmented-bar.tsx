@@ -17,10 +17,13 @@ export function SegmentedBar({
   caption,
   parts,
   total,
+  totalShare,
 }: {
   caption: React.ReactNode;
   parts: readonly SharePart[];
   total: string;
+  /** null when a negative part makes the shares not add up to the total */
+  totalShare: string | null;
 }) {
   const [active, setActive] = useState<string | null>(null);
   const drawn = parts.filter((p) => p.width > 0);
@@ -52,7 +55,7 @@ export function SegmentedBar({
                   color: DARK_INK.has(p.slot) ? "#0b0b0b" : "#ffffff",
                 }}
               >
-                {p.width >= 7 ? p.share.replace(/\.\d%$/, "%") : null}
+                {p.width >= 7 ? p.shareShort : null}
               </button>
             </li>
           ))}
@@ -95,7 +98,7 @@ export function SegmentedBar({
               {total}
             </td>
             <td className="py-2 pl-4 text-right tabular-nums text-muted-foreground">
-              100.0%
+              {totalShare ?? ""}
             </td>
           </tr>
         </tbody>

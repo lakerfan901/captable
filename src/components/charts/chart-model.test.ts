@@ -9,6 +9,8 @@ import {
   breakdownSeries,
   breakdownValue,
   buildPeriodRows,
+  labelEvery,
+  labelShown,
   OTHER_KEY,
   partialOf,
   type SeriesSpec,
@@ -19,9 +21,71 @@ import {
   toggleHidden,
   tooltipModel,
   tooltipSentence,
+  valueScale,
   visibleSeries,
   waterfall,
 } from "./chart-model";
+
+describe("value axis and labels", () => {
+  const row = (key: string, plot: Record<string, number | null>) => ({
+    key,
+    label: key,
+    short: key,
+    grain: "month" as const,
+    hasData: true,
+    partial: false,
+    inProgress: false,
+    partialNote: null,
+    raw: {},
+    plot,
+  });
+  it("stacks count by their positive and negative sums; lines by value", () => {
+    const rows = [
+      row("a", { x: 60, y: 50, l: -30 }),
+      row("b", { x: -40, y: -20, l: 10 }),
+    ];
+    const s = valueScale(rows, [
+      { key: "x", stack: "s", mark: "bar" },
+      { key: "y", stack: "s", mark: "bar" },
+      { key: "l", stack: undefined, mark: "line" },
+    ]);
+    expect(s.max).toBeGreaterThanOrEqual(110);
+    expect(s.min).toBeLessThanOrEqual(-60);
+    expect(s.ticks).toContain(0);
+  });
+  it("a fixed top is used as given", () => {
+    expect(valueScale([], [], 10_000)).toEqual({
+      min: 0,
+      max: 10_000,
+      ticks: [0, 2500, 5000, 7500, 10_000],
+    });
+  });
+  it("labels thin from the right, the latest always shown", () => {
+    expect(labelEvery(8, 900)).toBe(1);
+    const every = labelEvery(24, 600);
+    expect(every).toBe(3);
+    expect(labelShown(23, 24, every)).toBe(true);
+    expect(labelShown(22, 24, every)).toBe(false);
+    expect(labelShown(20, 24, every)).toBe(true);
+  });
+  it("share labels round; the total share is blank with a negative part", () => {
+    const s = shareParts([
+      { key: "a", label: "A", slot: 1, amount: 467n },
+      { key: "b", label: "B", slot: 2, amount: 533n },
+    ]);
+    expect(s.parts.map((p) => [p.share, p.shareShort])).toEqual([
+      ["53.3%", "53%"],
+      ["46.7%", "47%"],
+    ]);
+    expect(s.totalShare).toBe("100.0%");
+    expect(
+      shareParts([
+        { key: "a", label: "A", slot: 1, amount: 10n },
+        { key: "b", label: "B", slot: 2, amount: -1n },
+      ]).totalShare,
+    ).toBeNull();
+  });
+});
 
 const world = generateWorld(11, { months: 20 });
 const { fundMonths } = buildSeries(world.input, {
@@ -298,9 +362,10 @@ describe("breakdowns", () => {
 });
 
 describe("share of a whole", () => {
-  it("shares of the positive total, largest first; negatives draw nothing", () => {
+  it("shares of the positive total, largest first; negatives draw nothing; zeros are absent", () => {
     const s = shareParts([
       { key: "a", label: "A", slot: 1, amount: 2500n },
+      { key: "z", label: "Z", slot: 4, amount: 0n },
       { key: "b", label: "B", slot: 2, amount: 7500n },
       { key: "c", label: "C", slot: 3, amount: -100n },
     ]);

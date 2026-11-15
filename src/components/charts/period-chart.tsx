@@ -10,11 +10,12 @@ import {
   ReferenceLine,
 } from "recharts";
 import type { AggregatedPeriod } from "@/lib/llc/financial-series";
-import { formatTick, niceScale, type ValueUnit } from "./chart-format";
+import { formatTick, type ValueUnit } from "./chart-format";
 import {
   CHART_VIEWS,
   CHART_VIEWS_WITH_SHARE,
   ChartFrame,
+  type ChartSpan,
   type ChartView,
 } from "./chart-frame";
 import {
@@ -35,6 +36,7 @@ import {
   toggleHidden,
   tooltipModel,
   tooltipSentence,
+  valueScale,
   visibleSeries,
 } from "./chart-model";
 import { MoneyAxis, VALUE_AXIS_WIDTH } from "./money-axis";
@@ -118,7 +120,7 @@ export function PeriodChart<V>({
   extras?: readonly ExtraSpec<V>[];
   /** unit of the value axis (default: the first series') */
   unit?: ValueUnit;
-  span?: "full" | "half" | "third";
+  span?: ChartSpan;
   height?: number;
   highlightKey?: string | null;
   activation?: ChartActivation | null;
@@ -265,28 +267,7 @@ function PlotBody<V>({
   const stacked = shown.filter(
     (s) => s.stack !== undefined && s.mark !== "line",
   );
-  const loose = shown.filter((s) => !stacked.includes(s));
-  const scaleValues: (number | null)[] = [];
-  for (const r of rows) {
-    let pos = 0;
-    let neg = 0;
-    for (const s of stacked) {
-      const v = r.plot[s.key] ?? null;
-      if (v === null) continue;
-      if (v >= 0) pos += v;
-      else neg += v;
-    }
-    scaleValues.push(pos, neg);
-    for (const s of loose) scaleValues.push(r.plot[s.key] ?? null);
-  }
-  const scale =
-    fixedMax !== undefined
-      ? {
-          min: 0,
-          max: fixedMax,
-          ticks: [0, 1, 2, 3, 4].map((i) => (fixedMax * i) / 4),
-        }
-      : niceScale(scaleValues, 4, 100_000);
+  const scale = valueScale(rows, shown, fixedMax);
   const yOf = (v: number) =>
     MARGIN_TOP + ((scale.max - v) / (scale.max - scale.min || 1)) * plotHeight;
 

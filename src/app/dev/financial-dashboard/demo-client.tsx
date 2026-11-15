@@ -2,7 +2,7 @@
 
 // Development-only demo client (see page.tsx for the production guard).
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { SegmentedControl } from "@/components/charts/chart-frame";
 import { ThroughLine } from "@/components/financials/dashboard-header";
@@ -51,20 +51,19 @@ export function DemoClient({
   targetSaleDate: string;
 }) {
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const [state, setState] = usePeriodState();
   const worldKey = params.get("world") ?? "published";
   const gap = params.get("gap") === "1";
+  const noUtil = params.get("noutil") === "1";
   const tab = params.get("tab") === "mine" ? "mine" : "fund";
   const holder = params.get("holder") ?? "A";
   const w = worlds[worldKey] ?? (worlds.published as DemoWorld);
 
   const setParam = (k: string, v: string | null) => {
-    const p = new URLSearchParams(params.toString());
+    const p = new URLSearchParams(window.location.search);
     if (v === null) p.delete(k);
     else p.set(k, v);
-    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+    window.history.replaceState(null, "", `${window.location.pathname}?${p}`);
   };
 
   const { fundMonths, holderMonths, gapMonth } = useMemo(() => {
@@ -72,12 +71,16 @@ export function DemoClient({
     const h = w.holderMonths.map(holderMonthFromJson);
     // "gap": drop the 9th month's records, as if that month had none
     const g = gap ? (f[8]?.month ?? null) : null;
+    // "no utilization": as if the Manager never reported one (F8 is then absent)
+    const kept = g ? f.filter((m) => m.month !== g) : f;
     return {
-      fundMonths: g ? f.filter((m) => m.month !== g) : f,
+      fundMonths: noUtil
+        ? kept.map((m) => ({ ...m, utilizationBps: null }))
+        : kept,
       holderMonths: g ? h.filter((m) => m.month !== g) : h,
       gapMonth: g,
     };
-  }, [w, gap]);
+  }, [w, gap, noUtil]);
   const last = fundMonths[fundMonths.length - 1];
   const live = worldKey === "live";
 
@@ -106,6 +109,17 @@ export function DemoClient({
               data-testid="demo-gap"
             />
             Drop a month (gap{gapMonth ? `: ${gapMonth.slice(0, 7)}` : ""})
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={noUtil}
+              onChange={(e) =>
+                setParam("noutil", e.target.checked ? "1" : null)
+              }
+              data-testid="demo-noutil"
+            />
+            No utilization reported
           </label>
         </div>
       </div>

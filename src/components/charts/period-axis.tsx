@@ -1,18 +1,10 @@
 "use client";
 
 import { XAxis } from "recharts";
+import { labelEvery, labelShown } from "./chart-model";
 
 /** Height of the period axis band (tick labels under the plot). */
 export const PERIOD_AXIS_HEIGHT = 28;
-
-/** Minimum room per label before labels are thinned (every second, third …). */
-const LABEL_ROOM = 58;
-
-/** Label interval for `n` bands over `plotWidth` px: 0 shows every label. */
-export function labelInterval(n: number, plotWidth: number): number {
-  const fit = Math.max(1, Math.floor(plotWidth / LABEL_ROOM));
-  return Math.max(0, Math.ceil(n / fit) - 1);
-}
 
 interface TickProps {
   x?: number | string;
@@ -37,7 +29,7 @@ export function PeriodAxis({
   plotWidth: number;
 }) {
   const n = labels.size;
-  const every = labelInterval(n, plotWidth) + 1;
+  const every = labelEvery(n, plotWidth);
   return (
     <XAxis
       dataKey="key"
@@ -66,8 +58,7 @@ function renderTick(
   if (!payload) return <g />;
   const tx = Number(x);
   const ty = Number(y);
-  const fromEnd = o.n - 1 - payload.index;
-  if (fromEnd % o.every !== 0) return <g />;
+  if (!labelShown(payload.index, o.n, o.every)) return <g />;
   const on = payload.value === o.highlightKey;
   return (
     <text

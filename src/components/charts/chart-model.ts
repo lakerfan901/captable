@@ -18,6 +18,8 @@ import type {
 } from "../../lib/llc/financial-series";
 import {
   formatValue,
+  type NiceScale,
+  niceScale,
   plotNumber,
   type RawValue,
   type ValueUnit,
@@ -405,6 +407,63 @@ export function stackRoles(
 }
 
 // ---------------------------------------------------------------------------
+// Value axis and period labels
+
+/**
+ * The value axis of a chart: through zero, covering every visible value; a
+ * stack counts by its positive and negative sums (as `stackOffset="sign"`
+ * draws it); a fixed top (utilization: 0–100%) is used as given.
+ */
+export function valueScale(
+  rows: readonly ChartRow[],
+  shown: readonly Pick<SeriesSpec<unknown>, "key" | "stack" | "mark">[],
+  fixedMax?: number,
+): NiceScale {
+  if (fixedMax !== undefined) {
+    return {
+      min: 0,
+      max: fixedMax,
+      ticks: [0, 1, 2, 3, 4].map((i) => (fixedMax * i) / 4),
+    };
+  }
+  const stacked = shown.filter(
+    (s) => s.stack !== undefined && s.mark !== "line",
+  );
+  const loose = shown.filter((s) => !stacked.includes(s));
+  const values: (number | null)[] = [];
+  for (const r of rows) {
+    let pos = 0;
+    let neg = 0;
+    for (const s of stacked) {
+      const v = r.plot[s.key] ?? null;
+      if (v === null) continue;
+      if (v >= 0) pos += v;
+      else neg += v;
+    }
+    values.push(pos, neg);
+    for (const s of loose) values.push(r.plot[s.key] ?? null);
+  }
+  return niceScale(values, 4, 100_000);
+}
+
+/** Minimum room per period label before labels are thinned. */
+export const LABEL_ROOM = 58;
+
+/**
+ * Which period labels the axis prints: every `every`-th counted from the
+ * right, so the latest period always has its label.
+ */
+export function labelEvery(n: number, plotWidth: number): number {
+  const fit = Math.max(1, Math.floor(plotWidth / LABEL_ROOM));
+  return Math.max(1, Math.ceil(n / fit));
+}
+
+/** True when the label of band `index` (of `n`) is printed. */
+export function labelShown(index: number, n: number, every: number): boolean {
+  return (n - 1 - index) % every === 0;
+}
+
+// ---------------------------------------------------------------------------
 // Breakdowns with many labels (expense categories, reserve kinds)
 
 export const OTHER_KEY = "__other";
@@ -476,7 +535,10 @@ export interface SharePart {
   amount: string;
   /** share of the positive total in tenths of a percent */
   shareTenths: number;
+  /** "46.7%" */
   share: string;
+  /** "47%": the label printed inside the segment (rounded, half up) */
+  shareShort: string;
   /** width in percent of the bar (0 for zero or negative amounts) */
   width: number;
 }
@@ -492,7 +554,7 @@ export function shareParts(
     slot: ChartSlot;
     amount: bigint;
   }[],
-): { parts: SharePart[]; total: string } {
+): { parts: SharePart[]; total: string; totalShare: string | null } {
   const positive = parts.reduce(
     (a, p) => a + (p.amount > 0n ? p.amount : 0n),
     0n,
@@ -503,24 +565,30 @@ export function shareParts(
   );
   return {
     total: formatValue("cents", total),
-    parts: sorted.map((p) => {
-      const tenths =
-        positive > 0n && p.amount > 0n
-          ? Number((p.amount * 2000n + positive) / (2n * positive))
-          : 0;
-      return {
-        key: p.key,
-        label: p.label,
-        slot: p.slot,
-        amount: formatValue("cents", p.amount),
-        shareTenths: tenths,
-        share: `${Math.floor(tenths / 10)}.${tenths % 10}%`,
-        width:
+    // the shares are of the positive parts; with a negative part they do not describe the net total
+    totalShare: parts.some((p) => p.amount < 0n) ? null : "100.0%",
+    // a part with nothing in the period is absent, not listed at 0%
+    parts: sorted
+      .filter((p) => p.amount !== 0n)
+      .map((p) => {
+        const tenths =
           positive > 0n && p.amount > 0n
-            ? Number((p.amount * 1_000_000n) / positive) / 10_000
-            : 0,
-      };
-    }),
+            ? Number((p.amount * 2000n + positive) / (2n * positive))
+            : 0;
+        return {
+          key: p.key,
+          label: p.label,
+          slot: p.slot,
+          amount: formatValue("cents", p.amount),
+          shareTenths: tenths,
+          share: `${Math.floor(tenths / 10)}.${tenths % 10}%`,
+          shareShort: `${Math.floor((tenths + 5) / 10)}%`,
+          width:
+            positive > 0n && p.amount > 0n
+              ? Number((p.amount * 1_000_000n) / positive) / 10_000
+              : 0,
+        };
+      }),
   };
 }
 

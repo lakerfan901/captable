@@ -7,17 +7,19 @@ import {
   niceScale,
   plotNumber,
 } from "@/components/charts/chart-format";
-import { ChartFrame, type ChartView } from "@/components/charts/chart-frame";
+import {
+  ChartFrame,
+  type ChartSpan,
+  type ChartView,
+} from "@/components/charts/chart-frame";
 import {
   ChartHitLayer,
   type HitBand,
 } from "@/components/charts/chart-hit-layer";
 import { ChartLegend } from "@/components/charts/chart-legend";
 import {
-  type ChartSlot,
   periodRowLabel,
   slotColor,
-  type TableModel,
   type TooltipModel,
   tooltipSentence,
   type WaterfallKind,
@@ -27,14 +29,13 @@ import { PeriodAxis } from "@/components/charts/period-axis";
 import { SeriesTable } from "@/components/charts/series-table";
 import { useElementWidth } from "@/components/charts/use-element-width";
 import type { FundPeriod } from "@/lib/llc/financial-series";
-import { cashFlowSteps } from "./dashboard-model";
+import {
+  cashFlowSteps,
+  cashFlowView,
+  CASH_FLOW_KIND_LABEL as KIND_LABEL,
+  CASH_FLOW_KIND_SLOT as KIND_SLOT,
+} from "./dashboard-model";
 
-const KIND_SLOT: Record<WaterfallKind, ChartSlot> = { in: 1, out: 2, total: 7 };
-const KIND_LABEL: Record<WaterfallKind, string> = {
-  in: "Money in",
-  out: "Money out",
-  total: "Change in Available Cash",
-};
 const SHORT: Record<string, string> = {
   grossRevenue: "Revenue",
   otherIncome: "Other income",
@@ -69,7 +70,7 @@ export function CashFlowChart({
   period: FundPeriod | null;
   /** Available Cash at the end of the previous period; 0 before inception; null when unknown */
   opening: bigint | null;
-  span?: "full" | "half" | "third";
+  span?: ChartSpan;
 }) {
   const [view, setView] = useState<ChartView>("chart");
   const { ref, width } = useElementWidth<HTMLDivElement>();
@@ -78,50 +79,15 @@ export function CashFlowChart({
   const title = "Cash flow of the period";
   const label = period ? periodRowLabel(period) : "";
 
-  const tip = (i: number): TooltipModel => {
-    const s = steps[i];
-    if (!s)
-      return { title: "", note: null, lines: [], total: null, extras: [] };
-    return {
-      title: s.label,
+  const { tooltips, table } = cashFlowView(steps, label);
+  const tip = (i: number): TooltipModel =>
+    tooltips[i] ?? {
+      title: "",
       note: null,
-      lines: [
-        {
-          key: "amount",
-          label: s.kind === "total" ? `${label}` : KIND_LABEL[s.kind],
-          value: formatValue("cents", s.amount),
-          slot: KIND_SLOT[s.kind],
-        },
-      ],
+      lines: [],
       total: null,
-      extras:
-        s.kind === "total"
-          ? []
-          : [
-              {
-                key: "run",
-                label: "Running total",
-                value: formatValue("cents", s.to),
-                slot: null,
-              },
-            ],
+      extras: [],
     };
-  };
-  const table: TableModel = {
-    columns: [
-      { key: "amount", label: "Amount", slot: null },
-      { key: "run", label: "Running total", slot: null },
-    ],
-    rows: steps.map((s, i) => {
-      const t = tip(i);
-      return {
-        key: s.key,
-        label: s.label,
-        cells: [t.lines[0]?.value ?? "—", t.extras[0]?.value ?? ""],
-      };
-    }),
-    totals: null,
-  };
 
   const description =
     v !== null && opening !== null
