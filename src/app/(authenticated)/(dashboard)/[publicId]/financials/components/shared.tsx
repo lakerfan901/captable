@@ -6,6 +6,7 @@ import { cloneElement, isValidElement, useId, useState } from "react";
 import { MoneyInput } from "@/components/llc/money-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -81,6 +82,7 @@ export function labelOf(labels: Record<string, string>, key: string): string {
 }
 
 const TABS = [
+  { name: "Dashboard", path: "/dashboard" },
   { name: "Summary", path: "" },
   { name: "Revenue", path: "/revenue" },
   { name: "Expenses", path: "/expenses" },
@@ -116,6 +118,24 @@ export function FinancialsTabs({ publicId }: { publicId: string }) {
       })}
     </nav>
   );
+}
+
+/**
+ * The body of a financials page: a card, except on the dashboard, whose
+ * charts and tiles are cards of their own.
+ */
+export function FinancialsBody({
+  publicId,
+  children,
+}: {
+  publicId: string;
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  if (pathname.startsWith(`/${publicId}/financials/dashboard`)) {
+    return <div className="min-w-0">{children}</div>;
+  }
+  return <Card className="p-5">{children}</Card>;
 }
 
 /** From/to date filter kept in the URL (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). */
