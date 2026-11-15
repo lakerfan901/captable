@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { formatInstant } from "@/lib/company-time";
 import { GOVERNANCE_TIME_ZONE, todayInZone } from "@/lib/governance/dates";
+import { reportFinancialsLines } from "@/lib/governance/release-reconcile-view";
 import {
   type PickerHolder,
   pickerCandidates,
@@ -113,6 +114,17 @@ export default async function ReportPage({
     ).length;
   }
 
+  // P35 / 6.3: how far the dashboard is published and any restatement of
+  // this period (the report itself keeps its figures as issued). Read from
+  // the snapshots only (`published`), never the ledger.
+  const financials =
+    exportable && allow(true, ["llc-financials", "read"], false)
+      ? reportFinancialsLines(await api.financialDashboard.published(), {
+          start: report.periodStart,
+          end: report.periodEnd,
+        })
+      : null;
+
   // The filed PDF is a Document of the company; `get` returns its id.
   let filedDocumentPublicId: string | null = null;
   if (report.filedDocumentId && allow(true, ["documents", "read"], false)) {
@@ -197,6 +209,28 @@ export default async function ReportPage({
           />
         </CardContent>
       </Card>
+
+      {financials?.publishedThrough || financials?.restated ? (
+        <div
+          className="flex flex-col gap-1 text-sm text-muted-foreground"
+          data-testid="report-financials-line"
+        >
+          {financials.publishedThrough ? (
+            <p>
+              {financials.publishedThrough} ·{" "}
+              <Link
+                className="underline"
+                href={`/${entity.publicId}/financials/dashboard?source=published`}
+              >
+                Open the dashboard
+              </Link>
+            </p>
+          ) : null}
+          {financials.restated ? (
+            <p className="font-medium text-foreground">{financials.restated}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {showPortal ? (
         <ReportPublishPanel

@@ -26,6 +26,13 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { formatDateOnly } from "@/lib/date-only";
+import type { FigureDifference } from "@/lib/governance/reconcile-refusal";
+import {
+  dashboardConsequence,
+  reconcileBlock,
+  reconcileBlocks,
+  refusalDifferences,
+} from "@/lib/governance/release-reconcile-view";
 import {
   addButtonLabel,
   addReview,
@@ -46,6 +53,7 @@ import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
 import { AudiencePicker, type AudiencePickerHolder } from "./audience-picker";
 import { k1CompletionText } from "./k1-coverage-card";
+import { ReconciliationBlock } from "./release-reconciliation";
 
 // The release dialog and "Add recipients" (04-investor-portal.md 6.2,
 // P17–P27; package P4c). Release replaces the former "Review and send":
@@ -55,8 +63,11 @@ import { k1CompletionText } from "./k1-coverage-card";
 // through a second confirmation that states how many emails go out.
 //
 // Sections, top to bottom: Checklist, Audience, Delivery, Consequences.
-// Server refusals are shown as they come (P16 adds a Reconciliation block
-// between Checklist and Audience without touching the picker).
+// Server refusals are shown as they come. P16 adds the Reconciliation block
+// (P38) between Checklist and Audience, without touching the picker: for a
+// quarterly or annual report, `memberReport.reconcile` ahead of time, the
+// differences of a refused release (`error.data.reconciliation`) inline,
+// and "Refresh from ledger" through the editor's own refresh action.
 
 type Options = RouterOutputs["memberReport"]["audienceOptions"];
 type ReleaseResult = RouterOutputs["memberReport"]["release"];
@@ -297,6 +308,7 @@ export function ReleaseDialog({
   showPortal,
   onClose,
   onReleased,
+  onRefreshFromLedger,
 }: {
   publicId: string;
   today: string;
@@ -306,6 +318,12 @@ export function ReleaseDialog({
   showPortal: boolean;
   onClose: () => void;
   onReleased: () => void;
+  /**
+   * The editor's "Refresh from ledger" (saves, then refreshes the draft's
+   * figures and the editor's state); resolves true on success. Absent: the
+   * Reconciliation block has no button.
+   */
+  onRefreshFromLedger?: () => Promise<boolean>;
 }) {
   const report = api.memberReport.get.useQuery(
     { publicId },
@@ -319,6 +337,36 @@ export function ReleaseDialog({
   const email = emailWanted && mailBlocked === null;
   const [invite, setInvite] = useState(true);
   const [confirming, setConfirming] = useState(false);
+  const checkFigures =
+    (report.data?.report.type === "QUARTERLY" ||
+      report.data?.report.type === "ANNUAL") &&
+    report.data?.report.status === "DRAFT";
+  const reconcile = api.memberReport.reconcile.useQuery(
+    { publicId },
+    { enabled: checkFigures, refetchOnWindowFocus: false, staleTime: 0 },
+  );
+  const [refusal, setRefusal] = useState<FigureDifference[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const recon = reconcileBlock({
+    withFigures: checkFigures,
+    answer: reconcile.data,
+    error: reconcile.error?.message ?? null,
+    fetching: reconcile.isFetching,
+    refusal,
+  });
+  const refreshFromLedger = onRefreshFromLedger
+    ? async () => {
+        setRefreshing(true);
+        try {
+          if (await onRefreshFromLedger()) {
+            setRefusal(null);
+            await Promise.all([reconcile.refetch(), report.refetch()]);
+          }
+        } finally {
+          setRefreshing(false);
+        }
+      }
+    : undefined;
 
   const data = report.data;
   const opts = options.data;
@@ -368,9 +416,11 @@ export function ReleaseDialog({
         : (notEnded ??
           (missing.length > 0
             ? `Incomplete: ${missing.map((i) => i.label).join(", ")}`
-            : picked.length === 0
-              ? "Select at least one holder."
-              : (review.problems[0] ?? null)));
+            : (reconcileBlocks(recon) ??
+              (picked.length === 0
+                ? "Select at least one holder."
+                : (review.problems[0] ?? null)))));
+    const dashboardLine = dashboardConsequence(r.type, r.periodEnd);
     const sentence = emailsSentence(plan);
     body = (
       <div className="flex flex-col gap-5">
@@ -412,6 +462,14 @@ export function ReleaseDialog({
           ) : null}
         </div>
 
+        <ReconciliationBlock
+          block={recon}
+          onRefresh={
+            refreshFromLedger ? () => void refreshFromLedger() : undefined
+          }
+          refreshing={refreshing}
+        />
+
         <div className="space-y-3">
           <SectionTitle>Audience</SectionTitle>
           <AudiencePicker
@@ -450,6 +508,7 @@ export function ReleaseDialog({
             {review.consequences.map((c) => (
               <li key={c}>{c}</li>
             ))}
+            {dashboardLine ? <li>{dashboardLine}</li> : null}
             <li className="font-medium text-foreground">
               {sentence
                 ? `Sent when you release: ${sentence}.`
@@ -464,7 +523,10 @@ export function ReleaseDialog({
               <li key={p}>{p}</li>
             ))}
           </ul>
-        ) : blocked && blocked !== "Select at least one holder." ? (
+        ) : blocked &&
+          blocked !== "Select at least one holder." &&
+          recon.kind !== "differences" &&
+          recon.kind !== "loading" ? (
           <p className="text-sm font-medium text-red-600">{blocked}</p>
         ) : null}
       </div>
@@ -487,9 +549,19 @@ export function ReleaseDialog({
       onReleased();
     } catch (e) {
       setConfirming(false);
-      toast.error(errorText(e, "The report could not be released."));
+      const differences = refusalDifferences(e);
+      if (differences !== null && differences.length > 0) {
+        // P38: listed in the Reconciliation block, not only in a toast.
+        setRefusal(differences);
+        toast.error(
+          "Not released: the figures differ from the ledger. The differences are listed in the dialog.",
+        );
+      } else {
+        toast.error(errorText(e, "The report could not be released."));
+      }
       void report.refetch();
       void options.refetch();
+      if (checkFigures) void reconcile.refetch();
     }
   };
 
@@ -514,7 +586,8 @@ export function ReleaseDialog({
               blocked !== null ||
               release.isPending ||
               report.isFetching ||
-              options.isFetching
+              options.isFetching ||
+              refreshing
             }
             loading={release.isPending}
             onClick={() => (emails > 0 ? setConfirming(true) : void submit())}
