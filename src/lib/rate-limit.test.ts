@@ -117,6 +117,35 @@ describe("classifyRequest", () => {
     expect(classifyRequest("GET", "/abc123/updates/x")).toBeNull();
     expect(classifyRequest("GET", "/api/health")).toBeNull();
   });
+
+  it("limits the investor portal sign-in and set-password POSTs in their own bucket", () => {
+    expect(classifyRequest("POST", "/portal/auth/sign-in")).toBe(
+      "portal-login",
+    );
+    expect(classifyRequest("POST", "/portal/auth/set-password")).toBe(
+      "portal-login",
+    );
+    expect(classifyRequest("GET", "/portal/auth/sign-in")).toBeNull();
+    expect(classifyRequest("POST", "/portal/auth/sign-out")).toBeNull();
+    expect(classifyRequest("GET", "/portal")).toBeNull();
+  });
+
+  it("limits the investor portal's public procedures and set-password page", () => {
+    expect(classifyRequest("POST", "/api/trpc/portalAuth.requestReset")).toBe(
+      "account",
+    );
+    expect(
+      classifyRequest("POST", "/api/trpc/memberReportView.requestSetup"),
+    ).toBe("account");
+    expect(classifyRequest("POST", "/api/trpc/memberReportView.route")).toBe(
+      "token-api",
+    );
+    expect(classifyRequest("GET", "/portal/set-password/tok")).toBe(
+      "token-page",
+    );
+    expect(classifyRequest("GET", "/portal/set-password/")).toBeNull();
+    expect(classifyRequest("POST", "/api/trpc/portal.me")).toBeNull();
+  });
 });
 
 describe("trpcProcedures", () => {

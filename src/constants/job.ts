@@ -19,4 +19,7 @@ export const JOB_TYPES = {
     "report-file",
     "daily-sweep",
   ],
+  // Investor portal (04-investor-portal.md 5.6, 5.8). Handlers are added by
+  // P2 (account-email) and P10 (notification-email).
+  portal: ["account-email", "notification-email"],
 } as const;

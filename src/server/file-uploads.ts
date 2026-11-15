@@ -125,10 +125,13 @@ export const getPresignedPutUrl = async ({
  * are served with their type and `inline` (they open in the tab), anything
  * else as `application/octet-stream` and `attachment` (downloaded, never
  * rendered on the storage origin). See src/lib/inline-content-type.ts.
+ * `options.expiresIn` (seconds) shortens the lifetime; the investor portal
+ * uses 60 seconds (04-investor-portal.md P16).
  */
 export const getPresignedGetUrl = async (
   key: string,
   file?: { mimeType: string; name: string },
+  options?: { expiresIn?: number },
 ) => {
   const inline = file === undefined || isInlineContentType(file.mimeType);
   const getObjectCommand = new GetObjectCommand({
@@ -143,7 +146,7 @@ export const getPresignedGetUrl = async (
   });
 
   const url = await getSignedUrl(S3, getObjectCommand, {
-    expiresIn: TEN_MINUTES_IN_SECONDS,
+    expiresIn: options?.expiresIn ?? TEN_MINUTES_IN_SECONDS,
   });
 
   return { key, url };

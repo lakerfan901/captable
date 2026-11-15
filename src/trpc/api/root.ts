@@ -19,6 +19,7 @@ import { documentRouter } from "../routers/document-router/router";
 import { documentShareRouter } from "../routers/document-share-router/router";
 import { emailLogRouter } from "../routers/email-log-router/router";
 import { equityPlanRouter } from "../routers/equity-plan/router";
+import { financialDashboardRouter } from "../routers/financial-dashboard-router/router";
 import { governanceRouter } from "../routers/governance-router/router";
 import { llcEconomicsRouter } from "../routers/llc-economics/router";
 import { llcFinancialsRouter } from "../routers/llc-financials/router";
@@ -30,6 +31,9 @@ import { memberRouter } from "../routers/member-router/router";
 import { memberScheduleRouter } from "../routers/member-schedule-router/router";
 import { onboardingRouter } from "../routers/onboarding-router/router";
 import { passkeyRouter } from "../routers/passkey-router/router";
+import { portalAdminRouter } from "../routers/portal-admin-router/router";
+import { portalAuthRouter } from "../routers/portal-auth-router/router";
+import { portalRouter } from "../routers/portal-router/router";
 import { rbacRouter } from "../routers/rbac-router/router";
 import { resolutionRouter } from "../routers/resolution-router/router";
 import { safeRouter } from "../routers/safe/router";
@@ -92,6 +96,11 @@ export const appRouter = createTRPCRouter({
   llcFinancials: llcFinancialsRouter,
   distribution: distributionRouter,
   llcEconomics: llcEconomicsRouter,
+  // Investor portal (04-investor-portal.md 5.4, 5.6, 5.9).
+  portalAuth: portalAuthRouter,
+  portal: portalRouter,
+  portalAdmin: portalAdminRouter,
+  financialDashboard: financialDashboardRouter,
 });
 
 // export type definition of API
