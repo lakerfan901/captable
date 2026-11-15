@@ -1276,8 +1276,13 @@ async function openRealFile() {
     await codeOf(() => openUrl(U1, A, real.publicId)),
     "NOT_FOUND",
   );
+  // Section 5b also unshares (w9H); select this document's row.
   const unshareAudit = await db.audit.findFirst({
-    where: { companyId: c1.id, action: "portal.document-unshared" },
+    where: {
+      companyId: c1.id,
+      action: "portal.document-unshared",
+      summary: { contains: '"Quarterly letter"' },
+    },
     select: { summary: true },
   });
   check(
@@ -1565,22 +1570,24 @@ async function notifications() {
   );
   check(
     "the same share without notify is not blocked by mail",
-    (
-      await failure(async () => {
-        Object.assign(process.env, { NODE_ENV: "production" });
-        try {
-          await db.$transaction(async (tx) => {
-            await shareDocumentsInTx(tx, actor1, {
-              documentPublicIds: [twenty[1] as string],
-              stakeholderIds: [A.id],
-            });
-            throw new Error("ROLLBACK");
-          });
-        } finally {
-          Object.assign(process.env, { NODE_ENV: savedNodeEnv });
-        }
-      })
-    ).endsWith(":ROLLBACK"),
+    await (async () => {
+      const guardDoc = await document(
+        c1,
+        "notifyGuard",
+        await bucket(c1, "notify-guard"),
+      );
+      Object.assign(process.env, { NODE_ENV: "production" });
+      try {
+        const r = await team1.shareDocuments({
+          documentPublicIds: [guardDoc.publicId],
+          stakeholderIds: [D.id],
+          notify: false,
+        });
+        return r.added === 1 && r.notificationsQueued === 0;
+      } finally {
+        Object.assign(process.env, { NODE_ENV: savedNodeEnv });
+      }
+    })(),
   );
 
   // The share: 20 documents with A, B, C, E, notify ticked.
@@ -1679,10 +1686,22 @@ async function notifications() {
       return { emailLogId: null, sentAt: new Date(), messageId: null };
     },
   };
+  // `now` is called once per claim attempt and once for the winner's sentAt:
+  // 3 calls prove both runs reached the guarded UPDATE (the loser was turned
+  // away by it, not by the earlier read).
+  let nowCalls = 0;
+  const counting: PortalNotificationDeps = {
+    ...slowCapture,
+    now: () => {
+      nowCalls++;
+      return new Date();
+    },
+  };
   const [r1, r2] = await Promise.all([
-    deliverPortalNotification(umJob.data, slowCapture),
-    deliverPortalNotification(umJob.data, slowCapture),
+    deliverPortalNotification(umJob.data, counting),
+    deliverPortalNotification(umJob.data, counting),
   ]);
+  eq("both concurrent runs reached the guarded claim", nowCalls, 3);
   eq(
     "two concurrent runs: one SENT, one ALREADY_CLAIMED",
     [r1, r2].sort().join(","),
@@ -1795,6 +1814,34 @@ async function notifications() {
     data: { status: "ACTIVE", disabledAt: null },
   });
   eq("still two emails", sent.length, 2);
+
+  // A failed send releases the claim, so pg-boss's retry sends.
+  const failing: PortalNotificationDeps = {
+    now: () => new Date(),
+    send: () => Promise.reject(new Error("SMTP down")),
+  };
+  eq(
+    "a failed send rejects (pg-boss retries)",
+    (
+      await failure(() => deliverPortalNotification(u3Job.data, failing))
+    ).endsWith("SMTP down"),
+    true,
+  );
+  check(
+    "and leaves the row unclaimed and unsent",
+    await (async () => {
+      const r = await db.portalNotification.findUniqueOrThrow({
+        where: { id: u3Job.data.notificationId },
+      });
+      return r.claimedAt === null && r.sentAt === null;
+    })(),
+  );
+  eq(
+    "the retry sends",
+    await deliverPortalNotification(u3Job.data, slowCapture),
+    "SENT",
+  );
+  eq("three emails", sent.length, 3);
 
   // One real send through sendMail and the mail catcher.
   const u1Job = jobOf(U1.userId);
