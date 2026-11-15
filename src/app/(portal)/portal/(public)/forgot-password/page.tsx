@@ -1,14 +1,11 @@
-import type { Metadata } from "next";
+import { connection } from "next/server";
 import { PortalForgotPasswordForm } from "@/components/portal/forgot-password-form";
 
-// /portal/forgot-password (04-investor-portal.md 5.2, 6.1; package P2b).
-// Email field; afterwards the neutral sentence, whatever the address.
+// /portal/forgot-password (04-investor-portal.md 5.2, 6.1; packages P2b,
+// P8a). Email field; afterwards the neutral sentence, whatever the address.
+// Rendered per request like every portal page (never prerendered or cached).
 
-export const metadata: Metadata = {
-  title: { absolute: "Investor portal" },
-  robots: { index: false, follow: false },
-};
-
-export default function PortalForgotPasswordPage() {
+export default async function PortalForgotPasswordPage() {
+  await connection();
   return <PortalForgotPasswordForm />;
 }
