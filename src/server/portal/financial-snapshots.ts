@@ -48,6 +48,19 @@ export async function latestSnapshotMonth(
   return row ? toDateOnly(row.month) : null;
 }
 
+/** The company's earliest month with a current fund snapshot, or null. */
+export async function firstSnapshotMonth(
+  tx: Tx,
+  companyId: string,
+): Promise<MonthKey | null> {
+  const row = await tx.financialSnapshot.findFirst({
+    where: { companyId, supersededAt: null },
+    orderBy: { month: "asc" },
+    select: { month: true },
+  });
+  return row ? toDateOnly(row.month) : null;
+}
+
 /** `month <= the month of through`; null through: nothing. */
 function throughWhere(through: IsoDate) {
   return { lte: fromDateOnly(monthOf(through)) };

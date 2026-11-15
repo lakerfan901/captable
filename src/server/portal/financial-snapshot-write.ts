@@ -37,7 +37,7 @@ import {
   type SeriesBase,
   withFacts,
 } from "@/server/llc/economics/series-input";
-import { latestSnapshotMonth } from "./financial-snapshots";
+import { firstSnapshotMonth, latestSnapshotMonth } from "./financial-snapshots";
 
 // Writing the financial snapshots (04-investor-portal.md P34, P35, 5.9
 // "Writing snapshots"; package P13a).
@@ -262,8 +262,14 @@ function badRequest(message: string): never {
  * rows superseded (kept) and writes version + 1. Months that already equal
  * the ledger are left alone, so investors see "Restated on" only where a
  * figure changed; a range in which nothing changed is refused. Refuses months
- * after the latest current snapshot and months that have not ended. Writes
- * the audit row `financials.restated` in the same transaction.
+ * after the latest current snapshot, months before the earlier of the first
+ * snapshot and inception, a back-dated range before the first snapshot that
+ * does not reach it, and months that have not ended (`restateRangeProblem`).
+ * Writes the audit row `financials.restated` in the same transaction.
+ *
+ * Takes its own locks: call it first in a transaction opened with release's
+ * bounds (`{ maxWait: 10_000, timeout: 60_000 }`); Prisma's default 5-second
+ * timeout is too short for a range of many months.
  */
 export async function restateSnapshots(
   tx: Tx,
@@ -290,11 +296,14 @@ export async function restateSnapshots(
 
   await lockCompanyLedgerAndUnitClasses(tx, companyId);
   const latest = await latestSnapshotMonth(tx, companyId);
+  const first = await firstSnapshotMonth(tx, companyId);
   const base = await loadSeriesBase(tx, companyId);
   const problem = restateRangeProblem({
     fromMonth: args.fromMonth,
     toMonth: args.toMonth,
+    firstSnapshotMonth: first,
     latestSnapshotMonth: latest,
+    inception: base.inception,
     today: base.today,
   });
   if (problem !== null) badRequest(problem);

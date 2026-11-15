@@ -10,8 +10,9 @@
 //   month, an expense, a reserve entry, a Manager payment, a distribution, a
 //   member loan or one of its payments, a tax advance). With no row at all,
 //   nothing is written: there is nothing to show yet.
-// - Restate rewrites months on or before the latest current snapshot, and
-//   only months that have ended.
+// - Restate rewrites months on or before the latest current snapshot, not
+//   before the earlier of the first snapshot and inception, and only months
+//   that have ended.
 
 import { compareIso, type IsoDate } from "./dates";
 import {
@@ -86,13 +87,19 @@ export const MAX_RESTATE_MONTHS = 120;
 
 /**
  * P35: why a restatement of [fromMonth, toMonth] is refused, or null when
- * it may run. Months must be first days, in order, not after the latest
- * current snapshot, and ended before `today`.
+ * it may run. Months must be first days, in order, ended before `today`,
+ * not after the latest current snapshot, and not before the earlier of the
+ * first current snapshot and inception (no month without any figure is
+ * created). A range that starts before the first snapshot (rows back-dated
+ * before it after the books were reopened) must reach the month before it,
+ * so the series stays continuous.
  */
 export function restateRangeProblem(args: {
   fromMonth: string;
   toMonth: string;
+  firstSnapshotMonth: MonthKey | null;
   latestSnapshotMonth: MonthKey | null;
+  inception: MonthKey | null;
   today: IsoDate;
 }): string | null {
   const { fromMonth, toMonth } = args;
@@ -102,11 +109,26 @@ export function restateRangeProblem(args: {
   if (compareIso(fromMonth, toMonth) > 0) {
     return "The first month must not be after the last month.";
   }
-  if (args.latestSnapshotMonth === null) {
+  const first = args.firstSnapshotMonth;
+  const latest = args.latestSnapshotMonth;
+  if (first === null || latest === null) {
     return "No financial period has been published yet: there is nothing to restate.";
   }
-  if (compareIso(toMonth, args.latestSnapshotMonth) > 0) {
-    return `Only published months can be restated: the latest is ${args.latestSnapshotMonth.slice(0, 7)}.`;
+  if (compareIso(toMonth, latest) > 0) {
+    return `Only published months can be restated: the latest is ${latest.slice(0, 7)}.`;
+  }
+  const lower =
+    args.inception !== null && compareIso(args.inception, first) < 0
+      ? args.inception
+      : first;
+  if (compareIso(fromMonth, lower) < 0) {
+    return `The ledger has no figures before ${lower.slice(0, 7)}: restate from that month.`;
+  }
+  if (
+    compareIso(fromMonth, first) < 0 &&
+    compareIso(toMonth, addMonthKeys(first, -1)) < 0
+  ) {
+    return `A restatement of months before the first published month (${first.slice(0, 7)}) must run up to it.`;
   }
   if (compareIso(monthEnd(toMonth), args.today) >= 0) {
     return "Only months that have ended can be restated.";

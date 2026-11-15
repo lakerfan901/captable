@@ -130,7 +130,9 @@ describe("restateRangeProblem", () => {
   const ok = {
     fromMonth: "2026-02-01",
     toMonth: "2026-03-01",
+    firstSnapshotMonth: "2026-01-01",
     latestSnapshotMonth: "2026-06-01",
+    inception: "2026-01-01",
     today: "2026-10-05",
   };
   it("accepts published, ended months", () => {
@@ -159,9 +161,61 @@ describe("restateRangeProblem", () => {
     expect(restateRangeProblem({ ...ok, toMonth: "2026-07-01" })).toMatch(
       /latest is 2026-06/,
     );
-    expect(restateRangeProblem({ ...ok, latestSnapshotMonth: null })).toMatch(
-      /nothing to restate/,
-    );
+    expect(
+      restateRangeProblem({
+        ...ok,
+        firstSnapshotMonth: null,
+        latestSnapshotMonth: null,
+      }),
+    ).toMatch(/nothing to restate/);
+  });
+  it("refuses months before the first snapshot and inception (no empty rows)", () => {
+    expect(
+      restateRangeProblem({
+        ...ok,
+        fromMonth: "2018-01-01",
+        toMonth: "2026-01-01",
+      }),
+    ).toMatch(/no figures before 2026-01/);
+    expect(
+      restateRangeProblem({
+        ...ok,
+        inception: null,
+        fromMonth: "2025-12-01",
+        toMonth: "2026-01-01",
+      }),
+    ).toMatch(/no figures before 2026-01/);
+  });
+  it("allows back-dated months before the first snapshot only up to it", () => {
+    const back = { ...ok, inception: "2025-11-01" };
+    expect(
+      restateRangeProblem({
+        ...back,
+        fromMonth: "2025-11-01",
+        toMonth: "2025-12-01",
+      }),
+    ).toBeNull();
+    expect(
+      restateRangeProblem({
+        ...back,
+        fromMonth: "2025-11-01",
+        toMonth: "2026-02-01",
+      }),
+    ).toBeNull();
+    expect(
+      restateRangeProblem({
+        ...back,
+        fromMonth: "2025-11-01",
+        toMonth: "2025-11-01",
+      }),
+    ).toMatch(/must run up to it/);
+    expect(
+      restateRangeProblem({
+        ...back,
+        fromMonth: "2025-10-01",
+        toMonth: "2025-12-01",
+      }),
+    ).toMatch(/no figures before 2025-11/);
   });
   it("refuses a month that has not ended", () => {
     expect(
@@ -175,10 +229,10 @@ describe("restateRangeProblem", () => {
   it("refuses more than the maximum number of months", () => {
     expect(
       restateRangeProblem({
+        ...ok,
         fromMonth: "2010-01-01",
         toMonth: "2026-01-01",
-        latestSnapshotMonth: "2026-06-01",
-        today: "2026-10-05",
+        firstSnapshotMonth: "2010-01-01",
       }),
     ).toMatch(new RegExp(String(MAX_RESTATE_MONTHS)));
   });

@@ -1077,6 +1077,28 @@ async function frozenThenRestate() {
     /latest is 2026-09/.test(late?.message ?? ""),
     late?.message,
   );
+  const countsBeforeEarly = await currentCounts(c.id);
+  const early = await errorOf(() =>
+    inTx((tx) =>
+      restateSnapshots(tx, {
+        companyId: c.id,
+        fromMonth: "2018-01-01",
+        toMonth: "2026-01-01",
+        reason: "Restate from long before inception",
+        actor: restateActor,
+      }),
+    ),
+  );
+  check(
+    "a range before inception is refused",
+    /no figures before 2026-01/.test(early?.message ?? ""),
+    early?.message,
+  );
+  eq(
+    "and writes nothing (no empty month rows)",
+    await currentCounts(c.id),
+    countsBeforeEarly,
+  );
   const reason = "Back-dated power invoice for February";
   const result = await inTx((tx) =>
     restateSnapshots(tx, {
