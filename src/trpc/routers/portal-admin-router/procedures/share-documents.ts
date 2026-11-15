@@ -25,20 +25,34 @@
 // Prospects may be selected (5.6 lists every holder; the only prospect rule
 // of the plan, P18, is for reports); they are in no preset.
 //
-// `notify` (P10): `assertMailDeliverable` runs before anything is written;
-// the queueing itself is P10's (marked below). Until P10 is merged a ticked
-// box sends nothing and the result says `notificationsQueued: 0`.
+// `notify` (P10): `assertMailDeliverable` runs before anything is written.
+// Then, in the same transaction, one `PortalNotification` row per person
+// with an ACTIVE, password-set access to a holder that GAINED a document
+// here (holders that already had every document are not counted), and one
+// `portal.notification-email` job per row, queued after commit
+// (src/server/portal/notification-email.ts). `notificationsQueued` is the
+// number of rows created. Unticked (the default): nothing is queued.
 
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   bindingRefusalMessage,
   bindingStakeholderId,
 } from "@/lib/portal/document-share-core";
+import {
+  DOCUMENTS_SHARED_KIND,
+  gainedByHolder,
+} from "@/lib/portal/notification-core";
 import { shareRefusals } from "@/lib/portal/visibility-core";
 import { Audit } from "@/server/audit";
 import type { PrismaTransactionalClient } from "@/server/db";
 import { assertMailDeliverable } from "@/server/mail-delivery";
+import {
+  emitPortalNotifications,
+  type PortalNotificationEmailData,
+  queuePortalNotifications,
+} from "@/server/portal/notification-email";
 import {
   loadCompanyDocuments,
   loadDocumentFacts,
@@ -244,16 +258,24 @@ export const shareDocumentsProcedure = withLlcAccessControl
       requestIp: ctx.requestIp,
       userAgent: ctx.userAgent,
     };
-    const result = await ctx.db.$transaction(
+    const batchKey = randomUUID();
+    const { shared, queued } = await ctx.db.$transaction(
       async (tx) => {
         const shared = await shareDocumentsInTx(tx, actor, input);
-        // P10: queuePortalNotifications(tx, { companyId, kind:
-        // "portal.documents-shared", batchKey, subjectLine, stakeholderIds })
-        // goes here, for the holders that gained a document.
-        return shared;
+        // P10: one notification per person, for the holders that gained a document.
+        const queued: PortalNotificationEmailData[] = input.notify
+          ? await queuePortalNotifications(tx, {
+              companyId: actor.companyId,
+              kind: DOCUMENTS_SHARED_KIND,
+              batchKey,
+              gained: gainedByHolder(shared.documents),
+            })
+          : [];
+        return { shared, queued };
       },
       { maxWait: 10_000, timeout: 30_000 },
     );
-    // P10: emitPortalNotifications(ids) after commit goes here.
-    return { ...result, notificationsQueued: 0 };
+    // P10: the jobs, after commit (never throws).
+    await emitPortalNotifications(queued);
+    return { ...shared, notificationsQueued: queued.length };
   });

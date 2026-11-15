@@ -30,9 +30,24 @@
  * per open, none on a refusal); the access log (company rows, account
  * events, paging); RBAC refusals; no storage key, bucket name or bucket id
  * in any response. Every row and object it creates is deleted at the end.
+ *
+ * Section 10b (P10, "new documents" emails): default off (no notification
+ * from any share without `notify`); 20 documents shared in one action with
+ * `notify` give one row per person with ACTIVE, password-set access to a
+ * holder that gained a document (a two-holder person gets one; disabled,
+ * password-less and already-had-everything people get none);
+ * `notificationsQueued`; two concurrent job runs send once, a third run
+ * sends nothing; the mail guard before any write (procedure and job); the
+ * send-time re-check; no token, file, document name or other holder's name
+ * in the email; one real send through `sendMail` (EmailLog row on the right
+ * holder) read back from the local mail catcher (Mailpit, API on 8025).
  */
 import { randomUUID } from "node:crypto";
 import { generatePublicId } from "@/common/id";
+import {
+  deliverPortalNotification,
+  type PortalNotificationDeps,
+} from "@/jobs/portal-notification-email";
 import { todayInZone } from "@/lib/governance/dates";
 import { deleteObject, uploadFile } from "@/server/file-uploads";
 import {
@@ -54,6 +69,10 @@ import {
   usd,
 } from "@/server/llc/__integration__/harness";
 import { writePortalLog } from "@/server/portal/log";
+import {
+  type PortalNotificationEmailData,
+  portalNotificationEmailJob,
+} from "@/server/portal/notification-email";
 import { createPortalSession, portalCookieName } from "@/server/portal/session";
 import { createCallerFactory } from "@/trpc/api/trpc";
 import {
@@ -70,6 +89,16 @@ const FACTS = { ip: "203.0.113.42", userAgent: "portal-documents-integration" };
 const LOG_FACTS = { requestIp: FACTS.ip, userAgent: FACTS.userAgent };
 const PRIVATE_BUCKET = process.env.UPLOAD_BUCKET_PRIVATE ?? "";
 const FILE_BODY = `portal-documents-integration ${randomUUID()}`;
+
+// Captured `portal.notification-email` jobs (P10): nothing reaches pg-boss.
+const notifyJobs: { data: PortalNotificationEmailData; options: unknown }[] =
+  [];
+Object.assign(portalNotificationEmailJob, {
+  emit: (data: PortalNotificationEmailData, options?: unknown) => {
+    notifyJobs.push({ data, options });
+    return Promise.resolve(null);
+  },
+});
 
 // Every JSON response, scanned at the end for storage keys and bucket ids.
 const responses: { label: string; json: string }[] = [];
@@ -1247,8 +1276,13 @@ async function openRealFile() {
     await codeOf(() => openUrl(U1, A, real.publicId)),
     "NOT_FOUND",
   );
+  // Section 5b also unshares (w9H); select this document's row.
   const unshareAudit = await db.audit.findFirst({
-    where: { companyId: c1.id, action: "portal.document-unshared" },
+    where: {
+      companyId: c1.id,
+      action: "portal.document-unshared",
+      summary: { contains: '"Quarterly letter"' },
+    },
     select: { summary: true },
   });
   check(
@@ -1432,6 +1466,513 @@ async function accessLog() {
   );
 }
 
+async function notifications() {
+  section("10b. P10: the 'new documents' email");
+  const n = (await db.portalNotification.count({
+    where: { companyId: { in: [c1.id, c2.id] } },
+  })) as number;
+  eq("default off: no share so far wrote a notification row", n, 0);
+  eq("and queued no job", notifyJobs.length, 0);
+
+  // People: UM has A and B; UD a DISABLED access to C; UP no password, access
+  // to C; UE has E, which will already have every document.
+  const UM = await newInvestor("um", [
+    { companyId: c1.id, stakeholderId: A.id },
+    { companyId: c1.id, stakeholderId: B.id },
+  ]);
+  const UD = await newInvestor("ud", [
+    { companyId: c1.id, stakeholderId: C.id },
+  ]);
+  await db.portalAccess.update({
+    where: { publicId: accessOf(UD, C) },
+    data: { status: "DISABLED", disabledAt: new Date() },
+  });
+  const UE = await newInvestor("ue", [
+    { companyId: c1.id, stakeholderId: E.id },
+  ]);
+  const up = await db.portalUser.create({
+    data: {
+      email: `${EMAIL_PREFIX}up.${randomUUID().slice(0, 8)}@example.com`,
+    },
+  });
+  portalUserIds.push(up.id);
+  await db.portalAccess.create({
+    data: {
+      publicId: `pa_${randomUUID().replace(/-/g, "")}`,
+      portalUserId: up.id,
+      companyId: c1.id,
+      stakeholderId: C.id,
+      invitedById: "portal-documents-integration",
+    },
+  });
+
+  const names: string[] = [];
+  const twenty: string[] = [];
+  for (let i = 1; i <= 20; i++) {
+    const label = `notify${String(i).padStart(2, "0")}`;
+    const name = `Notify secret file ${String(i).padStart(2, "0")}.pdf`;
+    names.push(name);
+    const d = await document(c1, label, await bucket(c1, label), { name });
+    twenty.push(d.publicId);
+  }
+  const pre = seen(
+    "pre-share without notify",
+    await team1.shareDocuments({
+      documentPublicIds: twenty,
+      stakeholderIds: [E.id],
+    }),
+  );
+  const preA = await team1.shareDocuments({
+    documentPublicIds: [twenty[0] as string],
+    stakeholderIds: [A.id],
+    notify: false,
+  });
+  check(
+    "shares without notify queue nothing",
+    pre.notificationsQueued === 0 &&
+      preA.notificationsQueued === 0 &&
+      notifyJobs.length === 0 &&
+      (await db.portalNotification.count({ where: { companyId: c1.id } })) ===
+        0,
+  );
+
+  // Mail guard on the procedure: production with the catcher refuses before
+  // any write.
+  const grantsBefore = await db.portalDocumentGrant.count({
+    where: { companyId: c1.id },
+  });
+  const savedNodeEnv = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "production" });
+  let guarded: string;
+  try {
+    guarded = await failure(() =>
+      team1.shareDocuments({
+        documentPublicIds: twenty,
+        stakeholderIds: [A.id, B.id, C.id, E.id],
+        notify: true,
+      }),
+    );
+  } finally {
+    Object.assign(process.env, { NODE_ENV: savedNodeEnv });
+  }
+  check(
+    "production with the mail catcher: notify is BAD_REQUEST",
+    guarded.startsWith("BAD_REQUEST"),
+    guarded,
+  );
+  check(
+    "and nothing was written or queued",
+    (await db.portalDocumentGrant.count({ where: { companyId: c1.id } })) ===
+      grantsBefore &&
+      (await db.portalNotification.count({ where: { companyId: c1.id } })) ===
+        0 &&
+      notifyJobs.length === 0,
+  );
+  check(
+    "the same share without notify is not blocked by mail",
+    await (async () => {
+      const guardDoc = await document(
+        c1,
+        "notifyGuard",
+        await bucket(c1, "notify-guard"),
+      );
+      Object.assign(process.env, { NODE_ENV: "production" });
+      try {
+        const r = await team1.shareDocuments({
+          documentPublicIds: [guardDoc.publicId],
+          stakeholderIds: [D.id],
+          notify: false,
+        });
+        return r.added === 1 && r.notificationsQueued === 0;
+      } finally {
+        Object.assign(process.env, { NODE_ENV: savedNodeEnv });
+      }
+    })(),
+  );
+
+  // The share: 20 documents with A, B, C, E, notify ticked.
+  const shared = seen(
+    "share twenty with notify",
+    await team1.shareDocuments({
+      documentPublicIds: twenty,
+      stakeholderIds: [A.id, B.id, C.id, E.id],
+      notify: true,
+    }),
+  );
+  eq("rows added (A 19, B 20, C 20, E 0)", shared.added, 59);
+  const rows = await db.portalNotification.findMany({
+    where: { companyId: c1.id },
+    select: {
+      id: true,
+      portalUserId: true,
+      kind: true,
+      batchKey: true,
+      subjectLine: true,
+      claimedAt: true,
+    },
+  });
+  const expectedUsers = [U1.userId, U2.userId, U3.userId, UM.userId].sort();
+  eq(
+    "one row per person with ACTIVE, password-set access to a holder that gained",
+    JSON.stringify(rows.map((r) => r.portalUserId).sort()),
+    JSON.stringify(expectedUsers),
+  );
+  eq("notificationsQueued is that count", shared.notificationsQueued, 4);
+  check(
+    "no row for the disabled, the password-less, or the already-had-all person",
+    !rows.some((r) => [UD.userId, up.id, UE.userId].includes(r.portalUserId)),
+  );
+  check(
+    "one batch key, kind and company subject, none claimed",
+    new Set(rows.map((r) => r.batchKey)).size === 1 &&
+      rows.every(
+        (r) =>
+          r.kind === "portal.documents-shared" &&
+          r.subjectLine === `New documents in the ${c1.name} investor portal` &&
+          r.claimedAt === null,
+      ),
+    JSON.stringify(rows),
+  );
+  eq("one job per row", notifyJobs.length, 4);
+  const jobOf = (userId: string) => {
+    const row = rows.find((r) => r.portalUserId === userId);
+    const job = notifyJobs.find((j) => j.data.notificationId === row?.id);
+    if (!row || !job) throw new Error(`no job for ${userId}`);
+    return job;
+  };
+  const umJob = jobOf(UM.userId);
+  eq(
+    "the two-holder person's job names A (19 documents) and B (20)",
+    JSON.stringify(
+      umJob.data.holders.map((h) => [
+        h.stakeholderId,
+        h.documentPublicIds.length,
+      ]),
+    ),
+    JSON.stringify(
+      [
+        [A.id, 19],
+        [B.id, 20],
+      ].sort((x, y) => ((x[0] as string) < (y[0] as string) ? -1 : 1)),
+    ),
+  );
+  check(
+    "jobs carry ids only and one singleton key per row",
+    notifyJobs.every((j) => {
+      const keys = Object.keys(j.data).sort().join(",");
+      const opt = j.options as { singletonKey?: string };
+      return (
+        keys === "holders,notificationId" &&
+        opt.singletonKey === `portal-notification-${j.data.notificationId}` &&
+        !JSON.stringify(j.data).includes("@") &&
+        !names.some((nm) => JSON.stringify(j.data).includes(nm))
+      );
+    }),
+  );
+
+  // Exactly once: two concurrent runs, then a third.
+  const sent: { to: string; subject: string; html: string; log: unknown }[] =
+    [];
+  const slowCapture: PortalNotificationDeps = {
+    now: () => new Date(),
+    send: async (options, logContext) => {
+      await new Promise((r) => setTimeout(r, 300));
+      sent.push({
+        to: String(options.to),
+        subject: String(options.subject),
+        html: String(options.html),
+        log: logContext,
+      });
+      return { emailLogId: null, sentAt: new Date(), messageId: null };
+    },
+  };
+  // `now` is called once per claim attempt and once for the winner's sentAt:
+  // 3 calls prove both runs reached the guarded UPDATE (the loser was turned
+  // away by it, not by the earlier read).
+  let nowCalls = 0;
+  const counting: PortalNotificationDeps = {
+    ...slowCapture,
+    now: () => {
+      nowCalls++;
+      return new Date();
+    },
+  };
+  const [r1, r2] = await Promise.all([
+    deliverPortalNotification(umJob.data, counting),
+    deliverPortalNotification(umJob.data, counting),
+  ]);
+  eq("both concurrent runs reached the guarded claim", nowCalls, 3);
+  eq(
+    "two concurrent runs: one SENT, one ALREADY_CLAIMED",
+    [r1, r2].sort().join(","),
+    "ALREADY_CLAIMED,SENT",
+  );
+  eq("one email left", sent.length, 1);
+  eq(
+    "a third run sends nothing",
+    await deliverPortalNotification(umJob.data, slowCapture),
+    "ALREADY_CLAIMED",
+  );
+  eq("still one email", sent.length, 1);
+  const um = sent[0];
+  const umUser = await db.portalUser.findUniqueOrThrow({
+    where: { id: UM.userId },
+  });
+  check("to the person's address", um?.to === umUser.email, um?.to);
+  const html = um?.html ?? "";
+  check(
+    "names both of the person's holders with their counts",
+    html.includes(A.name) &&
+      html.includes(B.name) &&
+      html.includes("19 new documents") &&
+      html.includes("20 new documents"),
+  );
+  const buckets = await db.bucket.findMany({
+    where: { id: { in: bucketIds } },
+    select: { id: true, key: true },
+  });
+  const forbidden = [
+    C.name,
+    E.name,
+    F.name,
+    ...names,
+    ...twenty,
+    ...buckets.flatMap((b) => [b.id, b.key]),
+    "set-password",
+    "/member-reports/",
+    "token",
+  ];
+  eq(
+    "no other holder's name, document name or id, file, key or token",
+    JSON.stringify(
+      forbidden.filter(
+        (f) => html.includes(f) || (um?.subject ?? "").includes(f),
+      ),
+    ),
+    "[]",
+  );
+  check(
+    "no attachment, and the link is the plain sign-in page (several holders)",
+    !("attachments" in (um ?? {})) &&
+      html.includes(`${BASE}/portal/sign-in"`) &&
+      !html.includes("next="),
+  );
+  check(
+    "logged on the lowest holder id of the two, with company and row",
+    JSON.stringify(um?.log) ===
+      JSON.stringify({
+        kind: "portal.documents-shared",
+        companyId: c1.id,
+        stakeholderId: [A.id, B.id].sort()[0],
+        relatedType: "portalNotification",
+        relatedId: umJob.data.notificationId,
+      }),
+    JSON.stringify(um?.log),
+  );
+
+  // Mail guard in the job: nothing claimed, nothing sent.
+  const u2Job = jobOf(U2.userId);
+  Object.assign(process.env, { NODE_ENV: "production" });
+  let blocked: string;
+  try {
+    blocked = await deliverPortalNotification(u2Job.data, slowCapture);
+  } finally {
+    Object.assign(process.env, { NODE_ENV: savedNodeEnv });
+  }
+  eq(
+    "job in production with the mail catcher: MAIL_BLOCKED",
+    blocked,
+    "MAIL_BLOCKED",
+  );
+  check(
+    "and the row is not claimed, nothing sent",
+    (
+      await db.portalNotification.findUniqueOrThrow({
+        where: { id: u2Job.data.notificationId },
+      })
+    ).claimedAt === null && sent.length === 1,
+  );
+  eq(
+    "once mail is deliverable the same job sends",
+    await deliverPortalNotification(u2Job.data, slowCapture),
+    "SENT",
+  );
+
+  // Send-time re-check: C's access disabled after the share.
+  const u3Job = jobOf(U3.userId);
+  await db.portalAccess.update({
+    where: { publicId: accessOf(U3, C) },
+    data: { status: "DISABLED", disabledAt: new Date() },
+  });
+  eq(
+    "access disabled before the job ran: nothing sent",
+    await deliverPortalNotification(u3Job.data, slowCapture),
+    "NOTHING_TO_SEND",
+  );
+  await db.portalAccess.update({
+    where: { publicId: accessOf(U3, C) },
+    data: { status: "ACTIVE", disabledAt: null },
+  });
+  eq("still two emails", sent.length, 2);
+
+  // A failed send releases the claim, so pg-boss's retry sends.
+  const failing: PortalNotificationDeps = {
+    now: () => new Date(),
+    send: () => Promise.reject(new Error("SMTP down")),
+  };
+  eq(
+    "a failed send rejects (pg-boss retries)",
+    (
+      await failure(() => deliverPortalNotification(u3Job.data, failing))
+    ).endsWith("SMTP down"),
+    true,
+  );
+  check(
+    "and leaves the row unclaimed and unsent",
+    await (async () => {
+      const r = await db.portalNotification.findUniqueOrThrow({
+        where: { id: u3Job.data.notificationId },
+      });
+      return r.claimedAt === null && r.sentAt === null;
+    })(),
+  );
+  eq(
+    "the retry sends",
+    await deliverPortalNotification(u3Job.data, slowCapture),
+    "SENT",
+  );
+  eq("three emails", sent.length, 3);
+
+  // One real send through sendMail and the mail catcher.
+  const u1Job = jobOf(U1.userId);
+  eq(
+    "a real send through sendMail",
+    await deliverPortalNotification(u1Job.data),
+    "SENT",
+  );
+  const u1User = await db.portalUser.findUniqueOrThrow({
+    where: { id: U1.userId },
+  });
+  const logs = await db.emailLog.findMany({
+    where: { toAddress: u1User.email, kind: "portal.documents-shared" },
+  });
+  check(
+    "one EmailLog row, SENT, on A in company 1",
+    logs.length === 1 &&
+      logs[0]?.status === "SENT" &&
+      logs[0].companyId === c1.id &&
+      logs[0].stakeholderId === A.id &&
+      logs[0].relatedType === "portalNotification" &&
+      logs[0].relatedId === u1Job.data.notificationId,
+    JSON.stringify(logs.map((l) => [l.status, l.companyId, l.stakeholderId])),
+  );
+  const u1Row = await db.portalNotification.findUniqueOrThrow({
+    where: { id: u1Job.data.notificationId },
+  });
+  check(
+    "the row records the send and the EmailLog id",
+    u1Row.claimedAt !== null &&
+      u1Row.sentAt !== null &&
+      u1Row.emailLogId === logs[0]?.id,
+  );
+  const caught = await mailCatcherBody(u1User.email);
+  check("the mail catcher received it", caught !== null);
+  const next = `/portal/${accessOf(U1, A)}/documents`;
+  check(
+    "its link is sign-in with next to A's documents page",
+    (caught ?? "").includes(
+      `${BASE}/portal/sign-in?next=${encodeURIComponent(next)}`,
+    ),
+  );
+  eq(
+    "and it names A only, 19 documents, no F, no other holder, no file",
+    [
+      (caught ?? "").includes(A.name),
+      (caught ?? "").includes("19 new documents"),
+      ...[F.name, B.name, C.name, E.name, ...names, ...twenty].map((f) =>
+        (caught ?? "").includes(f),
+      ),
+    ].join(","),
+    [
+      "true",
+      "true",
+      ...Array(4 + names.length + twenty.length).fill("false"),
+    ].join(","),
+  );
+
+  // A share where every pair already exists: nothing queued.
+  const repeat = await team1.shareDocuments({
+    documentPublicIds: twenty,
+    stakeholderIds: [A.id, B.id, C.id],
+    notify: true,
+  });
+  check(
+    "re-sharing what everyone already has queues nothing",
+    repeat.added === 0 &&
+      repeat.notificationsQueued === 0 &&
+      notifyJobs.length === 4,
+  );
+  // A new action: a new batch, one row per person again.
+  const one = await document(c1, "notify21", await bucket(c1, "notify21"));
+  const next21 = await team1.shareDocuments({
+    documentPublicIds: [one.publicId],
+    stakeholderIds: [A.id],
+    notify: true,
+  });
+  const batches = await db.portalNotification.findMany({
+    where: { companyId: c1.id },
+    select: { batchKey: true, portalUserId: true },
+  });
+  check(
+    "a new share action is a new batch (U1 and UM, once each)",
+    next21.notificationsQueued === 2 &&
+      new Set(batches.map((b) => b.batchKey)).size === 2 &&
+      batches.filter((b) => b.portalUserId === UM.userId).length === 2,
+    JSON.stringify(batches),
+  );
+  await deleteCaughtMail();
+}
+
+/** The HTML of the newest message to `address` in the local mail catcher (Mailpit), or null. */
+async function mailCatcherBody(address: string): Promise<string | null> {
+  try {
+    const search = await fetch(
+      `http://localhost:8025/api/v1/search?query=${encodeURIComponent(`to:"${address}"`)}&limit=1`,
+    );
+    const found = (await search.json()) as { messages?: { ID: string }[] };
+    const id = found.messages?.[0]?.ID;
+    if (!id) return null;
+    const message = await fetch(`http://localhost:8025/api/v1/message/${id}`);
+    const body = (await message.json()) as { HTML?: string };
+    return body.HTML ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Removes this script's messages from the mail catcher (best effort). */
+async function deleteCaughtMail(): Promise<void> {
+  try {
+    const search = await fetch(
+      `http://localhost:8025/api/v1/search?query=${encodeURIComponent(`to:${EMAIL_PREFIX}`)}&limit=200`,
+    );
+    const found = (await search.json()) as {
+      messages?: { ID: string; To?: { Address: string }[] }[];
+    };
+    const ids = (found.messages ?? [])
+      .filter((m) => m.To?.some((t) => t.Address.startsWith(EMAIL_PREFIX)))
+      .map((m) => m.ID);
+    if (ids.length === 0) return;
+    await fetch("http://localhost:8025/api/v1/messages", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ IDs: ids }),
+    });
+  } catch {
+    // The catcher is not needed to clean the database.
+  }
+}
+
 async function noStorageKeys() {
   section("11. no storage key, bucket name or bucket id in any response");
   const buckets = await db.bucket.findMany({
@@ -1492,6 +2033,7 @@ await runScenarios([
   ["open a real file", openRealFile],
   ["disabled access", disabledAccess],
   ["access log", accessLog],
+  ["notifications", notifications],
   ["no storage keys", noStorageKeys],
   ["portal cleanup", cleanupPortal],
 ]);
