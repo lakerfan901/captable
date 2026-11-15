@@ -183,6 +183,29 @@ describe("audienceProblems: refusals", () => {
     ]);
   });
 
+  it("refuses a null or unknown status (allow-list), also on TAX_K1 and in presets", () => {
+    for (const status of [null, undefined, "", "member", "FORMER"]) {
+      const odd = holder("Z", {
+        memberStatus: status as unknown as AudienceHolder["memberStatus"],
+        preferredUnits: "1",
+        hasK1: true,
+      });
+      const hs = [A, odd];
+      expect(codes(audienceProblems("QUARTERLY", ["Z"], hs))).toEqual([
+        "INELIGIBLE_STATUS",
+      ]);
+      expect(codes(audienceProblems("TAX_K1", ["Z"], hs))).toEqual([
+        "INELIGIBLE_STATUS",
+      ]);
+      expect(
+        audiencePresets("TAX_K1", null, hs, null).presets[0]?.stakeholderIds,
+      ).toEqual([]);
+      expect(
+        audiencePresets("QUARTERLY", null, hs, null).presets[0]?.stakeholderIds,
+      ).toEqual(["A"]);
+    }
+  });
+
   it("refuses a foreign or invented id (another company's holder)", () => {
     const r = audienceProblems("QUARTERLY", ["A", "F-other-company"], HOLDERS);
     expect(r.refusals.map((x) => [x.code, x.stakeholderId])).toEqual([

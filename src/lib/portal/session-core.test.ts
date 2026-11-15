@@ -140,8 +140,11 @@ describe("cookieName and cookieOptions", () => {
 });
 
 describe("parseCookie", () => {
-  const { token } = newToken();
-  const other = newToken().token;
+  // Deterministic tokens; byte 0 gives a leading "A" (needed below).
+  const { token } = newToken(() =>
+    Uint8Array.from({ length: 32 }, (_, i) => i),
+  );
+  const other = newToken(() => new Uint8Array(32).fill(0xab)).token;
   const name = SECURE_COOKIE_NAME;
 
   it("reads the value among other cookies", () => {
@@ -195,9 +198,10 @@ describe("parseCookie", () => {
   });
 
   it("never URL-decodes the value", () => {
+    expect(token.startsWith("A")).toBe(true);
     const encoded = token.replace(/A/g, "%41");
-    if (encoded !== token)
-      expect(parseCookie(`${name}=${encoded}`, name)).toBeNull();
+    expect(encoded).not.toBe(token);
+    expect(parseCookie(`${name}=${encoded}`, name)).toBeNull();
   });
 
   it("refuses two different values for the name (cookie tossing), accepts a repeat", () => {

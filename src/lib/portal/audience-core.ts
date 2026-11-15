@@ -93,9 +93,20 @@ export function isCommonMember(h: AudienceHolder): boolean {
   return isCurrentMember(h) && commonMicro(h) > 0n;
 }
 
-/** R22a: a holder with a K-1 attached, never a PROSPECT. */
+/**
+ * The statuses that may receive a report (allow-list, as `k1Holders`): a
+ * Member, or a Financial-Interest-only holder. PROSPECT and any unexpected
+ * value are excluded.
+ */
+function mayReceiveReports(h: AudienceHolder): boolean {
+  return (
+    h.memberStatus === "MEMBER" || h.memberStatus === "FINANCIAL_INTEREST_ONLY"
+  );
+}
+
+/** R22a: a holder with a K-1 attached that may receive reports. */
 function isK1Holder(h: AudienceHolder): boolean {
-  return h.hasK1 && h.memberStatus !== "PROSPECT";
+  return h.hasK1 && mayReceiveReports(h);
 }
 
 export function isTransferNotice(
@@ -181,6 +192,7 @@ export type AudienceRefusalCode =
   | "DUPLICATE"
   | "UNKNOWN_HOLDER"
   | "PROSPECT"
+  | "INELIGIBLE_STATUS"
   | "K1_MISSING"
   | "NO_NOTICE_ADDRESS"
   | "TRANSFER_NOT_LINKED";
@@ -233,6 +245,8 @@ function plural(n: number, one: string, many: string): string {
  *   what was confirmed, so a malformed list is refused rather than cleaned).
  * - UNKNOWN_HOLDER: not a holder of this company (a foreign or invented id).
  * - PROSPECT: a prospect never receives a report.
+ * - INELIGIBLE_STATUS: any other status than MEMBER or
+ *   FINANCIAL_INTEREST_ONLY (allow-list; a null or unknown value is refused).
  * - K1_MISSING: on a TAX_K1 report, a holder with no K-1 attached. This keeps
  *   the audience of a K-1 report to the holders whose own K-1 is on it; what
  *   each sees is still limited to its own files (P12).
@@ -308,6 +322,14 @@ export function audienceProblems(
         code: "PROSPECT",
         stakeholderId: id,
         message: "A prospect cannot receive a report.",
+      });
+    } else if (!mayReceiveReports(h)) {
+      ok = false;
+      refusals.push({
+        code: "INELIGIBLE_STATUS",
+        stakeholderId: id,
+        message:
+          "A selected holder's status does not allow it to receive reports.",
       });
     }
     if (reportType === "TAX_K1" && !h.hasK1) {

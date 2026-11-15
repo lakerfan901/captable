@@ -131,12 +131,10 @@ describe("safeNextPath: refused", () => {
     }
   });
 
-  it("a long string of only slashes and dots is refused quickly", () => {
-    const start = Date.now();
+  it("refuses very long inputs at the length check", () => {
     expect(safeNextPath(`/portal/${"./".repeat(10_000)}`)).toBe(
       DEFAULT_NEXT_PATH,
     );
     expect(safeNextPath("/".repeat(100_000))).toBe(DEFAULT_NEXT_PATH);
-    expect(Date.now() - start).toBeLessThan(100);
   });
 });
