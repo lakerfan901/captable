@@ -15,6 +15,7 @@ import { resolutionSweepWorker } from "./governance-resolution-sweep";
 import { sendMemberInviteEmailWorker } from "./member-inivite-email";
 import { passwordResetEmailWorker } from "./password-reset-email";
 import { portalAccountEmailWorker } from "./portal-account-email";
+import { portalNotificationEmailWorker } from "./portal-notification-email";
 import { shareDataRoomEmailWorker } from "./share-data-room-email";
 import { shareUpdateEmailWorker } from "./share-update-email";
 
@@ -50,6 +51,8 @@ export async function registerJobs() {
 
   // investor portal (04-investor-portal.md): account emails (P2b)
   queueManager.register(portalAccountEmailWorker);
+  // "new documents" notification emails (P10)
+  queueManager.register(portalNotificationEmailWorker);
   //start
   await queueManager.start();
 }
