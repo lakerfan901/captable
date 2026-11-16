@@ -91,6 +91,9 @@ export function PortalFileButton(props: PortalFileButtonProps) {
   const [failed, setFailed] = useState(false);
   // The latest request wins; a closed viewer ignores a late answer.
   const attempt = useRef(0);
+  // The viewer is opened by a plain button (it fetches first), so focus is
+  // handed back to that button by hand when the dialog closes.
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     return () => {
@@ -191,6 +194,7 @@ export function PortalFileButton(props: PortalFileButtonProps) {
   const trigger =
     props.variant === "link" ? (
       <button
+        ref={triggerRef}
         type="button"
         onClick={onClick}
         disabled={busy && mode === "download"}
@@ -204,6 +208,7 @@ export function PortalFileButton(props: PortalFileButtonProps) {
       </button>
     ) : (
       <Button
+        ref={triggerRef}
         type="button"
         variant="outline"
         size="sm"
@@ -237,6 +242,10 @@ export function PortalFileButton(props: PortalFileButtonProps) {
         }}
       >
         <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            triggerRef.current?.focus();
+          }}
           className="max-h-[90vh] overflow-y-auto sm:max-w-3xl"
           data-testid="portal-file-viewer"
         >
