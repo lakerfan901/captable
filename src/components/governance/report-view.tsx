@@ -80,8 +80,12 @@ export interface ReportViewProps {
   periodEnd: string | null;
   fiscalYear?: number | null;
   fiscalQuarter?: number | null;
-  /** Pre-formatted send time, or null. */
-  sentText?: string | null;
+  /**
+   * Pre-formatted release time (`MemberReport.sentAt`, set at release), or
+   * null. Shown as "Released {date}": since the portal, releasing and
+   * emailing are separate steps, so the date is not an email date.
+   */
+  releasedText?: string | null;
   figures: ReportFigures | null;
   doc: RichDoc;
   /** Rendered after the commentary (e.g. the public "Documents" list). */
@@ -370,7 +374,7 @@ export function ReportView({
   periodEnd,
   fiscalYear = null,
   fiscalQuarter = null,
-  sentText = null,
+  releasedText = null,
   figures,
   doc,
   children,
@@ -391,8 +395,10 @@ export function ReportView({
           {reportTypeLabel(type, noticeKind)}
           {period ? ` · ${period}` : ""}
         </p>
-        {sentText ? (
-          <p className="text-sm text-muted-foreground">Sent {sentText}</p>
+        {releasedText ? (
+          <p className="text-sm text-muted-foreground">
+            Released {releasedText}
+          </p>
         ) : null}
       </header>
 

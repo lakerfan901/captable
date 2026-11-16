@@ -8,12 +8,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { reportHref } from "@/lib/portal/portal-dashboard";
 import {
   formatDay,
   periodText,
   reportTypeShort,
 } from "@/lib/portal/portal-files-view";
-import { accessBasePath } from "@/lib/portal/portal-nav";
 
 // The reports table of one holder (04-investor-portal.md 6.1; approved
 // prototype; package P8b): title (a link to the report page), type, period,
@@ -29,10 +29,6 @@ export interface PortalReportRow {
   periodStart: string | null;
   periodEnd: string | null;
   releasedAt: Date | null;
-}
-
-export function reportHref(access: string, reportId: string): string {
-  return `${accessBasePath(access)}/reports/${encodeURIComponent(reportId)}`;
 }
 
 export function PortalReportList(props: {

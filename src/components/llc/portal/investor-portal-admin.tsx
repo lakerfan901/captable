@@ -33,13 +33,15 @@ import {
   plural,
 } from "@/lib/portal/share-dialog-view";
 import { api } from "@/trpc/react";
+import { MemberViewDialog } from "./member-view-dialog";
 import { AccessStatus, RowActions } from "./portal-access-card";
 
 // The team's "Investor portal" page (04-investor-portal.md 6.2; package
 // P9a): "People" is `portalAdmin.overview` with the member card's row
 // actions; "Activity" is `portalAdmin.accessLog`. The page renders only for
 // an LLC and a role with `portal: read`; the row actions need `portal:
-// update` and are absent without it.
+// update` and are absent without it. "See what they see" (P9b) needs only
+// `portal: read`, so it has its own column.
 
 export function InvestorPortalAdmin({
   companyPublicId,
@@ -129,6 +131,9 @@ function PeopleTab({
                 <TableHead>Status</TableHead>
                 <TableHead>Invited</TableHead>
                 <TableHead>Last seen</TableHead>
+                <TableHead>
+                  <span className="sr-only">What they see</span>
+                </TableHead>
                 {canUpdate && (
                   <TableHead>
                     <span className="sr-only">Actions</span>
@@ -140,7 +145,7 @@ function PeopleTab({
               {query.isLoading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={canUpdate ? 6 : 5}
+                    colSpan={canUpdate ? 7 : 6}
                     className="text-muted-foreground"
                   >
                     Loading…
@@ -149,7 +154,7 @@ function PeopleTab({
               ) : query.error ? (
                 <TableRow>
                   <TableCell
-                    colSpan={canUpdate ? 6 : 5}
+                    colSpan={canUpdate ? 7 : 6}
                     className="text-destructive"
                   >
                     {query.error.message}
@@ -158,7 +163,7 @@ function PeopleTab({
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={canUpdate ? 6 : 5}
+                    colSpan={canUpdate ? 7 : 6}
                     className="text-center text-muted-foreground"
                   >
                     {(query.data ?? []).length === 0
@@ -188,6 +193,13 @@ function PeopleTab({
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       <InstantTime at={row.lastSeenAt} dateOnly />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <MemberViewDialog
+                        stakeholderId={row.stakeholderId}
+                        holderName={row.holderName}
+                        variant="link"
+                      />
                     </TableCell>
                     {canUpdate && (
                       <TableCell className="whitespace-nowrap text-right">

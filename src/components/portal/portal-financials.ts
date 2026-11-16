@@ -3,12 +3,9 @@ import "server-only";
 import { TRPCError } from "@trpc/server";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
-import {
-  BOOKS_CATEGORY_KEYS,
-  booksCategoryDef,
-} from "@/lib/governance/books-core";
 import { todayInZone } from "@/lib/governance/dates";
 import type { ReportSummary } from "@/lib/portal/portal-dashboard";
+import { categoryLabel } from "@/lib/portal/portal-files-view";
 import { api } from "@/trpc/server";
 
 // The dashboard data of one holder for server pages (04-investor-portal.md
@@ -57,19 +54,19 @@ export const loadPortalReportSummaries = cache(
   },
 );
 
-function categoryLabel(category: string | null): string | null {
-  const key = BOOKS_CATEGORY_KEYS.find((k) => k === category);
-  return key ? booksCategoryDef(key).label : null;
-}
-
 export interface DocumentSummary {
+  /** `Document.publicId`: what the Overview's file button asks a URL for (as on the Documents page). */
+  id: string;
   name: string;
-  category: string | null;
+  /** PDF or image: opens in the viewer; anything else downloads. */
+  inline: boolean;
+  /** The investor-facing category label (`categoryLabel`, as on the Documents page), or "". */
+  category: string;
   /** "YYYY-MM-DD" */
   sharedOn: string;
 }
 
-/** The documents shared with the holder (names and dates only: no id leaves for the Overview). */
+/** The documents shared with the holder, as the Overview's "Newest documents" card shows them. */
 export const loadPortalDocumentSummaries = cache(
   async (
     access: string,
@@ -81,7 +78,9 @@ export const loadPortalDocumentSummaries = cache(
     return list.map((d) => ({
       sharedAt: d.sharedAt,
       doc: {
+        id: d.id,
         name: d.name,
+        inline: d.inline,
         category: categoryLabel(d.category),
         sharedOn: todayInZone(d.sharedAt, timeZone),
       },

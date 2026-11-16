@@ -1,12 +1,17 @@
-import { RiArrowLeftLine } from "@remixicon/react";
+import { RiArrowLeftLine, RiArrowRightLine } from "@remixicon/react";
 import Link from "next/link";
 import { ReportExportButton } from "@/components/governance/report-export-button";
 import { ReportView } from "@/components/governance/report-view";
 import { MarkReportViewed } from "@/components/portal/mark-viewed";
 import { portalPageCall } from "@/components/portal/portal-call";
+import { loadPortalFinancials } from "@/components/portal/portal-financials";
 import { requirePortalHolder } from "@/components/portal/portal-me";
 import { PortalReportFiles } from "@/components/portal/report-files";
 import { Card } from "@/components/ui/card";
+import {
+  dashboardPeriodOfReport,
+  reportFinancialsHref,
+} from "@/lib/portal/portal-dashboard";
 import { formatDay } from "@/lib/portal/portal-files-view";
 import { accessBasePath } from "@/lib/portal/portal-nav";
 import { api } from "@/trpc/server";
@@ -23,6 +28,11 @@ import { api } from "@/trpc/server";
 // address), the file buttons and the Excel button (shown only when the
 // report is `exportable`). Each of them re-renders the page when the report
 // has gone in the meantime, which then shows "not available".
+//
+// "See this period in Financials" (6.3) sits beside "All reports" when the
+// report covers one dashboard period (a whole quarter or year) and that
+// period is on the holder's dashboard now (`reportFinancialsHref`), so the
+// link never lands on an empty Financials page.
 
 export default async function PortalReportPage(props: {
   params: Promise<{ access: string; reportId: string }>;
@@ -33,9 +43,17 @@ export default async function PortalReportPage(props: {
     api.portal.reports.get({ access, reportId }),
   );
   const { report } = data;
+  // The dashboard is read only for a report that has a period of its own.
+  const periodHref = dashboardPeriodOfReport(report)
+    ? reportFinancialsHref(
+        access,
+        report,
+        (await loadPortalFinancials(access)).periods,
+      )
+    : null;
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Link
           href={`${accessBasePath(access)}/reports`}
           className="inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -43,6 +61,16 @@ export default async function PortalReportPage(props: {
           <RiArrowLeftLine className="h-4 w-4" aria-hidden />
           All reports
         </Link>
+        {periodHref ? (
+          <Link
+            href={periodHref}
+            className="inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            data-testid="report-financials-link"
+          >
+            See this period in Financials
+            <RiArrowRightLine className="h-4 w-4" aria-hidden />
+          </Link>
+        ) : null}
       </div>
       <Card className="p-5 sm:p-10" data-testid="portal-report">
         <MarkReportViewed access={access} reportId={report.id} />
@@ -53,7 +81,9 @@ export default async function PortalReportPage(props: {
           noticeKind={report.noticeKind}
           periodStart={report.periodStart}
           periodEnd={report.periodEnd}
-          sentText={formatDay(report.releasedAt, data.timeZone, "long") || null}
+          releasedText={
+            formatDay(report.releasedAt, data.timeZone, "long") || null
+          }
           figures={report.figures}
           doc={report.doc}
         >

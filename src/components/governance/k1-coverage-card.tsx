@@ -73,8 +73,8 @@ export function K1CoverageCard({
                 ) : h.attachedHere ? (
                   <Badge variant="warning">
                     {status === "DRAFT"
-                      ? "Sent with this report"
-                      : "Attached, re-send to deliver"}
+                      ? "Attached to this draft"
+                      : "Attached, not yet emailed"}
                   </Badge>
                 ) : (
                   <Badge variant="destructive">No K-1 yet</Badge>

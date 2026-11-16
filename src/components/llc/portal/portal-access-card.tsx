@@ -27,6 +27,7 @@ import { useEntity } from "@/providers/entity-provider";
 import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
 import { InviteDialog } from "./invite-dialog";
+import { MemberViewDialog } from "./member-view-dialog";
 
 type AccessRow = RouterOutputs["portalAdmin"]["accessForHolder"][number];
 
@@ -151,7 +152,8 @@ export function RowActions({
  * "Portal access" on the member page's Profile tab (04-investor-portal.md
  * 6.2; package P3). One row per person invited for this holder. The page
  * renders this card only for a role with `portal: read`; the invite button
- * needs `portal: create`, the row actions `portal: update`.
+ * needs `portal: create`, the row actions `portal: update`. "See what this
+ * member sees" (P9b) needs only `portal: read`.
  */
 export function PortalAccessCard({
   stakeholderId,
@@ -185,15 +187,22 @@ export function PortalAccessCard({
             People who can sign in to the investor portal for {holderName}.
           </CardDescription>
         </div>
-        <Allow subject="portal" action="create">
-          <InviteDialog
+        <div className="flex flex-wrap gap-2">
+          {/* `portal: read`, as the card itself: what the portal shows this holder. */}
+          <MemberViewDialog
             stakeholderId={stakeholderId}
             holderName={holderName}
-            defaultEmail={defaultEmail}
-            mailDelivery={mailDelivery}
-            onInvited={refresh}
           />
-        </Allow>
+          <Allow subject="portal" action="create">
+            <InviteDialog
+              stakeholderId={stakeholderId}
+              holderName={holderName}
+              defaultEmail={defaultEmail}
+              mailDelivery={mailDelivery}
+              onInvited={refresh}
+            />
+          </Allow>
+        </div>
       </CardHeader>
       <CardContent>
         {query.isLoading ? (
