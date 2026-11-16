@@ -541,7 +541,7 @@ async function disableEnable() {
   eq(
     "before: A1 passes the investor base",
     await codeOf(() => caller.home({ access: accessA1 })),
-    "NOT_IMPLEMENTED",
+    "OK",
   );
   const r = await admin(adminA).setAccessStatus({
     accessId: accessA1,
@@ -556,12 +556,12 @@ async function disableEnable() {
   eq(
     "A2 (same company) still works",
     await codeOf(() => caller.home({ access: accessA2 })),
-    "NOT_IMPLEMENTED",
+    "OK",
   );
   eq(
     "F (other company) still works",
     await codeOf(() => caller.home({ access: accessF })),
-    "NOT_IMPLEMENTED",
+    "OK",
   );
   const me = await caller.me();
   check(
@@ -631,7 +631,7 @@ async function disableEnable() {
   eq(
     "after enable: A1 works again on the same session",
     await codeOf(() => caller.home({ access: accessA1 })),
-    "NOT_IMPLEMENTED",
+    "OK",
   );
   eq("enable sends no email", takeEmits().length, 0);
 

@@ -50,14 +50,14 @@ export const PORTAL_SECTIONS: readonly PortalSection[] = [
     label: "Reports",
     path: "/reports",
     owner: "P8b",
-    built: false,
+    built: true,
   },
   {
     key: "documents",
     label: "Documents",
     path: "/documents",
     owner: "P8b",
-    built: false,
+    built: true,
   },
 ];
 
