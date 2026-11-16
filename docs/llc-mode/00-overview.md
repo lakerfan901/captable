@@ -7,6 +7,7 @@ This folder is the implementation plan for administering Octagon GPU I LLC (a Wy
 | `01-foundation.md` | LLC mode, unit classes, member records, commitments and receipts, Member Schedule (Exhibit A), Overview, email log, Exhibit B via e-sign, CSV import | F0–F15 | 24 |
 | `02-economics.md` | Calculation library, Call Notices, default workflow, revenue / fee / reserves / Manager payments, distributions, member statement, fair value, term clock | E1–E19 | 19 |
 | `03-governance.md` | Voting math, resolutions and ballots, member reports, compliance calendar, unit transfers, books and records | G1–G19 | 29 |
+| `04-investor-portal.md` | Investor portal: portal accounts and sessions, report release and publication, document sharing, financial dashboard from frozen month snapshots, Excel export | P0–P17 | 31 |
 
 Source agreement: `Octagon_GPU_I_Operating_Agreement_Final v2.docx`. Where a plan and the agreement disagree, the agreement wins and the executor stops and reports.
 
@@ -14,8 +15,8 @@ Source agreement: `Octagon_GPU_I_Operating_Agreement_Final v2.docx`. Where a pla
 
 - Purchase orders: no purchase-order module. A purchase-order resolution is one preset resolution type that the Manager signs and the app emails to Members (`03-governance.md`, G5/G7).
 - Resolutions use a dedicated emailed ballot page with a typed-name signature. E-sign is used for Exhibit B only.
-- Members have no login. Everything reaches them as an emailed, tokenized link, and every send is logged.
-- Not planned: meetings module, investor portal, tax-proceeding log, 704(b) capital accounts. `03-governance.md` section G gives the manual route for each.
+- Members have no team login. Ballots, e-sign and W-9 still reach them as an emailed, tokenized link, and every send is logged. Since 2026-11-16 an investor portal is built (`04-investor-portal.md`): a holder invited by a Manager user signs in with email and password (a separate account, cookie and session, never a team `User`) and sees the reports released to them, the documents shared with them and a financial dashboard of the published periods. Emailed report links lead into the portal.
+- Not planned: meetings module, tax-proceeding log, 704(b) capital accounts. `03-governance.md` section G gives the manual route for each. (The investor portal was on this list until 2026-11-14.)
 
 ## Conventions that bind all three plans
 

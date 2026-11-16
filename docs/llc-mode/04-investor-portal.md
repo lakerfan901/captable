@@ -2,7 +2,7 @@
 
 Scope: a sign-in for investors (holders, `Stakeholder` rows) of an LLC company, where they see an interactive financial dashboard of the periods the Manager's team has published (fund figures and their own investment), the member reports released to them and the documents shared with them, and can export figures to Excel.
 Audience: an executor who has not seen the repo. Read sections 1–7 once, then execute one work package from section 8 at a time under the executor protocol of `00-overview.md`.
-Status: plan only. Nothing here is built. Revised 2026-11-14 after the owner's decisions (section 9.1), and again the same day for the financial dashboard (rules P32–P39, section 5.9). Section 9.2 lists what is still open; each open item has a default built into the plan.
+Status: **built** (packages P0–P17, merged on `feat/investor-portal`; P11 finished 2026-11-16). Section 12 records what was built differently from the text below, the defects the final review found, and what is still open. Revised 2026-11-14 after the owner's decisions (section 9.1), and again the same day for the financial dashboard (rules P32–P39, section 5.9). Section 9.2 lists what is still open; each open item has its default built.
 
 This plan reverses an earlier scope decision. `00-overview.md` says "Members have no login" and "Not planned: … investor portal"; `03-governance.md` section G gives "Emailed, expiring, revocable links per ballot and per report" as the manual route, and its risk F.7 and rule R17 rest on "Members have no login". Those lines stay true for ballots, e-sign and W-9 in phase 1. This plan also changes shipped governance code: `memberReport.send` becomes `memberReport.release` (section 5.5), which overrides parts of rules R22, R22a and package G12 of `03-governance.md`. Package P11 records all of this in the two older documents.
 
@@ -1236,3 +1236,59 @@ Shared files are edited only by P0, except the lines named below. P0 lands every
 - No spreadsheet library exists in the repo, and ExcelJS, the only free library that covers the formatting asked for, has had no release since 2023 (5.7). It is confined to one server file so it can be replaced.
 - No test can import the tRPC root (vitest has no `@/` alias), so the isolation guarantees are proved by a source-reading test plus a hand-run integration script, not by the normal test run.
 - Member-facing email is refused in production until a real SMTP server is configured (2.6). Until then nobody can be invited, and nobody can set a password.
+
+## 12. As built (2026-11-16)
+
+Every package of section 8 is merged. This section records where the code differs from the text above, what the final package (P11) found and fixed, and what is left open. Where this section and the text above disagree, this section describes the code.
+
+### 12.1 Built differently from the plan
+
+- **Route groups.** Portal pages live in `src/app/(portal)/portal/(public)/…` (sign-in, forgot password, set password) and `(signed-in)/…` (chooser, account, go-page, `[access]/…`); the three route handlers are under `src/app/(portal)/portal/auth/`. An unknown path under `/portal/[access]` is a 404 (`[...missing]`).
+- **How pages resolve the holder.** Pages do not import `portal-procedure.ts` (G5 allows only the portal routers to). The gate for `/portal/[access]` is `requirePortalHolder` (`src/components/portal/portal-me.ts`): the access must be one of the holders `portal.me` returns for the signed-in user, the same rule as `resolveHolder`. `resolveHolder` (the middleware-B function) is exported beside `resolveInvestor`.
+- **`lastSeenAt`.** Every `investorProcedure` call refreshes `PortalAccess.lastSeenAt` (at most every 5 minutes) and the session's `lastSeenAt`. Every page under `/portal/[access]` calls `portal.financials.get` from its layout, so a page view counts as "last seen". Proved in `portal-isolation.integration.ts` section 7.
+- **No `schema.ts` in `portal-router`.** Each portal procedure declares its input inline (or imports a browser-safe schema from `src/lib`). The G5 source test reads the `.input(…)` argument of every procedure, and the declarations it names, instead of a `schema.ts`.
+- **Sign-in and reset answer at a floor.** The sign-in handler answers no sooner than 600 ms and `portalAuth.requestReset` no sooner than 250 ms, so known and unknown addresses take the same time (S10).
+- **RBAC refusals.** `withAccessControl` refuses a role without the subject with `UNAUTHORIZED` and the policy message (not `FORBIDDEN`). Pages that leave out a section the role may not read treat both codes alike (`src/lib/trpc-forbidden.ts`).
+- **Sender address.** Account and portal emails (invitation, access added, reset, password changed, locked, new documents) go out under `EMAIL_FROM_TRANSACTIONAL` when it is set; reports, notices and everything else addressed to a Member about the company under `EMAIL_FROM` (`src/lib/mail-sender.ts`).
+- **Integration scripts.** One script per package instead of one `portal.integration.ts`: `portal-auth`, `portal-admin`, `portal-reports`, `portal-documents`, `portal-report-links`, `financial-snapshots`, `financial-dashboard`, and from P11 `portal-isolation` (every procedure and route handler, every refusal compared with an unknown id, the answer scan) and `portal-mail-from`.
+- **Seed.** `prisma/seeds/llc-portal.ts` builds its own LLC ("Octagon Portal Demo LLC") with twelve months from October 2025, because the governance seed's LLC starts in October 2026 and has no ended quarter to release. Every release is portal-only (no email is sent by a seed), so "one released quarterly report (emailed)" is not seeded. Sign in as `portal.demo@example.com`, password `Portal-Demo-Pass-2026`.
+- **P17 history.** The first P17 commit is titled "WIP" (`ff098947`); history was left as it is.
+
+### 12.2 Defects found by the P11 review and fixed
+
+| Severity | Area | Defect | Fix and test |
+|---|---|---|---|
+| Medium | P13, P38 | A quarterly report ticked "No distribution this quarter" passed the release check while the ledger had distributions; the released report would say there were none. | The check reports field `distributions.none` (`report-reconcile.ts`); unit test. |
+| Medium | P2, S10 | Many `portalAuth.requestReset` calls for one known address in one batched HTTP request (one count of the IP limiter) queued on the user's row lock and answered in seconds, or with an error, while an unknown address answered at once. | A per-address `pg_try_advisory_xact_lock`; a request that finds another in progress does nothing; any failure is answered like success. Burst check in `portal-isolation`. |
+| Medium | UI | A custom team role without `audits: read` got a 500 on the company home page. | Each Overview section is left out when its read is refused; unit test, and the browser pass with such a role. |
+| Low | P5, G4 | `portal.reports.get` and the token page returned each Manager-payment line's internal `resolutionId`. | `portalFigures` returns those lines with `resolutionId: null`; unit test. |
+| Low | P5, P16 | The token page's file URLs lived 10 minutes. | 60 seconds, as in the portal. |
+| Low | P2 | `readJsonFields` trusted `Content-Length`; a chunked body was read whole before the 4 kB check. | The body is read chunk by chunk and dropped at the first byte over the cap; checked in `portal-isolation`. |
+| Low | P2, S21 | The set-password body's repeated password (`confirm`) was not a sensitive key for log and Sentry redaction. | Added; unit test. |
+| Low | P13 UI | A release refused by the P38 check was logged as a console error by the tRPC logger link although the dialog explains it. | Not logged (`src/lib/trpc-client-log.ts`); unit test and browser pass. |
+
+### 12.3 Known and not fixed
+
+- **A notification with no job.** If queueing the "new documents" job fails after the share has committed, the `PortalNotification` row stays unclaimed and that email is lost (the documents are in the portal regardless; the failure is logged). A sweep cannot rebuild the job: the row does not store which documents each holder gained, and grant rows cannot be tied to one share action (their `createdAt` is set by Prisma, not by the transaction). Recovery would need a nullable JSON column on `PortalNotification` (an additive migration) holding the payload, read by the existing 15-minute sweep. Not done.
+- **A period released after its months were frozen.** Release compares a report with the ledger, not with existing snapshots. After the books are reopened and back-dated entries are added, releasing a report for months that already have snapshots (the annual report after Q4, or a skipped quarter) can freeze figures that differ from the dashboard's for those months; `financialDashboard.status` shows the drift, and Restate fixes the dashboard. Suggested rule: refuse such a release until the months are restated.
+- **Partial restatement.** Restating one month leaves the running totals of the later months (paid-in, unreturned capital, reserve balance, Available Cash) as they were; `status.drift` lists those months. Suggested rule: a Restate always runs through the latest snapshot.
+
+### 12.4 Questions for the owner (behaviour as designed, may be unwanted)
+
+1. **Lockout and reset can be combined against an investor.** The reset throttle counts every link sent, whoever asked. Someone who knows an address can spend its 10 resets a day and re-lock the account every 15 minutes, keeping the owner out for up to a day. Options: count only resets that were used, or let the team's Unlock also reset the throttle.
+2. **Lock emails to people without active access.** A portal user whose every access is disabled can still be locked and gets the "sign-in is locked" email, though a reset does nothing for them.
+3. **Forwarded report links.** Anyone holding a forwarded report email can press "Email me my set-up link" repeatedly; each press cancels the invitee's earlier link and uses their reset allowance (no access is granted).
+4. **A disabled access at another address.** If a holder's access at address B is disabled, a report emailed to address A (never invited) still opens as the read-only token page (P25 row 5 as written).
+5. **Insider names in reports.** Insider distributions and insider loan payments (names and amounts) are in the report figures shown in the portal and the workbook, as they are in the emailed report (S7). Confirm this agrees with P15 ("never contains another holder's data").
+6. **Live term clock.** The dashboard's term clock (Target Sale Date, extensions) is read live, not frozen at release.
+7. **Utilization outside the check.** A typed utilization is released as typed; the dashboard shows the monthly values. They can differ, and nothing says so.
+8. **Reports released before the portal.** Publishing one moves the holder's published-through date although it passed no P38 check and wrote no snapshots.
+9. **Back-filled months.** A Restate that fills months before the first snapshot writes them as version 1, so investors see no "Restated" note for them.
+10. **Drift lists holder names** to anyone with `llc-financials: read` (the plan's output was months and fields only).
+
+### 12.5 What production needs
+
+- **Migration** `20261115000000_investor_portal` (the only one of the portal; additive). No other migration.
+- **Environment.** `EMAIL_SERVER` must be a real SMTP server: while it is the bundled catcher, invitations, resets, "new documents" emails and releases with email are refused in production (P23, P30), so nobody can be invited or set a password. `EMAIL_FROM` for investor mail; optionally `EMAIL_FROM_TRANSACTIONAL` for account mail. `NEXT_PUBLIC_BASE_URL` must be the public https origin: it decides the cookie name (`__Host-portal_session` on https), the Origin check of every portal mutation and route handler, and the links in emails. `NEXTAUTH_SECRET` as today (report link tokens).
+- **Storage CORS.** The portal's file viewer fetches the file from storage in the browser (a simple `GET`, no credentials, no preflight), so storage must answer with `Access-Control-Allow-Origin` for the app origin. MinIO does so by default for every origin (checked on the local MinIO, release 2025-09-07: a presigned GET with an `Origin` header answers `Access-Control-Allow-Origin` with that origin and `Vary: Origin`, with no bucket CORS configuration; MinIO keeps no per-bucket CORS rules). The Dokploy stack therefore needs nothing more, unless `MINIO_API_CORS_ALLOW_ORIGIN` is set, in which case it must include `APP_URL`. When `UPLOAD_PUBLIC_URL` equals `APP_URL` (the proxy routes the bucket paths), the fetch is same-origin and no CORS is involved. On S3 or R2 the private bucket needs a CORS rule allowing `GET` from `APP_URL`. The CSP already allows the storage origin in `connect-src`.
+- **Rate limiting** is per process and trusts the leftmost `X-Forwarded-For`; the reverse proxy must overwrite that header.
