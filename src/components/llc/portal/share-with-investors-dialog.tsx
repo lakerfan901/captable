@@ -63,18 +63,25 @@ export function ShareWithInvestorsDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // The form starts from the saved list, so it waits for a fresh read: a
+  // cached answer from an earlier opening would start from an old list.
   const options = api.portalAdmin.shareOptions.useQuery(
     { documentPublicIds },
-    { refetchOnWindowFocus: false },
+    { refetchOnWindowFocus: false, gcTime: 0 },
   );
   const people = api.portalAdmin.overview.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
+  const ready =
+    options.data !== undefined &&
+    options.isFetchedAfterMount &&
+    !options.isFetching &&
+    people.data !== undefined;
 
   return (
     <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
       <DialogContent className="max-h-[90vh] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-3xl">
-        {options.data && people.data ? (
+        {ready && options.data && people.data ? (
           <ShareForm
             options={options.data}
             people={people.data}
