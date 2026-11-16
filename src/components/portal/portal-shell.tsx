@@ -17,7 +17,9 @@ export function PortalShell(props: {
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-gray-50">
+    // A page that marks itself `data-portal-wide` (the dashboard pages, P15)
+    // widens the frame to the dashboard's width, as in the prototype.
+    <div className="min-h-screen bg-gray-50 [--portal-max:64rem] has-[[data-portal-wide]]:[--portal-max:77.5rem]">
       <a
         href="#portal-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-60 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:outline-hidden focus:ring-2 focus:ring-ring"
@@ -26,7 +28,7 @@ export function PortalShell(props: {
       </a>
       <div className="sticky top-0 z-50 w-full border-b">
         <header className="flex h-14 items-center bg-gray-50 px-4 sm:px-5">
-          <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-2 sm:gap-3">
+          <div className="mx-auto flex w-full max-w-(--portal-max) items-center justify-between gap-2 sm:gap-3">
             <Link
               href="/portal"
               className="shrink-0 rounded-sm text-base font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -72,7 +74,7 @@ export function PortalShell(props: {
       <div
         id="portal-content"
         tabIndex={-1}
-        className="mx-auto w-full max-w-5xl px-4 py-8 outline-hidden sm:px-5 sm:py-10"
+        className="mx-auto w-full max-w-(--portal-max) px-4 py-8 outline-hidden sm:px-5 sm:py-10"
       >
         {props.children}
       </div>
