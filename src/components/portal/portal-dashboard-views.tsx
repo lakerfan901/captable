@@ -215,7 +215,7 @@ export function PortalFinancialsView({
   );
   if (!series) {
     return (
-      <div className="flex flex-col gap-6" data-portal-wide>
+      <div className="flex flex-col gap-6">
         {head}
         <NoPeriods />
       </div>
@@ -416,7 +416,7 @@ export function PortalInvestmentView({
   );
   if (!series) {
     return (
-      <div className="flex flex-col gap-6" data-portal-wide>
+      <div className="flex flex-col gap-6">
         {head}
         <NoPeriods />
       </div>
@@ -630,7 +630,11 @@ export function PortalOverview({
     ? latestPeriodReport(access, data.periods, reports)
     : null;
   return (
-    <div className="flex flex-col gap-6" data-portal-wide>
+    // wide only with figures: the empty state keeps the frame's normal width
+    <div
+      className="flex flex-col gap-6"
+      data-portal-wide={series ? true : undefined}
+    >
       {series && data.publishedThrough ? (
         <ThroughLine
           publishedThrough={data.publishedThrough}

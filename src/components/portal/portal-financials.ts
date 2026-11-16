@@ -7,6 +7,7 @@ import {
   BOOKS_CATEGORY_KEYS,
   booksCategoryDef,
 } from "@/lib/governance/books-core";
+import { todayInZone } from "@/lib/governance/dates";
 import type { ReportSummary } from "@/lib/portal/portal-dashboard";
 import { api } from "@/trpc/server";
 
@@ -43,11 +44,15 @@ export const loadPortalFinancials = cache(
 /** The visible reports, as the dashboard pages need them (fields picked, G4). */
 export const loadPortalReportSummaries = cache(
   async (access: string): Promise<ReportSummary[]> => {
-    const list = await portalRead(() => api.portal.reports.list({ access }));
+    const [list, { timeZone }] = await Promise.all([
+      portalRead(() => api.portal.reports.list({ access })),
+      loadPortalFinancials(access),
+    ]);
     return list.map((r) => ({
       id: r.id,
       title: r.title,
-      releasedOn: r.releasedAt ? r.releasedAt.toISOString().slice(0, 10) : null,
+      // the day in the company's time zone, as the restatement dates (P35)
+      releasedOn: r.releasedAt ? todayInZone(r.releasedAt, timeZone) : null,
     }));
   },
 );
@@ -69,13 +74,16 @@ export const loadPortalDocumentSummaries = cache(
   async (
     access: string,
   ): Promise<{ sharedAt: Date; doc: DocumentSummary }[]> => {
-    const list = await portalRead(() => api.portal.documents.list({ access }));
+    const [list, { timeZone }] = await Promise.all([
+      portalRead(() => api.portal.documents.list({ access })),
+      loadPortalFinancials(access),
+    ]);
     return list.map((d) => ({
       sharedAt: d.sharedAt,
       doc: {
         name: d.name,
         category: categoryLabel(d.category),
-        sharedOn: d.sharedAt.toISOString().slice(0, 10),
+        sharedOn: todayInZone(d.sharedAt, timeZone),
       },
     }));
   },
