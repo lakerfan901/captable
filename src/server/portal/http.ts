@@ -64,6 +64,46 @@ export function requestFacts(request: Request): RequestFacts {
 }
 
 /**
+ * The body as text, or null when it is longer than `max` bytes or cannot be
+ * read. Read chunk by chunk and abandoned at the first byte over the cap, so
+ * a body without a Content-Length (chunked) is never buffered whole.
+ */
+export async function readCapped(
+  request: Request,
+  max: number,
+): Promise<string | null> {
+  if (request.body === null) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The JSON object of the body, or null when the body is not JSON, is not an
  * object, or is larger than `MAX_BODY_BYTES`. Only string fields are kept;
  * any other value becomes absent, so the callers' checks see `undefined`.
@@ -75,13 +115,8 @@ export async function readJsonFields(
   if (!type.toLowerCase().startsWith("application/json")) return null;
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return null;
-  let text: string;
-  try {
-    text = await request.text();
-  } catch {
-    return null;
-  }
-  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+  const text = await readCapped(request, MAX_BODY_BYTES);
+  if (text === null) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

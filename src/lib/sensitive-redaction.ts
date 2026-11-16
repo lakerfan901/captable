@@ -28,16 +28,23 @@ const SENSITIVE_PARTS = [
   "iban",
 ] as const;
 
+/**
+ * Whole key names that are sensitive although they contain none of the parts
+ * above: `ssn`, and `confirm`, the repeated password of the portal's
+ * set-password form (`{ token, password, confirm }`).
+ */
+const EXACT_KEYS = new Set(["ssn", "confirm"]);
+
 /** True for a key whose value must never be transmitted. */
 export function isSensitiveKey(key: string): boolean {
   const k = key.toLowerCase().replace(/[_-]/g, "");
-  return k === "ssn" || SENSITIVE_PARTS.some((p) => k.includes(p));
+  return EXACT_KEYS.has(k) || SENSITIVE_PARTS.some((p) => k.includes(p));
 }
 
 // The same key names inside serialized text: `"accountNumber":"123"` (JSON
 // request bodies, messages) and `accountNumber=123` (query or form strings).
 const KEY_PATTERN =
-  "[A-Za-z0-9_-]*(?:token|secret|password|passwd|passphrase|api_?key|authorization|cookie|account_?number|routing_?number|swift|iban)[A-Za-z0-9_-]*|ssn";
+  "[A-Za-z0-9_-]*(?:token|secret|password|passwd|passphrase|api_?key|authorization|cookie|account_?number|routing_?number|swift|iban)[A-Za-z0-9_-]*|ssn|confirm";
 const JSON_STRING_VALUE = new RegExp(
   `("(?:${KEY_PATTERN})"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`,
   "gi",

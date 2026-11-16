@@ -670,6 +670,16 @@ export async function requestPasswordReset(
   if (user === null) return;
   const issued = await db.$transaction(
     async (tx) => {
+      // S10: requests for one address do not wait for each other. Many
+      // reset calls in one batched HTTP request (one count of the IP
+      // limiter) would otherwise queue on this user's row lock and take
+      // seconds, while an unknown address answers at once. A request that
+      // finds another one in progress for the same address does nothing,
+      // which the throttle below would mostly decide anyway.
+      const slotKey = `portal-reset:${user.id}`;
+      const [slot] = await tx.$queryRaw<{ ok: boolean }[]>`
+        SELECT pg_try_advisory_xact_lock(hashtext(${slotKey})) AS ok`;
+      if (slot?.ok !== true) return null;
       const locked = await lockPortalUser(tx, user.id);
       if (locked === null) return null;
       if (!(await hasActiveAccess(tx, user.id))) return null;
