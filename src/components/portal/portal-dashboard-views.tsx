@@ -553,7 +553,7 @@ function OverviewFigures({
         data-testid="overview-fund"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 id="overview-fund" className="font-medium">
+          <h3 id="overview-fund" className="text-base font-medium sm:text-base">
             The fund
           </h3>
           <Link
@@ -576,7 +576,10 @@ function OverviewFigures({
           data-testid="overview-mine"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 id="overview-mine" className="font-medium">
+            <h3
+              id="overview-mine"
+              className="text-base font-medium sm:text-base"
+            >
               Your investment
             </h3>
             <Link
