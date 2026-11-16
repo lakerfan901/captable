@@ -171,7 +171,9 @@ export default async function MemberReportPage(props: {
         noticeKind={report.noticeKind}
         periodStart={report.periodStart}
         periodEnd={report.periodEnd}
-        sentText={formatInstant(report.sentAt, data.timeZone)}
+        // the report's release time (`view` returns `report.sentAt`), not
+        // the date this recipient was emailed: "Released" is what is true
+        releasedText={formatInstant(report.sentAt, data.timeZone)}
         figures={report.figures}
         doc={report.doc}
       >
