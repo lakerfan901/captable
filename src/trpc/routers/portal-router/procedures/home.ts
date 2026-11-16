@@ -10,11 +10,12 @@
 // ids only, no storage key, bucket id or holder id. A query; no log row.
 
 import { GOVERNANCE_TIME_ZONE } from "@/lib/governance/dates";
-import { isInlineContentType } from "@/lib/inline-content-type";
-import { listVisibleDocuments } from "@/server/portal/visibility-documents";
+import {
+  listVisibleDocuments,
+  portalDocumentListItem,
+} from "@/server/portal/visibility-documents";
 import { listVisibleReports } from "@/server/portal/visibility-reports";
 import { investorProcedure } from "@/trpc/api/portal-procedure";
-import type { PortalDocumentListItem } from "./documents-list";
 
 /** The Overview shows this many of the newest documents. */
 export const HOME_DOCUMENT_COUNT = 3;
@@ -33,15 +34,8 @@ export const homeProcedure = investorProcedure.query(async ({ ctx }) => {
     timeZone: ctx.company.timezone || GOVERNANCE_TIME_ZONE,
     // Both lists are already newest first.
     latestReport: reports[0] ?? null,
-    documents: documents.slice(0, HOME_DOCUMENT_COUNT).map(
-      (v): PortalDocumentListItem => ({
-        id: v.document.publicId,
-        name: v.document.name,
-        sharedAt: v.sharedAt,
-        inline: isInlineContentType(v.file.mimeType),
-        sizeBytes: v.file.size,
-        category: v.document.recordCategory,
-      }),
-    ),
+    documents: documents
+      .slice(0, HOME_DOCUMENT_COUNT)
+      .map(portalDocumentListItem),
   };
 });

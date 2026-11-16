@@ -25,9 +25,21 @@
  * access, `inviteHolder` for P4b (`LEFT_DISABLED`), RBAC refusals, the
  * production mail guard (nothing written), audit rows naming the address,
  * and no token or password in any stored row, job payload or output.
+ *
+ * `portalAdmin.holderView` (P9b, sections H1–H6, in two companies of their
+ * own): for holders with reports, K-1 files and shared documents, the team
+ * answer equals `portal.reports.list` / `portal.documents.list` (and the
+ * published-through date of `portal.financials.get`) field for field,
+ * again after unpublish, republish and unshare; K-1 privacy; a disabled
+ * access; cross-company and unknown holders refused alike; RBAC.
  */
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { Session } from "next-auth";
+import { generatePublicId } from "@/common/id";
+import { reportFileJob } from "@/jobs/governance-report-file";
+import { todayInZone } from "@/lib/governance/dates";
+import { syncComplianceDeadlines } from "@/server/governance/compliance";
 import {
   check,
   createAdmin,
@@ -35,11 +47,16 @@ import {
   db,
   eq,
   errorOf,
+  inTx,
+  issueCommon,
   newMember,
   runScenarios,
   section,
   setCompanyPrefix,
+  setToday,
+  subscribe,
   type TestCompany,
+  usd,
 } from "@/server/llc/__integration__/harness";
 import {
   mintTokenForDelivery,
@@ -52,8 +69,13 @@ import {
   portalAccountEmailJob,
 } from "@/server/portal/account-email";
 import { inviteHolder } from "@/server/portal/invite";
-import { loadPortalSession, portalCookieName } from "@/server/portal/session";
+import {
+  createPortalSession,
+  loadPortalSession,
+  portalCookieName,
+} from "@/server/portal/session";
 import { createCallerFactory } from "@/trpc/api/trpc";
+import { memberReportRouter } from "@/trpc/routers/member-report-router/router";
 import { portalAdminRouter } from "@/trpc/routers/portal-admin-router/router";
 import { portalRouter } from "@/trpc/routers/portal-router/router";
 
@@ -942,6 +964,516 @@ async function mailGuard() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// holderView (package P9b): exactly what the portal lists for the holder
+//
+// Its own two companies, so the share / release audit rows and counts of
+// these sections never touch companies A and B (section 14 reads those).
+// Company V1: holders P and Q (Preferred), R (Common). Company V2: G.
+// Portal user V has access to P and Q (two holders of one person) and to G;
+// portal user W to R. Reports of V1: QR (quarterly, to P and Q), K (TAX_K1,
+// K-1 files for P, Q and R, released to P and Q), N (notice to P only, a
+// shared file and one private to P). Documents of V1: D1 shared with P and
+// Q, D2 with P only, D3 (Q's own file) with Q.
+
+const viewBucketIds: string[] = [];
+const reportsCallerOf = (ctx: Ctx) =>
+  createCallerFactory(memberReportRouter)(ctx);
+// pg-boss is not started: the filing job a release queues is captured.
+(reportFileJob as { emit: unknown }).emit = () => Promise.resolve();
+
+interface ViewWorld {
+  v1: TestCompany;
+  v2: TestCompany;
+  P: { id: string; name: string };
+  Q: { id: string; name: string };
+  R: { id: string; name: string };
+  G: { id: string; name: string };
+  admin1: Ctx;
+  admin2: Ctx;
+  reports1: ReturnType<typeof reportsCallerOf>;
+  sessionV: string;
+  sessionW: string;
+  acc: Record<"P" | "Q" | "R" | "G", { id: string; publicId: string }>;
+  QR: string;
+  K: string;
+  N: string;
+  k1: Record<"P" | "Q" | "R", { id: string; name: string }>;
+  docs: Record<"D1" | "D2" | "D3", string>;
+}
+let vw: ViewWorld;
+
+function viewParagraph(text: string) {
+  return {
+    type: "paragraph",
+    props: {},
+    content: [{ type: "text", text, styles: {} }],
+    children: [],
+  };
+}
+
+async function viewBucket(c: TestCompany, label: string) {
+  const row = await db.bucket.create({
+    data: {
+      name: `${label}.pdf`,
+      key: `${c.id}/zz-portal-admin/${label}-${randomUUID().slice(0, 8)}.pdf`,
+      mimeType: "application/pdf",
+      size: 2048,
+      tags: ["generic"],
+    },
+  });
+  viewBucketIds.push(row.id);
+  return row;
+}
+
+async function viewAttach(
+  c: TestCompany,
+  reportPublicId: string,
+  label: string,
+  stakeholderId: string | null,
+  kind: "K1" | "GENERAL",
+) {
+  const report = await db.memberReport.findFirstOrThrow({
+    where: { publicId: reportPublicId, companyId: c.id },
+  });
+  const bucket = await viewBucket(c, label);
+  const row = await db.memberReportAttachment.create({
+    data: {
+      reportId: report.id,
+      companyId: c.id,
+      kind,
+      name: `${label}.pdf`,
+      bucketId: bucket.id,
+      stakeholderId,
+    },
+  });
+  return { id: row.id, name: row.name };
+}
+
+async function viewDocument(
+  c: TestCompany,
+  label: string,
+  stakeholderId: string | null = null,
+) {
+  const bucket = await viewBucket(c, label);
+  const row = await db.document.create({
+    data: {
+      companyId: c.id,
+      publicId: generatePublicId(),
+      name: `${label}.pdf`,
+      bucketId: bucket.id,
+      stakeholderId,
+      recordCategory: label === "D1" ? "CONSENTS_AND_MINUTES" : null,
+    },
+  });
+  return row.publicId;
+}
+
+async function viewAccess(
+  portalUserId: string,
+  companyId: string,
+  stakeholderId: string,
+) {
+  const row = await db.portalAccess.create({
+    data: {
+      publicId: `pa_${randomUUID().replace(/-/g, "")}`,
+      portalUserId,
+      companyId,
+      stakeholderId,
+      invitedById: "portal-admin-integration",
+    },
+  });
+  return { id: row.id, publicId: row.publicId };
+}
+
+async function viewSession(portalUserId: string) {
+  const { token } = await createPortalSession(db, {
+    portalUserId,
+    ip: FACTS.ip,
+    userAgent: FACTS.userAgent,
+    now: new Date(),
+  });
+  SECRETS.push(token);
+  return token;
+}
+
+async function holderViewSetup() {
+  section("H1. holderView fixture");
+  const v1 = await createCompany("view-one");
+  const v2 = await createCompany("view-two");
+  const P = await newMember(v1, "P Preferred");
+  const Q = await newMember(v1, "Q Preferred");
+  const R = await newMember(v1, "R Common");
+  const G = await newMember(v2, "G Preferred");
+  await subscribe(v1, P.id, usd(100_000), {
+    cents: usd(100_000),
+    receivedOn: "2026-11-10",
+  });
+  await subscribe(v1, Q.id, usd(50_000), {
+    cents: usd(50_000),
+    receivedOn: "2026-11-10",
+  });
+  await issueCommon(v1, R.id, "100", "2026-11-11");
+  await subscribe(v2, G.id, usd(50_000), {
+    cents: usd(50_000),
+    receivedOn: "2026-11-10",
+  });
+  setToday(todayInZone(new Date(), v1.timezone));
+  const a1 = await createAdmin(v1);
+  const a2 = await createAdmin(v2);
+  const reports1 = reportsCallerOf(a1.context);
+  const reports2 = reportsCallerOf(a2.context);
+
+  // QR: quarterly, to P and Q.
+  const { publicId: QR } = await reports1.create({
+    type: "QUARTERLY",
+    fiscalYear: 2026,
+    fiscalQuarter: 3,
+  });
+  const qrRow = await db.memberReport.findFirstOrThrow({
+    where: { publicId: QR, companyId: v1.id },
+  });
+  const figures = JSON.parse(JSON.stringify(qrRow.figures)) as {
+    utilization: { bps: number | null };
+    managerPayments: { confirmedNone: boolean };
+  };
+  figures.utilization.bps = 8_500;
+  figures.managerPayments.confirmedNone = true;
+  await reports1.update({
+    publicId: QR,
+    title: "Q3 2026 report to Members",
+    figures,
+    commentary: [viewParagraph("A steady quarter.")],
+  });
+  await reports1.release({
+    publicId: QR,
+    stakeholderIds: [P.id, Q.id],
+    email: false,
+  });
+
+  // K: TAX_K1 with K-1 files for P, Q and R; released to P and Q.
+  await inTx((tx) => syncComplianceDeadlines(tx, v1.id, new Date()));
+  const target = await db.complianceDeadline.findFirstOrThrow({
+    where: { companyId: v1.id, dedupeKey: "K1_TARGET:2026" },
+    select: { id: true },
+  });
+  const { publicId: K } = await reports1.create({
+    type: "TAX_K1",
+    fiscalYear: 2026,
+    relatedType: "COMPLIANCE_DEADLINE",
+    relatedId: target.id,
+  });
+  const k1 = {
+    P: await viewAttach(v1, K, "K-1 for P", P.id, "K1"),
+    Q: await viewAttach(v1, K, "K-1 for Q", Q.id, "K1"),
+    R: await viewAttach(v1, K, "K-1 for R", R.id, "K1"),
+  };
+  await reports1.release({
+    publicId: K,
+    stakeholderIds: [P.id, Q.id],
+    email: false,
+  });
+
+  // N: a notice to P only, with a shared file and a file private to P.
+  const { publicId: N } = await reports1.create({
+    type: "NOTICE",
+    noticeKind: "GENERAL",
+  });
+  await reports1.update({
+    publicId: N,
+    title: "Notice for P",
+    figures: {},
+    commentary: [viewParagraph("For P.")],
+  });
+  await viewAttach(v1, N, "Shared letter", null, "GENERAL");
+  await viewAttach(v1, N, "Letter for P", P.id, "GENERAL");
+  await reports1.release({ publicId: N, stakeholderIds: [P.id], email: false });
+
+  // Company V2: a notice to G.
+  const { publicId: X } = await reports2.create({
+    type: "NOTICE",
+    noticeKind: "GENERAL",
+  });
+  await reports2.update({
+    publicId: X,
+    title: "Company two notice",
+    figures: {},
+    commentary: [viewParagraph("For G.")],
+  });
+  await reports2.release({ publicId: X, stakeholderIds: [G.id], email: false });
+
+  // Documents, shared through the team procedure.
+  const docs = {
+    D1: await viewDocument(v1, "D1"),
+    D2: await viewDocument(v1, "D2"),
+    D3: await viewDocument(v1, "D3", Q.id),
+  };
+  const team1 = admin(a1.context);
+  await team1.shareDocuments({
+    documentPublicIds: [docs.D1],
+    stakeholderIds: [P.id, Q.id],
+  });
+  await team1.shareDocuments({
+    documentPublicIds: [docs.D2],
+    stakeholderIds: [P.id],
+  });
+  await team1.shareDocuments({
+    documentPublicIds: [docs.D3],
+    stakeholderIds: [Q.id],
+  });
+  const g2 = await viewDocument(v2, "G2");
+  await admin(a2.context).shareDocuments({
+    documentPublicIds: [g2],
+    stakeholderIds: [G.id],
+  });
+
+  const V = await db.portalUser.create({ data: { email: addr("view-v") } });
+  const W = await db.portalUser.create({ data: { email: addr("view-w") } });
+  const acc = {
+    P: await viewAccess(V.id, v1.id, P.id),
+    Q: await viewAccess(V.id, v1.id, Q.id),
+    G: await viewAccess(V.id, v2.id, G.id),
+    R: await viewAccess(W.id, v1.id, R.id),
+  };
+  vw = {
+    v1,
+    v2,
+    P,
+    Q,
+    R,
+    G,
+    admin1: a1.context,
+    admin2: a2.context,
+    reports1,
+    sessionV: await viewSession(V.id),
+    sessionW: await viewSession(W.id),
+    acc,
+    QR,
+    K,
+    N,
+    k1,
+    docs,
+  };
+  check("holderView fixture created", true);
+}
+
+type ViewHolder = "P" | "Q" | "R" | "G";
+
+/** The portal's own lists for one holder, through its access. */
+async function portalLists(h: ViewHolder) {
+  const session = h === "R" ? vw.sessionW : vw.sessionV;
+  const caller = portalCaller(session);
+  const access = vw.acc[h].publicId;
+  const [reports, documents, financials] = await Promise.all([
+    caller.reports.list({ access }),
+    caller.documents.list({ access }),
+    caller.financials.get({ access }),
+  ]);
+  return { reports, documents, publishedThrough: financials.publishedThrough };
+}
+
+function teamView(h: ViewHolder) {
+  const ctx = h === "G" ? vw.admin2 : vw.admin1;
+  return admin(ctx).holderView({ stakeholderId: vw[h].id });
+}
+
+/** holderView equals the portal's lists for the holder, field for field. */
+async function assertSame(label: string, h: ViewHolder) {
+  const [mine, portal] = await Promise.all([teamView(h), portalLists(h)]);
+  check(
+    `${label}: ${h}'s reports equal portal.reports.list`,
+    isDeepStrictEqual(mine.reports, portal.reports),
+    JSON.stringify({ team: mine.reports, portal: portal.reports }),
+  );
+  check(
+    `${label}: ${h}'s documents equal portal.documents.list`,
+    isDeepStrictEqual(mine.documents, portal.documents),
+    JSON.stringify({ team: mine.documents, portal: portal.documents }),
+  );
+  eq(
+    `${label}: ${h}'s published-through date equals the portal's`,
+    mine.publishedThrough,
+    portal.publishedThrough,
+  );
+  return mine;
+}
+
+const idsOf = (rows: { id: string }[]) => rows.map((r) => r.id).sort();
+
+/** Deep equality of two values (`eq` compares with ===). */
+function same(label: string, actual: unknown, expected: unknown): void {
+  check(
+    label,
+    isDeepStrictEqual(actual, expected),
+    `got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`,
+  );
+}
+
+async function holderViewEquality() {
+  section("H2. holderView equals what the portal lists");
+  for (const h of ["P", "Q", "R", "G"] as const) {
+    await assertSame("initially", h);
+  }
+  const p = await teamView("P");
+  const q = await teamView("Q");
+  const r = await teamView("R");
+  same("P sees QR, K and N", idsOf(p.reports), [vw.QR, vw.K, vw.N].sort());
+  same("Q sees QR and K", idsOf(q.reports), [vw.QR, vw.K].sort());
+  eq("R sees no report (not a recipient)", r.reports.length, 0);
+  same("P sees D1 and D2", idsOf(p.documents), [vw.docs.D1, vw.docs.D2].sort());
+  same(
+    "Q sees D1 and its own D3",
+    idsOf(q.documents),
+    [vw.docs.D1, vw.docs.D3].sort(),
+  );
+  eq("R sees no document", r.documents.length, 0);
+  eq("P's name is the holder's", p.holderName, vw.P.name);
+  eq("P has one active access", p.activeAccesses, 1);
+  check(
+    "previewable is a boolean",
+    typeof p.previewable === "boolean" && typeof r.previewable === "boolean",
+  );
+  eq("R has no published-through date", r.publishedThrough, null);
+  check(
+    "no storage key or bucket id in the answer",
+    !/bucketId|"key"|zz-portal-admin\//.test(JSON.stringify([p, q, r])),
+  );
+
+  section("H3. K-1 privacy");
+  const kP = p.reports.find((x) => x.id === vw.K);
+  const kQ = q.reports.find((x) => x.id === vw.K);
+  check("P's K report carries a file of P's own", kP?.hasOwnFiles === true);
+  check("Q's K report carries a file of Q's own", kQ?.hasOwnFiles === true);
+  const pJson = JSON.stringify(p);
+  check(
+    "P's view names no other holder's K-1 (name or id)",
+    ![vw.k1.Q, vw.k1.R].some(
+      (f) => pJson.includes(f.id) || pJson.includes(f.name),
+    ),
+  );
+  check(
+    "R holds a K-1 file on K but is not a recipient: K is not in R's view",
+    !idsOf(r.reports).includes(vw.K),
+  );
+  // The report page's files of K for P and Q, through the portal, stay
+  // each holder's own (the dialog relies on the same rule).
+  const getK = (h: "P" | "Q") =>
+    portalCaller(vw.sessionV).reports.get({
+      access: vw.acc[h].publicId,
+      reportId: vw.K,
+    });
+  const [gP, gQ] = await Promise.all([getK("P"), getK("Q")]);
+  same(
+    "the portal shows P only P's K-1",
+    gP.attachments.map((a) => a.id),
+    [vw.k1.P.id],
+  );
+  same(
+    "the portal shows Q only Q's K-1",
+    gQ.attachments.map((a) => a.id),
+    [vw.k1.Q.id],
+  );
+}
+
+async function holderViewChanges() {
+  section("H4. after unpublish, republish and unshare");
+  await vw.reports1.unpublish({ publicId: vw.N });
+  const p1 = await assertSame("after unpublishing N", "P");
+  check("N is gone from P's view", !idsOf(p1.reports).includes(vw.N));
+  await assertSame("after unpublishing N", "Q");
+  await vw.reports1.publish({ publicId: vw.N });
+  const p2 = await assertSame("after publishing N again", "P");
+  check("N is back in P's view", idsOf(p2.reports).includes(vw.N));
+
+  await admin(vw.admin1).unshareDocument({
+    documentPublicId: vw.docs.D1,
+    stakeholderIds: [vw.P.id],
+  });
+  const p3 = await assertSame("after unsharing D1 from P", "P");
+  check("D1 is gone from P's view", !idsOf(p3.documents).includes(vw.docs.D1));
+  const q3 = await assertSame("after unsharing D1 from P", "Q");
+  check("D1 stays in Q's view", idsOf(q3.documents).includes(vw.docs.D1));
+
+  section("H5. a disabled access: the portal refuses, the team still sees");
+  await db.portalAccess.update({
+    where: { id: vw.acc.P.id },
+    data: { status: "DISABLED", disabledAt: new Date() },
+  });
+  eq(
+    "the portal list is NOT_FOUND for the disabled access",
+    await codeOf(() =>
+      portalCaller(vw.sessionV).reports.list({ access: vw.acc.P.publicId }),
+    ),
+    "NOT_FOUND",
+  );
+  const p4 = await teamView("P");
+  eq("holderView: no active access", p4.activeAccesses, 0);
+  same(
+    "holderView still lists what an access would show",
+    idsOf(p4.reports),
+    idsOf(p3.reports),
+  );
+  await db.portalAccess.update({
+    where: { id: vw.acc.P.id },
+    data: { status: "ACTIVE", disabledAt: null },
+  });
+  await assertSame("after enabling again", "P");
+}
+
+async function holderViewRefusals() {
+  section("H6. holderView refusals");
+  const t1 = admin(vw.admin1);
+  eq(
+    "a holder of another company is NOT_FOUND",
+    await codeOf(() => t1.holderView({ stakeholderId: vw.G.id })),
+    "NOT_FOUND",
+  );
+  eq(
+    "and the other way round",
+    await codeOf(() => admin(vw.admin2).holderView({ stakeholderId: vw.P.id })),
+    "NOT_FOUND",
+  );
+  eq(
+    "an unknown holder is NOT_FOUND",
+    await codeOf(() => t1.holderView({ stakeholderId: "nope-nope" })),
+    "NOT_FOUND",
+  );
+  const unknown = await errorOf(() =>
+    t1.holderView({ stakeholderId: "nope-nope" }),
+  );
+  const foreign = await errorOf(() =>
+    t1.holderView({ stakeholderId: vw.G.id }),
+  );
+  eq("both refusals read the same", foreign?.message, unknown?.message);
+  eq(
+    "portal: read may see what a member sees",
+    await codeOf(() =>
+      admin(readOnlyA).holderView({ stakeholderId: holderA1.id }),
+    ),
+    "OK",
+  );
+  eq(
+    "without portal: holderView refused",
+    await codeOf(() =>
+      admin(noPortalA).holderView({ stakeholderId: holderA1.id }),
+    ),
+    "UNAUTHORIZED",
+  );
+}
+
+async function holderViewCleanup() {
+  await db.document.deleteMany({ where: { bucketId: { in: viewBucketIds } } });
+  await db.memberReportAttachment.deleteMany({
+    where: { bucketId: { in: viewBucketIds } },
+  });
+  await db.bucket.deleteMany({ where: { id: { in: viewBucketIds } } });
+  eq(
+    "holderView buckets removed",
+    await db.bucket.count({ where: { id: { in: viewBucketIds } } }),
+    0,
+  );
+}
+
 async function noSecrets() {
   section("14. no token or password stored, queued or printed");
   const ids = (
@@ -1044,6 +1576,11 @@ await runScenarios([
   ["resend and unlock", resendAndUnlock],
   ["permissions", rbac],
   ["mail guard", mailGuard],
+  ["holderView fixture", holderViewSetup],
+  ["holderView equality", holderViewEquality],
+  ["holderView changes", holderViewChanges],
+  ["holderView refusals", holderViewRefusals],
   ["no secrets", noSecrets],
   ["portal cleanup", cleanupPortal],
+  ["holderView cleanup", holderViewCleanup],
 ]);

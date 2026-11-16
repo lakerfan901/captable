@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isInlineContentType } from "@/lib/inline-content-type";
 import {
   type BindingFacts,
   bindingStakeholderId,
@@ -280,6 +281,37 @@ export interface VisibleDocument {
   file: DocumentFile;
   /** When the grant was created. */
   sharedAt: Date;
+}
+
+/** One row of `portal.documents.list` (5.4). Built field by field (G4). */
+export interface PortalDocumentListItem {
+  /** `Document.publicId`; the input of `portal.documents.fileUrl`. */
+  id: string;
+  name: string;
+  sharedAt: Date;
+  /** PDF and raster images open in the browser; anything else downloads. */
+  inline: boolean;
+  sizeBytes: number;
+  /** Books-and-records category (`BooksRecordCategoryEnum`), or null. */
+  category: string | null;
+}
+
+/**
+ * A visible document as the portal lists it: the document's public id, never
+ * a storage key, bucket id or holder id. Shared by `portal.documents.list`,
+ * `portal.home` and the team's `portalAdmin.holderView`, so the three agree.
+ */
+export function portalDocumentListItem(
+  v: VisibleDocument,
+): PortalDocumentListItem {
+  return {
+    id: v.document.publicId,
+    name: v.document.name,
+    sharedAt: v.sharedAt,
+    inline: isInlineContentType(v.file.mimeType),
+    sizeBytes: v.file.size,
+    category: v.document.recordCategory,
+  };
 }
 
 async function companyRef(tx: TPrismaOrTransaction, companyId: string) {
