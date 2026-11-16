@@ -117,9 +117,19 @@ export function PortalFileButton(props: PortalFileButtonProps) {
     return res.url;
   };
 
+  // Every way of closing the viewer: drops the bytes (and the blob: URL,
+  // through the effect above) and ignores a request still in flight.
+  const closeViewer = () => {
+    attempt.current++;
+    setOpen(false);
+    setBusy(false);
+    setLoaded(null);
+    setFailed(false);
+  };
+
   const refused = (error: unknown): boolean => {
     if (refusalAction(trpcErrorCode(error)) !== "reload") return false;
-    setOpen(false);
+    closeViewer();
     toast.error(GONE);
     router.refresh();
     return true;
@@ -232,13 +242,8 @@ export function PortalFileButton(props: PortalFileButtonProps) {
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) {
-            attempt.current++;
-            setBusy(false);
-            setLoaded(null);
-            setFailed(false);
-          }
+          if (next) setOpen(true);
+          else closeViewer();
         }}
       >
         <DialogContent
@@ -246,7 +251,7 @@ export function PortalFileButton(props: PortalFileButtonProps) {
             event.preventDefault();
             triggerRef.current?.focus();
           }}
-          className="max-h-[90vh] overflow-y-auto sm:max-w-3xl"
+          className="max-h-[90vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-3xl"
           data-testid="portal-file-viewer"
         >
           <DialogHeader>
@@ -261,7 +266,11 @@ export function PortalFileButton(props: PortalFileButtonProps) {
               </DialogDescription>
             )}
           </DialogHeader>
-          <div className="min-h-64 rounded-md border bg-muted">
+          {/* The preview scrolls; title and buttons stay in view (a long PDF). */}
+          <div
+            className="max-h-[60vh] min-h-64 overflow-y-auto rounded-md border bg-muted"
+            data-testid="viewer-body"
+          >
             {loaded?.kind === "pdf" && loaded.file ? (
               <div className="bg-background" data-testid="viewer-pdf">
                 <PdfPreview file={loaded.file} />
@@ -271,7 +280,7 @@ export function PortalFileButton(props: PortalFileButtonProps) {
               <img
                 src={loaded.objectUrl}
                 alt={props.name}
-                className="mx-auto max-h-[70vh] w-auto rounded"
+                className="mx-auto max-h-[58vh] w-auto rounded"
                 data-testid="viewer-image"
               />
             ) : (
@@ -297,11 +306,7 @@ export function PortalFileButton(props: PortalFileButtonProps) {
             )}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-            >
+            <Button type="button" variant="outline" onClick={closeViewer}>
               Close
             </Button>
             {/* Absent, not greyed, until the bytes are here. */}
