@@ -37,6 +37,7 @@ const LABELS: Record<string, string> = {
   "distributions.preferredReturnCents": "Distributions: Preferred Return",
   "distributions.returnOfCapitalCents": "Distributions: return of capital",
   "distributions.residualCents": "Distributions: residual",
+  "distributions.none": 'Distributions (the report says "No distribution")',
   "managerPayments.lines": "Payment to the Manager",
   "managerPayments.insiderDistributions": "Insider distribution",
   "managerPayments.insiderLoanPayments.principal":

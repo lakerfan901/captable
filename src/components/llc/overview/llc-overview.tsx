@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatDateOnly } from "@/lib/date-only";
 import { formatCents } from "@/lib/money";
 import { serverAccessControl } from "@/lib/rbac/access-control";
+import { unlessRefused } from "@/lib/trpc-forbidden";
 import { api } from "@/trpc/server";
 
 const compactUsd = new Intl.NumberFormat("en-US", {
@@ -33,7 +34,11 @@ type Props = { publicId: string };
 export async function LlcOverview({ publicId }: Props) {
   const { allow } = await serverAccessControl();
   const canRead = allow(true, ["stakeholder", "read"], false);
-  const overview = canRead ? await api.memberSchedule.overview() : null;
+  // Each section reads only what the role allows; a refused read leaves
+  // the section out instead of failing the page (custom roles).
+  const overview = canRead
+    ? await unlessRefused(() => api.memberSchedule.overview())
+    : null;
 
   const activities = (
     <ActivitiesCard

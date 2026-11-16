@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { PORTAL_FILE_URL_SECONDS } from "@/lib/portal/report-visibility-core";
 import { getPresignedGetUrl } from "@/server/file-uploads";
 import { assertKeyReadableByCompany } from "@/server/tenant-ownership";
 import { withoutAuth } from "@/trpc/api/trpc";
@@ -55,9 +56,12 @@ export const attachmentUrlProcedure = withoutAuth
 
     // Served with the stored type: PDF and images inline, the rest as a
     // download (src/lib/inline-content-type.ts).
-    const { url } = await getPresignedGetUrl(bucket.key, {
-      mimeType: bucket.mimeType,
-      name: bucket.name,
-    });
+    // P16, S19: an issued URL lives 60 seconds, as in the portal, so an
+    // unpublish, an invitation or a replaced link is not outlived for long.
+    const { url } = await getPresignedGetUrl(
+      bucket.key,
+      { mimeType: bucket.mimeType, name: bucket.name },
+      { expiresIn: PORTAL_FILE_URL_SECONDS },
+    );
     return { url };
   });

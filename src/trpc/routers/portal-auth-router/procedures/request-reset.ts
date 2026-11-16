@@ -10,6 +10,7 @@
 // in the database (throttle-core).
 
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 import { currentMailDelivery } from "@/server/mail-delivery";
 import { requestPasswordReset } from "@/server/portal/account";
 import { withoutAuth } from "@/trpc/api/trpc";
@@ -28,6 +29,8 @@ export const ZRequestResetInput = z.object({
  */
 export const RESET_MIN_RESPONSE_MS = 250;
 
+const log = logger.child({ module: "portal-request-reset" });
+
 export const requestResetProcedure = withoutAuth
   .input(ZRequestResetInput)
   .mutation(async ({ ctx, input }) => {
@@ -40,6 +43,13 @@ export const requestResetProcedure = withoutAuth
         email: input.email,
         requestIp: ctx.requestIp,
       });
+    } catch (error) {
+      // S10: a failure (a transaction timeout, say) can happen only for a
+      // known address, so it is logged and answered like every request.
+      log.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        "[Portal] password reset request failed",
+      );
     } finally {
       const wait = floor - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));

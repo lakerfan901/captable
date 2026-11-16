@@ -5,6 +5,7 @@ import {
   PORTAL_FILE_URL_SECONDS,
   portalFigures,
   visibleReportWhere,
+  withoutInternalIds,
 } from "./report-visibility-core";
 
 const holder = { companyId: "co-1", stakeholderId: "sh-a" };
@@ -45,6 +46,31 @@ describe("isPortalExportable / portalFigures (P15)", () => {
     expect(portalFigures("ANNUAL", null)).toBe(null);
     expect(portalFigures("NOTICE", figures)).toBe(null);
     expect(portalFigures("TAX_K1", figures)).toBe(null);
+  });
+
+  it("drops the internal resolution id of a Manager-payment line (G4)", () => {
+    const line = {
+      paidOn: "2026-04-06",
+      payee: "Manager Payee LLC",
+      amountCents: 150_000,
+      resolutionId: "cmres0internal00000000001",
+    };
+    const figures = {
+      grossRevenue: 5,
+      managerPayments: { confirmedNone: false, lines: [line] },
+    };
+    const shown = portalFigures("QUARTERLY", figures);
+    expect(shown?.managerPayments.lines).toEqual([
+      { ...line, resolutionId: null },
+    ]);
+    expect(shown?.grossRevenue).toBe(5);
+    expect(JSON.stringify(shown)).not.toContain("cmres0internal");
+    // the frozen figures themselves are not changed
+    expect(line.resolutionId).toBe("cmres0internal00000000001");
+    expect(withoutInternalIds(null)).toBe(null);
+    expect(withoutInternalIds({ managerPayments: null })).toEqual({
+      managerPayments: null,
+    });
   });
 });
 

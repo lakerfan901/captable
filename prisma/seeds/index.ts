@@ -36,6 +36,10 @@ const seed = async () => {
       await import("./server-only-hook.mjs");
       const { seedLlcGovernance } = await import("./llc-governance");
       await seedLlcGovernance();
+      // Investor portal demo (04-investor-portal.md P11): its own LLC with a
+      // year of published history, portal users, reports and documents.
+      const { seedLlcPortal } = await import("./llc-portal");
+      await seedLlcPortal();
     }
   } else {
     throw new Error("Seeding aborted");

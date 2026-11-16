@@ -33,6 +33,7 @@ describe("isSensitiveKey", () => {
     "authorization",
     "cookie",
     "ssn",
+    "confirm",
   ])("%s is sensitive", (key) => {
     expect(isSensitiveKey(key)).toBe(true);
   });
@@ -45,8 +46,27 @@ describe("isSensitiveKey", () => {
     "bankName",
     "amountCents",
     "beneficiaryName",
+    "confirmedNone",
+    "confirmation",
   ])("%s is not", (key) => {
     expect(isSensitiveKey(key)).toBe(false);
+  });
+});
+
+describe("the portal set-password body (P2 review)", () => {
+  it("redacts the repeated password in a JSON body", () => {
+    const body = JSON.stringify({
+      token: "t".repeat(43),
+      password: "Pass-Phrase-0001",
+      confirm: "Pass-Phrase-0001",
+    });
+    expect(redactSensitiveText(body)).not.toContain("Pass-Phrase-0001");
+    expect(redactSensitive({ confirm: "Pass-Phrase-0001" })).toEqual({
+      confirm: "[redacted]",
+    });
+    expect(redactSensitiveText("a=1&confirm=Pass-Phrase-0001")).toBe(
+      "a=1&confirm=[redacted]",
+    );
   });
 });
 

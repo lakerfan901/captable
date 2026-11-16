@@ -3,8 +3,10 @@
 //
 // A ledger-derived figure is any figure `figuresFromPeriodData` prefills from
 // the period data. Not compared: every `note`, `source` (fetch time),
-// `managerPayments.confirmedNone`, `distributions.none` (a flag derived from
-// the total, which is compared) and `utilization.bps`: a refresh keeps a
+// `managerPayments.confirmedNone`, `distributions.none` when it agrees with
+// the ledger (it is derived from the total, which is compared; a report
+// marked "No distribution" while the ledger has one is a difference, field
+// `distributions.none`) and `utilization.bps`: a refresh keeps a
 // typed utilization (`figuresFromPeriodData` with `previous`), the ledger
 // average may be missing while the quarterly checklist requires a value, and
 // the dashboard labels utilization "as reported by the Manager". Comparing it
@@ -240,6 +242,16 @@ export function reconcileFigures(
       figures.distributions[k],
       ledger.distributions[k],
     );
+  }
+
+  // The report page shows "No distribution this quarter" instead of the
+  // amounts when the flag is set, so the flag must not hide a distribution.
+  if (figures.distributions.none && !ledger.distributions.none) {
+    out.push({
+      field: "distributions.none",
+      reportCents: 0,
+      ledgerCents: ledger.distributions.totalCents,
+    });
   }
 
   const mpR = figures.managerPayments;

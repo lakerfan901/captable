@@ -5,6 +5,7 @@ import { httpBatchStreamLink, loggerLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import { useState } from "react";
 
+import { shouldLogClientError } from "@/lib/trpc-client-log";
 import "@/lib/zod-error-map";
 import type { AppRouter } from "@/trpc/api/root";
 import { getUrl, transformer } from "./shared";
@@ -23,7 +24,10 @@ export function TRPCReactProvider(props: {
         loggerLink({
           enabled: (op) =>
             process.env.NODE_ENV === "development" ||
-            (op.direction === "down" && op.result instanceof Error),
+            (op.direction === "down" &&
+              op.result instanceof Error &&
+              // a refusal the screen explains (P38 release check) is not an error
+              shouldLogClientError(op.result)),
           // Outside development a failed call is logged without its input:
           // the input of a public page's call is its emailed token (W-9,
           // ballot, member report, signing link).
