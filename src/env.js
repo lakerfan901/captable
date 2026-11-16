@@ -40,6 +40,7 @@ export const env = createEnv({
     NEXTAUTH_SECRET: z.string(),
     EMAIL_SERVER: z.string().optional(),
     EMAIL_FROM: z.string(),
+    EMAIL_FROM_TRANSACTIONAL: z.string().optional(),
 
     // upload
     UPLOAD_ENDPOINT: z.string(),
@@ -100,6 +101,7 @@ export const env = createEnv({
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
     EMAIL_SERVER: process.env.EMAIL_SERVER,
     EMAIL_FROM: process.env.EMAIL_FROM,
+    EMAIL_FROM_TRANSACTIONAL: process.env.EMAIL_FROM_TRANSACTIONAL,
 
     UPLOAD_ENDPOINT: process.env.UPLOAD_ENDPOINT,
     UPLOAD_REGION: process.env.UPLOAD_REGION,

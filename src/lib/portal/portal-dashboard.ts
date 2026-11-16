@@ -72,6 +72,30 @@ export function dashboardPeriodOfReport(report: {
   return null;
 }
 
+/**
+ * "See this period in Financials" of a report page, or null: the report
+ * covers one dashboard period (`dashboardPeriodOfReport`) and that period is
+ * on the holder's dashboard now (`periods` of `portal.financials.get`: its
+ * months are published to the holder). A report whose months have no
+ * figures, a notice or a K-1 has no link, so it never lands on an empty page.
+ */
+export function reportFinancialsHref(
+  access: string,
+  report: {
+    type: string;
+    periodStart: string | null;
+    periodEnd: string | null;
+  },
+  periods: readonly { grain: string; key: string }[],
+): string | null {
+  const period = dashboardPeriodOfReport(report);
+  if (period === null) return null;
+  const shown = periods.some(
+    (p) => p.grain === period.grain && p.key === period.key,
+  );
+  return shown ? financialsHref(access, period) : null;
+}
+
 // ---------------------------------------------------------------------------
 // Reports of the period on screen
 

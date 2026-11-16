@@ -11,6 +11,7 @@ import { normalizeRecipients } from "@/lib/email-recipients";
 import { logger } from "@/lib/logger";
 import { isMailCatcherUrl } from "@/lib/mail-catcher";
 import { buildFrom } from "@/lib/mail-from";
+import { senderAddressFor } from "@/lib/mail-sender";
 import { db } from "@/server/db";
 
 const getTransport = () => {
@@ -64,6 +65,13 @@ const resolveStakeholderId = async (
   return stakeholder?.id ?? null;
 };
 
+/** The From address for this kind of email (see lib/mail-sender). */
+const senderFor = (kind: string | undefined) =>
+  senderAddressFor(kind, {
+    investor: env.EMAIL_FROM ?? "",
+    transactional: env.EMAIL_FROM_TRANSACTIONAL,
+  });
+
 /** Writes one EmailLog row. Never throws: a throw after a successful send would make pg-boss resend. */
 const writeEmailLog = async (
   options: Omit<SendMailOptions, "from">,
@@ -86,7 +94,7 @@ const writeEmailLog = async (
       data: {
         ...row,
         toAddress,
-        fromAddress: env.EMAIL_FROM,
+        fromAddress: senderFor(log?.kind),
         subject: typeof options.subject === "string" ? options.subject : "",
         kind: log?.kind ?? "uncategorized",
         companyId,
@@ -107,8 +115,8 @@ const writeEmailLog = async (
 /**
  * Sends one email. Callers may pass the sender's display name (usually the
  * company name) as the `X-From-Name` pseudo-header: it is turned into the
- * name of the From address and NOT sent as a header. The address is always
- * EMAIL_FROM's; the name is cleaned and passed to nodemailer as
+ * name of the From address and NOT sent as a header. The address is
+ * EMAIL_FROM's, or EMAIL_FROM_TRANSACTIONAL's for account emails; the name is cleaned and passed to nodemailer as
  * `{ name, address }` so it can never change the sender (see lib/mail-from).
  */
 export const sendMail = async (
@@ -127,7 +135,7 @@ export const sendMail = async (
     info = await transport.sendMail({
       ...options,
       headers,
-      from: buildFrom(senderName, env.EMAIL_FROM ?? ""),
+      from: buildFrom(senderName, senderFor(log?.kind)),
     });
   } catch (error) {
     // Connection errors (e.g. ECONNREFUSED as an AggregateError) can have an

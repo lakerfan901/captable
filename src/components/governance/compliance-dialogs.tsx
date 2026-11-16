@@ -447,8 +447,8 @@ export function MarkDoneDialog({
             ? picker(
                 reports,
                 sentReports,
-                "No report has been sent yet.",
-                "Choose a sent report",
+                "No report has been released yet.",
+                "Choose a released report",
               )
             : null}
           {kind === "RESOLUTION"

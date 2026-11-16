@@ -8,6 +8,7 @@ import {
   financialsHref,
   latestPeriodReport,
   newestDocuments,
+  reportFinancialsHref,
   reportHref,
   reportsForPeriod,
 } from "./portal-dashboard";
@@ -309,5 +310,50 @@ describe("newestDocuments", () => {
     expect(newestDocuments(docs).map((x) => x.name)).toEqual(["e", "b", "c"]);
     expect(newestDocuments(docs, 1).map((x) => x.name)).toEqual(["e"]);
     expect(newestDocuments([])).toEqual([]);
+  });
+});
+
+describe("reportFinancialsHref", () => {
+  const quarterly = {
+    type: "QUARTERLY",
+    periodStart: "2026-04-01",
+    periodEnd: "2026-06-30",
+  };
+  it("links a quarterly report to its quarter when that quarter is on the dashboard", () => {
+    expect(reportFinancialsHref(ACCESS, quarterly, PERIODS)).toBe(
+      financialsHref(ACCESS, { grain: "quarter", key: "2026-Q2" }),
+    );
+  });
+  it("links an annual report to its year", () => {
+    expect(
+      reportFinancialsHref(
+        ACCESS,
+        { type: "ANNUAL", periodStart: "2025-01-01", periodEnd: "2025-12-31" },
+        PERIODS,
+      ),
+    ).toBe(financialsHref(ACCESS, { grain: "year", key: "2025" }));
+  });
+  it("has no link when the period has no published figures", () => {
+    expect(reportFinancialsHref(ACCESS, quarterly, [])).toBeNull();
+    expect(
+      reportFinancialsHref(
+        ACCESS,
+        {
+          type: "QUARTERLY",
+          periodStart: "2026-07-01",
+          periodEnd: "2026-09-30",
+        },
+        PERIODS,
+      ),
+    ).toBeNull();
+  });
+  it("has no link for a notice, a K-1 or an odd range", () => {
+    for (const r of [
+      { type: "NOTICE", periodStart: null, periodEnd: null },
+      { type: "TAX_K1", periodStart: "2025-01-01", periodEnd: "2025-12-31" },
+      { type: "QUARTERLY", periodStart: "2026-04-01", periodEnd: "2026-05-31" },
+    ]) {
+      expect(reportFinancialsHref(ACCESS, r, PERIODS)).toBeNull();
+    }
   });
 });

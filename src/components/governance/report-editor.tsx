@@ -537,8 +537,8 @@ export function ReportEditor({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Nothing has been sent. The draft is removed and cannot be
-                    recovered.
+                    This draft has not been released. It is removed and cannot
+                    be recovered.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

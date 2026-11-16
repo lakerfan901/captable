@@ -67,6 +67,7 @@ import {
   type ReportSummary,
   reportsForPeriod,
 } from "@/lib/portal/portal-dashboard";
+import { PortalFileButton } from "./file-button";
 import { PortalDashboardExport } from "./portal-dashboard-export";
 import type { DocumentSummary, PortalFinancials } from "./portal-financials";
 
@@ -705,13 +706,21 @@ export function PortalOverview({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {documents.map((d, i) => (
-                  // names may repeat; the order is fixed (newest first)
-                  // biome-ignore lint/suspicious/noArrayIndexKey: no id leaves the server for these rows
-                  <TableRow key={i}>
-                    <TableCell className="font-medium">{d.name}</TableCell>
+                {documents.map((d) => (
+                  <TableRow key={d.id} data-testid="newest-document">
+                    <TableCell className="font-medium">
+                      {/* opens as on the Documents page: viewer or download */}
+                      <PortalFileButton
+                        access={access}
+                        target={{ kind: "document", documentId: d.id }}
+                        name={d.name}
+                        inline={d.inline}
+                        note={d.category || undefined}
+                        variant="link"
+                      />
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {d.category ?? ""}
+                      {d.category}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {formatDate(d.sharedOn)}
