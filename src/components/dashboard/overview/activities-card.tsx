@@ -8,7 +8,7 @@ import {
   CardDescription,
   CardHeader,
 } from "@/components/ui/card";
-import { unlessForbidden } from "@/lib/trpc-forbidden";
+import { unlessRefused } from "@/lib/trpc-forbidden";
 import { api } from "@/trpc/server";
 
 type Props = {
@@ -18,9 +18,7 @@ type Props = {
 
 const ActivityCard = async ({ className, publicId }: Props) => {
   // A role without `audits: read` sees the page without this card (not a 500).
-  const activity = await unlessForbidden(() =>
-    api.audit.getAudits({ take: 4 }),
-  );
+  const activity = await unlessRefused(() => api.audit.getAudits({ take: 4 }));
   if (activity === null) return null;
 
   return (

@@ -4,7 +4,7 @@ import { IsoDateText, Money } from "@/components/llc/money";
 import { Badge } from "@/components/ui/badge";
 import { daysBetween } from "@/lib/llc/dates";
 import { serverAccessControl } from "@/lib/rbac/access-control";
-import { isForbidden } from "@/lib/trpc-forbidden";
+import { isAccessRefused } from "@/lib/trpc-forbidden";
 import { getSessionEntity } from "@/server/entity";
 import { api } from "@/trpc/server";
 import type { RouterOutputs } from "@/trpc/shared";
@@ -240,7 +240,7 @@ export async function LlcEconomicsWidgets() {
     overview = await api.llcEconomics.overview();
   } catch (e) {
     // A custom role the policy refuses: no economics cards.
-    if (isForbidden(e)) return null;
+    if (isAccessRefused(e)) return null;
     // e.g. the Preferred unit class terms are not complete yet
     if (e instanceof TRPCError && e.code === "BAD_REQUEST") {
       return (

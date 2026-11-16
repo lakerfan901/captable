@@ -1,43 +1,47 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
-import { isForbidden, unlessForbidden } from "./trpc-forbidden";
+import { isAccessRefused, unlessRefused } from "./trpc-forbidden";
 
-describe("unlessForbidden (a section the role may not read is left out)", () => {
+describe("unlessRefused (a section the role may not read is left out)", () => {
   it("returns the value when the read succeeds", async () => {
-    expect(await unlessForbidden(() => Promise.resolve(42))).toBe(42);
+    expect(await unlessRefused(() => Promise.resolve(42))).toBe(42);
   });
 
-  it("returns null for FORBIDDEN (custom role without the subject)", async () => {
+  it("returns null for the RBAC refusal (UNAUTHORIZED with the policy message)", async () => {
     const read = () =>
       Promise.reject(
         new TRPCError({
-          code: "FORBIDDEN",
-          message: "No matching permissions",
+          code: "UNAUTHORIZED",
+          message: "No matching permissions found for action: audits",
         }),
       );
-    expect(await unlessForbidden(read)).toBeNull();
+    expect(await unlessRefused(read)).toBeNull();
+  });
+
+  it("returns null for FORBIDDEN", async () => {
+    const read = () => Promise.reject(new TRPCError({ code: "FORBIDDEN" }));
+    expect(await unlessRefused(read)).toBeNull();
   });
 
   it("rethrows every other error", async () => {
     await expect(
-      unlessForbidden(() =>
+      unlessRefused(() =>
         Promise.reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR" })),
       ),
     ).rejects.toThrow();
     await expect(
-      unlessForbidden(() =>
-        Promise.reject(new TRPCError({ code: "NOT_FOUND" })),
-      ),
+      unlessRefused(() => Promise.reject(new TRPCError({ code: "NOT_FOUND" }))),
     ).rejects.toThrow();
     await expect(
-      unlessForbidden(() => Promise.reject(new Error("db down"))),
+      unlessRefused(() => Promise.reject(new Error("db down"))),
     ).rejects.toThrow("db down");
   });
 
-  it("isForbidden only matches a TRPCError with that code", () => {
-    expect(isForbidden(new TRPCError({ code: "FORBIDDEN" }))).toBe(true);
-    expect(isForbidden(new TRPCError({ code: "UNAUTHORIZED" }))).toBe(false);
-    expect(isForbidden({ code: "FORBIDDEN" })).toBe(false);
-    expect(isForbidden(null)).toBe(false);
+  it("isAccessRefused only matches a TRPCError with those codes", () => {
+    expect(isAccessRefused(new TRPCError({ code: "FORBIDDEN" }))).toBe(true);
+    expect(isAccessRefused(new TRPCError({ code: "UNAUTHORIZED" }))).toBe(true);
+    expect(isAccessRefused(new TRPCError({ code: "BAD_REQUEST" }))).toBe(false);
+    expect(isAccessRefused({ code: "FORBIDDEN" })).toBe(false);
+    expect(isAccessRefused(null)).toBe(false);
   });
 });
