@@ -46,7 +46,34 @@ export function portalFigures<F>(
   type: string,
   frozenFigures: F | null,
 ): F | null {
-  return isPortalExportable(type) ? frozenFigures : null;
+  return isPortalExportable(type) && frozenFigures !== null
+    ? withoutInternalIds(frozenFigures)
+    : null;
+}
+
+/**
+ * G4: the figures without internal ids. A Manager-payment line may name the
+ * approving resolution by its internal `Resolution.id` (a team-side link);
+ * an investor gets the line with `resolutionId: null`. Everything else is
+ * returned as frozen. A value of another shape is returned unchanged.
+ */
+export function withoutInternalIds<F>(figures: F): F {
+  if (typeof figures !== "object" || figures === null) return figures;
+  const payments = (figures as { managerPayments?: unknown }).managerPayments;
+  if (typeof payments !== "object" || payments === null) return figures;
+  const lines = (payments as { lines?: unknown }).lines;
+  if (!Array.isArray(lines)) return figures;
+  return {
+    ...figures,
+    managerPayments: {
+      ...payments,
+      lines: lines.map((line: unknown) =>
+        typeof line === "object" && line !== null && "resolutionId" in line
+          ? { ...line, resolutionId: null }
+          : line,
+      ),
+    },
+  };
 }
 
 /** Newest release first; ties by public id so the order is stable. */

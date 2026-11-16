@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { GOVERNANCE_TIME_ZONE, utcDateToYmd } from "@/lib/governance/dates";
 import { isInlineContentType } from "@/lib/inline-content-type";
+import { portalFigures } from "@/lib/portal/report-visibility-core";
 import { withoutAuth } from "@/trpc/api/trpc";
 import { readFrozenContent } from "../../member-report-router/procedures/shared";
 import { visibleAttachmentWhere } from "../access";
@@ -85,10 +86,8 @@ export const viewProcedure = withoutAuth
         periodEnd:
           report.periodEnd === null ? null : utcDateToYmd(report.periodEnd),
         sentAt: report.sentAt,
-        figures:
-          report.type === "QUARTERLY" || report.type === "ANNUAL"
-            ? frozen.figures
-            : null,
+        // G4: no internal resolution id reaches the reader.
+        figures: portalFigures(report.type, frozen.figures),
         doc: frozen.doc,
       },
       attachments: attachments.map((a) => ({
