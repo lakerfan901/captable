@@ -25,6 +25,9 @@
  * (disabled). Q1 is released to A and B, Q3 (which fills Q2) to B only.
  * Economics "today" is pinned to 2026-10-05.
  *
+ * P17 (T-EXP-*): the Excel exports of the investor's and the team's views,
+ * read back with ExcelJS and compared with the same view's answer.
+ *
  * Oracle: `live` against `getPeriodEconomics` + `getPositions` (and the term
  * clock against `getTermClock`); `published` and `portal.financials.get`
  * against the stored rows; `status.drift` against what `restate` then
@@ -42,8 +45,14 @@ import {
   RESTATE_REASON_MIN_LENGTH,
   SELF_HOLDER_ID,
 } from "@/lib/llc/financial-dashboard-core";
-import { monthEnd, monthsBetween } from "@/lib/llc/financial-periods";
 import {
+  monthEnd,
+  monthsBetween,
+  periodLabel,
+} from "@/lib/llc/financial-periods";
+import {
+  aggregate,
+  aggregateHolder,
   type FundMonth,
   fundMonthFromJson,
   holderMonthFromJson,
@@ -925,6 +934,638 @@ async function unpublishRepublish() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// P17: the Excel exports of the dashboard views
+
+type ExcelJsModule = typeof import("exceljs");
+type Sheet = import("exceljs").Worksheet;
+
+async function loadExcelJs(): Promise<ExcelJsModule> {
+  const mod = (await import("exceljs")) as ExcelJsModule & {
+    default?: ExcelJsModule;
+  };
+  return mod.default ?? mod;
+}
+
+/** A downloaded workbook read back: each sheet as plain values (formula cells: their result). */
+async function readBook(base64: string) {
+  const ExcelJS = await loadExcelJs();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(Buffer.from(base64, "base64") as never);
+  const sheets = new Map<string, { ws: Sheet; rows: unknown[][] }>();
+  wb.eachSheet((ws) => {
+    const rows: unknown[][] = [];
+    ws.eachRow({ includeEmpty: true }, (row, n) => {
+      const out: unknown[] = [];
+      row.eachCell({ includeEmpty: true }, (cell, c) => {
+        const v = cell.value as unknown;
+        out[c - 1] =
+          v !== null && typeof v === "object" && "formula" in (v as object)
+            ? (v as { result: unknown }).result
+            : v;
+      });
+      rows[n - 1] = out;
+    });
+    sheets.set(ws.name, { ws, rows });
+  });
+  return { wb, sheets };
+}
+
+type Book = Awaited<ReturnType<typeof readBook>>;
+
+function sheetOf(book: Book, name: string) {
+  const s = book.sheets.get(name);
+  if (!s) throw new Error(`no sheet ${name}`);
+  return s;
+}
+
+/** The header row of a sheet (its first cell "Figure" or "Month"). */
+function headerOf(book: Book, name: string): unknown[] {
+  const { rows } = sheetOf(book, name);
+  return rows.find((r) => r?.[0] === "Figure" || r?.[0] === "Month") ?? [];
+}
+
+/** The row whose first cell is `label`. */
+function rowOf(book: Book, name: string, label: string): unknown[] {
+  const { rows } = sheetOf(book, name);
+  const r = rows.find((x) => x?.[0] === label);
+  if (!r) throw new Error(`no row ${label} in ${name}`);
+  return r;
+}
+
+/** The rows from the header down (the title block excluded). */
+function tableOf(book: Book, name: string): unknown[][] {
+  const { rows } = sheetOf(book, name);
+  return rows.slice(
+    rows.findIndex((r) => r?.[0] === "Figure" || r?.[0] === "Month"),
+  );
+}
+
+/** Every text and number of the workbook (for the isolation scan). */
+function bookValues(book: Book): { texts: string[]; numbers: number[] } {
+  const texts: string[] = [];
+  const numbers: number[] = [];
+  for (const { rows } of book.sheets.values()) {
+    for (const r of rows) {
+      for (const v of r ?? []) {
+        if (typeof v === "string") texts.push(v);
+        if (typeof v === "number") numbers.push(v);
+      }
+    }
+  }
+  texts.push(
+    book.wb.creator ?? "",
+    book.wb.title ?? "",
+    ...[...book.sheets.keys()],
+  );
+  return { texts, numbers };
+}
+
+const dollars = (cents: number | bigint) => Number(cents) / 100;
+
+function exportLogs() {
+  return db.portalAccessLog.count({
+    where: {
+      portalUserId: { in: portalUserIds },
+      event: "FINANCIALS_EXPORTED",
+    },
+  });
+}
+
+const YEAR_2026 = {
+  grain: "quarter" as const,
+  from: "2026-01-01",
+  to: "2026-12-01",
+};
+
+async function exportsScenario() {
+  section("T-EXP-1: the investor's export equals the investor's view (P17)");
+  const { c, A, B, M, X, reports, team } = w1;
+  const aView = await U1.financials.get({ access: acc.u1A });
+  const aFund = aView.fundMonths.map(fundMonthFromJson);
+  const aMine = aView.holderMonths.map(holderMonthFromJson);
+  const logs0 = await exportLogs();
+  const fundFile = await U1.financials.exportXlsx({
+    access: acc.u1A,
+    view: "fund",
+    ...YEAR_2026,
+    focus: "2026-Q1",
+    compare: "previous",
+  });
+  check(
+    "fund export: an .xlsx file named by the company and the period",
+    /^zz-fin-dash-one-[a-z0-9]+-financials-2026-Q1\.xlsx$/.test(
+      fundFile.fileName,
+    ),
+    fundFile.fileName,
+  );
+  const fund = await readBook(fundFile.base64);
+  eq(
+    "fund export: the five fund sheets",
+    [...fund.sheets.keys()],
+    ["Summary", "Income", "Expenses", "Distributions", "Capital"],
+  );
+  eq(
+    "fund export: `to` past the published-through date is clamped (Q1 only)",
+    headerOf(fund, "Income"),
+    ["Figure", "Basis", "Q1 2026", "Total"],
+  );
+  const [q1] = aggregate(aFund, "quarter", {
+    from: "2026-01-01",
+    to: "2026-03-01",
+  });
+  const q1v = q1?.values;
+  if (!q1v) throw new Error("fixture: Q1 has values");
+  eq(
+    "Income: Gross Revenue of Q1 and its Total = aggregate of the investor's months",
+    rowOf(fund, "Income", "Gross Revenue").slice(2, 4),
+    [dollars(q1v.grossRevenue), dollars(q1v.grossRevenue)],
+  );
+  eq(
+    "Income: net operating income and Available Cash",
+    [
+      rowOf(
+        fund,
+        "Income",
+        "Net operating income (before reserves and distributions)",
+      )[2],
+      rowOf(fund, "Income", "Available Cash")[2],
+    ],
+    [dollars(q1v.netOperatingIncome), dollars(q1v.availableCash)],
+  );
+  eq(
+    "Capital: paid-in capital at the end of Q1",
+    rowOf(fund, "Capital", "Paid-in capital")[2],
+    dollars(q1v.paidInCapital),
+  );
+  eq(
+    "Summary: the selected period Q1 2026, compared with Q4 2025",
+    headerOf(fund, "Summary"),
+    ["Figure", "Q1 2026", "Q4 2025", "Change", "Change %", "Notes"],
+  );
+  eq(
+    "Summary: the Gross Revenue tile",
+    rowOf(fund, "Summary", "Gross Revenue")[1],
+    dollars(q1v.grossRevenue),
+  );
+  check(
+    "fund export: no month after March 2026 anywhere",
+    !/(Apr|May|Jun|Jul|Aug|Sep|Oct) 2026|Q[234] 2026/.test(
+      bookValues(fund).texts.join("\n"),
+    ),
+  );
+  const incomeSheet = sheetOf(fund, "Income");
+  const income = incomeSheet.ws;
+  const headerRow = incomeSheet.rows.findIndex((r) => r?.[0] === "Figure") + 1;
+  const revRow =
+    incomeSheet.rows.findIndex((r) => r?.[0] === "Gross Revenue") + 1;
+  const total = income.getCell(revRow, 4).value as { formula?: string };
+  eq(
+    "Income: the Total is a SUM formula over the period columns",
+    total.formula,
+    `SUM(C${revRow}:C${revRow})`,
+  );
+  const frozen = income.views[0] as {
+    state?: string;
+    xSplit?: number;
+    ySplit?: number;
+  };
+  eq(
+    "Income: money format; header and first column frozen",
+    [
+      income.getCell(revRow, 3).numFmt,
+      frozen.state,
+      frozen.xSplit,
+      frozen.ySplit,
+    ],
+    ['"$"#,##0.00;[Red]("$"#,##0.00)', "frozen", 1, headerRow],
+  );
+  eq(
+    "Income: printed landscape, one page wide, header repeated",
+    [
+      income.pageSetup.orientation,
+      income.pageSetup.fitToWidth,
+      income.pageSetup.printTitlesRow,
+    ],
+    ["landscape", 1, `${headerRow}:${headerRow}`],
+  );
+  eq("one FINANCIALS_EXPORTED row", (await exportLogs()) - logs0, 1);
+  const row = await db.portalAccessLog.findFirstOrThrow({
+    where: {
+      portalUserId: { in: portalUserIds },
+      event: "FINANCIALS_EXPORTED",
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  const accessRow = await db.portalAccess.findFirstOrThrow({
+    where: { publicId: acc.u1A },
+  });
+  eq(
+    "the log row: A's access in company 1, target 'financials' named by the view",
+    [
+      row.companyId,
+      row.stakeholderId,
+      row.portalAccessId,
+      row.targetType,
+      row.targetId,
+      row.targetName,
+    ],
+    [
+      c.id,
+      A.id,
+      accessRow.id,
+      "financials",
+      null,
+      "Financials, Q1 2026, by quarter",
+    ],
+  );
+
+  section("T-EXP-2: My investment: the holder's own figures, nobody else's");
+  const mineFile = await U1.financials.exportXlsx({
+    access: acc.u1A,
+    view: "mine",
+    grain: "month",
+    from: "2026-01-01",
+    to: "2026-09-01",
+    focus: "2026-03",
+    compare: "previous",
+  });
+  const mine = await readBook(mineFile.base64);
+  eq(
+    "mine export: the holder's sheets",
+    [...mine.sheets.keys()],
+    ["Summary", "My investment", "My distributions", "My contributions"],
+  );
+  eq("mine export: January to March only", headerOf(mine, "My investment"), [
+    "Figure",
+    "Basis",
+    "Jan 2026",
+    "Feb 2026",
+    "Mar 2026",
+    "Total",
+  ]);
+  const calendar = aFund.map((m) => ({
+    month: m.month,
+    inProgress: m.inProgress,
+  }));
+  const [aQ1] = aggregateHolder(aMine, calendar, "quarter", {
+    from: "2026-01-01",
+    to: "2026-03-01",
+  });
+  eq(
+    "My investment: paid in (end) and contributions (sum) = A's records",
+    [
+      rowOf(mine, "My investment", "Paid in")[5],
+      rowOf(mine, "My investment", "Contributions")[5],
+    ],
+    [
+      dollars(aQ1?.values?.paidIn ?? 0n),
+      dollars(aQ1?.values?.contributions ?? 0n),
+    ],
+  );
+  check(
+    "the fixture is not vacuous: A paid in $100,000",
+    aQ1?.values?.paidIn === 10_000_000n,
+  );
+  const bJson = await U3.financials.get({ access: acc.u3B });
+  const bOwn = bJson.holderMonths.map(holderMonthFromJson);
+  const bOnlyNumbers = [
+    ...new Set(
+      bOwn.flatMap((h) => [
+        dollars(h.paidIn),
+        dollars(h.committed),
+        Number(h.preferredUnits) / 1_000_000,
+      ]),
+    ),
+  ].filter((n) => n !== 0);
+  check(
+    "the scan is not vacuous: B has its own amounts ($250,000 paid in)",
+    bOnlyNumbers.includes(250_000),
+    bOnlyNumbers.join(", "),
+  );
+  for (const [label, book] of [
+    ["fund export", fund],
+    ["mine export", mine],
+  ] as const) {
+    const { texts, numbers } = bookValues(book);
+    const all = texts.join("\n");
+    const names = [A, B, M, X, w2.P].flatMap((h) => [h.id, h.name, h.email]);
+    const hits = names.filter((s) => s && all.includes(s));
+    check(
+      `${label}: no holder's name, id or email (A's own included)`,
+      hits.length === 0,
+      hits.join(", "),
+    );
+    const leaked = bOnlyNumbers.filter((n) => numbers.includes(n));
+    check(
+      `${label}: none of B's own amounts`,
+      leaked.length === 0,
+      leaked.join(", "),
+    );
+  }
+
+  section("T-EXP-3: refusals write no log row");
+  const before = await exportLogs();
+  const req = { view: "fund" as const, ...YEAR_2026 };
+  eq(
+    "a range wholly after the published-through date: NOT_FOUND",
+    (
+      await errorOf(() =>
+        U1.financials.exportXlsx({
+          access: acc.u1A,
+          ...req,
+          from: "2026-04-01",
+        }),
+      )
+    )?.code,
+    "NOT_FOUND",
+  );
+  eq(
+    "a disabled access: NOT_FOUND",
+    (await errorOf(() => U4.financials.exportXlsx({ access: acc.u4B, ...req })))
+      ?.code,
+    "NOT_FOUND",
+  );
+  eq(
+    "another person's access id: NOT_FOUND",
+    (await errorOf(() => U1.financials.exportXlsx({ access: acc.u3B, ...req })))
+      ?.code,
+    "NOT_FOUND",
+  );
+  eq(
+    "a reversed range: BAD_REQUEST",
+    (
+      await errorOf(() =>
+        U1.financials.exportXlsx({
+          access: acc.u1A,
+          ...req,
+          from: "2026-09-01",
+          to: "2026-01-01",
+        }),
+      )
+    )?.code,
+    "BAD_REQUEST",
+  );
+  await reports.unpublish({ publicId: pub.q1 as string });
+  eq(
+    "after Q1 is unpublished, A's export is NOT_FOUND",
+    (await errorOf(() => U1.financials.exportXlsx({ access: acc.u1A, ...req })))
+      ?.code,
+    "NOT_FOUND",
+  );
+  eq("no log row for any refusal", (await exportLogs()) - before, 0);
+  await reports.publish({ publicId: pub.q1 as string });
+  const again = await readBook(
+    (
+      await U1.financials.exportXlsx({
+        access: acc.u1A,
+        ...req,
+        focus: "2026-Q1",
+      })
+    ).base64,
+  );
+  eq(
+    "republished: the same Income sheet as before",
+    sheetOf(again, "Income").rows,
+    sheetOf(fund, "Income").rows,
+  );
+
+  section("T-EXP-4: B's export: nine months; another company's holder");
+  const bBook = await readBook(
+    (
+      await U3.financials.exportXlsx({
+        access: acc.u3B,
+        view: "fund",
+        grain: "month",
+        from: "2026-01-01",
+        to: "2027-06-01",
+      })
+    ).base64,
+  );
+  eq("B: January to September, by month", headerOf(bBook, "Income").slice(2), [
+    ...JAN_SEP.map((m) => periodLabel(m.slice(0, 7))),
+    "Total",
+  ]);
+  const bFund = bJson.fundMonths.map(fundMonthFromJson);
+  const sepRevenue = bFund.find((m) => m.month === "2026-09-01")?.grossRevenue;
+  eq(
+    "B: September revenue = B's view",
+    rowOf(bBook, "Income", "Gross Revenue")[10],
+    dollars(sepRevenue ?? 0n),
+  );
+  const pView = await U1.financials.get({ access: acc.u1P });
+  const pBook = await readBook(
+    (
+      await U1.financials.exportXlsx({
+        access: acc.u1P,
+        view: "fund",
+        grain: "quarter",
+        from: "2026-01-01",
+        to: "2026-03-01",
+      })
+    ).base64,
+  );
+  const [pQ1] = aggregate(pView.fundMonths.map(fundMonthFromJson), "quarter", {
+    from: "2026-01-01",
+    to: "2026-03-01",
+  });
+  eq(
+    "P (company 2): company 2's figures under company 2's name",
+    [
+      rowOf(pBook, "Income", "Gross Revenue")[2],
+      rowOf(pBook, "Capital", "Paid-in capital")[2],
+      pBook.wb.creator,
+    ],
+    [dollars(pQ1?.values?.grossRevenue ?? 0n), 80_000, w2.c.name],
+  );
+  check(
+    "P's export names nothing of company 1",
+    !bookValues(pBook).texts.join("\n").includes(c.name),
+  );
+
+  section("T-EXP-5: the team's export of each source (P39)");
+  const teamLogs = await exportLogs();
+  const live = await team.live();
+  const liveBook = await readBook(
+    (
+      await team.exportXlsx({
+        source: "live",
+        view: "fund",
+        grain: "month",
+        from: "2026-01-01",
+        to: "2026-10-01",
+        focus: "2026-10",
+      })
+    ).base64,
+  );
+  eq(
+    "live: January to October, October in progress",
+    headerOf(liveBook, "Income").slice(2),
+    [
+      ...monthsBetween("2026-01-01", "2026-09-01").map((m) =>
+        periodLabel(m.slice(0, 7)),
+      ),
+      "Oct 2026 (in progress)",
+      "Total",
+    ],
+  );
+  const [liveYtd] = aggregate(live.fundMonths.map(fundMonthFromJson), "year", {
+    from: "2026-01-01",
+    to: "2026-10-01",
+  });
+  eq(
+    "live: the Total of Gross Revenue = the ledger's year to date",
+    rowOf(liveBook, "Income", "Gross Revenue")[12],
+    dollars(liveYtd?.values?.grossRevenue ?? 0n),
+  );
+  const published = await readBook(
+    (
+      await team.exportXlsx({
+        source: "published",
+        view: "fund",
+        ...YEAR_2026,
+      })
+    ).base64,
+  );
+  eq(
+    "published: Q1–Q3 (every published month), no holder sheet",
+    [headerOf(published, "Income").slice(2), [...published.sheets.keys()]],
+    [
+      ["Q1 2026", "Q2 2026", "Q3 2026", "Total"],
+      ["Summary", "Income", "Expenses", "Distributions", "Capital"],
+    ],
+  );
+  const previewMine = await readBook(
+    (
+      await team.exportXlsx({
+        source: "published",
+        asHolder: A.id,
+        view: "mine",
+        grain: "month",
+        from: "2026-01-01",
+        to: "2026-09-01",
+        focus: "2026-03",
+      })
+    ).base64,
+  );
+  eq(
+    "preview as A: My investment equals A's own export",
+    tableOf(previewMine, "My investment"),
+    tableOf(mine, "My investment"),
+  );
+  check(
+    "preview names the previewed holder (the team may see it)",
+    bookValues(previewMine).texts.some((t) => t.includes(A.name)),
+  );
+  const previewFund = await readBook(
+    (
+      await team.exportXlsx({
+        source: "published",
+        asHolder: A.id,
+        view: "fund",
+        ...YEAR_2026,
+      })
+    ).base64,
+  );
+  eq(
+    "preview as A, fund: A's published-through date (Q1 only), not the team's",
+    headerOf(previewFund, "Income").slice(2),
+    ["Q1 2026", "Total"],
+  );
+  const refused = (fn: () => Promise<unknown>) =>
+    errorOf(fn).then((e) => e?.code);
+  eq(
+    "without asHolder, 'mine' is refused (the team's export has no My investment)",
+    await refused(() =>
+      team.exportXlsx({ source: "published", view: "mine", ...YEAR_2026 }),
+    ),
+    "BAD_REQUEST",
+  );
+  eq(
+    "live with a holder is refused",
+    await refused(() =>
+      team.exportXlsx({
+        source: "live",
+        asHolder: A.id,
+        view: "fund",
+        ...YEAR_2026,
+      }),
+    ),
+    "BAD_REQUEST",
+  );
+  eq(
+    "asHolder of another company: NOT_FOUND",
+    await refused(() =>
+      team.exportXlsx({
+        source: "published",
+        asHolder: w2.P.id,
+        view: "fund",
+        ...YEAR_2026,
+      }),
+    ),
+    "NOT_FOUND",
+  );
+  const ro = dashboard(
+    await customTeamContext(c, [
+      { subject: "llc-financials", actions: ["read"] },
+    ]),
+  );
+  const roFile = await ro.exportXlsx({
+    source: "published",
+    view: "fund",
+    ...YEAR_2026,
+  });
+  eq(
+    "llc-financials: read exports the published view (as the admin does)",
+    tableOf(await readBook(roFile.base64), "Income"),
+    tableOf(published, "Income"),
+  );
+  eq(
+    "a preview export without portal: read is FORBIDDEN",
+    await refused(() =>
+      ro.exportXlsx({
+        source: "published",
+        asHolder: A.id,
+        view: "mine",
+        ...YEAR_2026,
+      }),
+    ),
+    "FORBIDDEN",
+  );
+  const noFin = dashboard(
+    await customTeamContext(c, [{ subject: "portal", actions: ["read"] }]),
+  );
+  eq(
+    "without llc-financials: read the export is refused",
+    await refused(() =>
+      noFin.exportXlsx({ source: "published", view: "fund", ...YEAR_2026 }),
+    ),
+    "UNAUTHORIZED",
+  );
+  const c2 = await readBook(
+    (
+      await w2.team.exportXlsx({
+        source: "published",
+        view: "fund",
+        ...YEAR_2026,
+      })
+    ).base64,
+  );
+  eq(
+    "company 2's team export: company 2 only (Q1, its paid-in)",
+    [
+      headerOf(c2, "Income").slice(2),
+      rowOf(c2, "Capital", "Paid-in capital")[2],
+    ],
+    [["Q1 2026", "Total"], 80_000],
+  );
+  eq(
+    "team exports write no portal log row",
+    (await exportLogs()) - teamLogs,
+    0,
+  );
+}
+
 async function driftAndRestate() {
   section("T-DASH-8: a back-dated change appears in status.drift");
   const { c, A, B, team } = w1;
@@ -1331,6 +1972,7 @@ runScenarios([
   ["before release and live", beforeRelease],
   ["releases and visibility", afterReleases],
   ["unpublish and republish", unpublishRepublish],
+  ["exports (P17)", exportsScenario],
   ["drift and restate", driftAndRestate],
   ["answer scan", answerScan],
   ["portal cleanup", cleanupPortal],
