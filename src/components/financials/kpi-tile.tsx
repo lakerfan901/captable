@@ -2,6 +2,7 @@
 
 import { RiArrowDownLine, RiArrowUpLine } from "@remixicon/react";
 import type { ReactNode } from "react";
+import { useChartPrintMode } from "@/components/charts/chart-frame";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { TileView } from "./dashboard-model";
@@ -64,8 +65,9 @@ export function Sparkline({ values }: { values: readonly number[] }) {
  */
 export function KpiTile({ tile }: { tile: TileView }) {
   const d = tile.delta;
+  const print = useChartPrintMode();
   return (
-    <Card className="min-w-0" data-kpi={tile.key}>
+    <Card className="min-w-0 break-inside-avoid" data-kpi={tile.key}>
       <div className="flex items-start justify-between gap-2 p-4 pb-2">
         <p className="text-sm font-medium text-muted-foreground">
           {tile.label}
@@ -74,7 +76,10 @@ export function KpiTile({ tile }: { tile: TileView }) {
       </div>
       <div className="flex flex-col gap-y-1 p-4 pt-0">
         <div
-          className="whitespace-nowrap text-2xl font-semibold leading-8"
+          className={cn(
+            "whitespace-nowrap font-semibold",
+            print ? "text-xl leading-7" : "text-2xl leading-8",
+          )}
           data-testid="kpi-value"
         >
           {tile.value}
@@ -123,6 +128,18 @@ export function KpiGrid({
   children: ReactNode;
   columns?: 4 | 5 | 6;
 }) {
+  // printed (700 px wide): three tiles a row, so the tiles fit the first page;
+  // two on a phone's print preview
+  if (useChartPrintMode()) {
+    return (
+      <div
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3"
+        data-testid="kpi-grid"
+      >
+        {children}
+      </div>
+    );
+  }
   return (
     <div className="@container">
       <div

@@ -127,7 +127,7 @@ export function PrintLayout({
         </div>
       </div>
       <main
-        className="mx-auto flex w-full max-w-[700px] flex-col gap-6 px-4 py-6 print:max-w-none print:p-0"
+        className="mx-auto flex w-full max-w-[700px] flex-col gap-6 px-4 py-6"
         data-testid="print-layout"
       >
         <header className="flex flex-col gap-1 border-b pb-4">

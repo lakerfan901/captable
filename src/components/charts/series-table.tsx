@@ -35,17 +35,23 @@ export function SeriesTable({
       className={print ? "mt-4" : "max-h-[22rem] overflow-auto"}
       data-testid={testId}
     >
-      <Table>
+      {/* printed: smaller type and wrapping headers, so every column fits the page */}
+      <Table className={print ? "text-xs" : undefined}>
         <caption className="sr-only">{caption}</caption>
         <TableHeader>
           <TableRow>
-            <TableHead className="h-10 whitespace-nowrap px-3">
+            <TableHead
+              className={cn("h-10 whitespace-nowrap", print ? "px-2" : "px-3")}
+            >
               {firstColumn}
             </TableHead>
             {model.columns.map((c) => (
               <TableHead
                 key={c.key}
-                className="h-10 whitespace-nowrap px-3 text-right"
+                className={cn(
+                  "h-10 text-right",
+                  print ? "px-2 whitespace-normal" : "whitespace-nowrap px-3",
+                )}
               >
                 {c.label}
               </TableHead>
@@ -57,7 +63,10 @@ export function SeriesTable({
             <TableRow key={r.key} data-row={r.key}>
               <TableHead
                 scope="row"
-                className="h-auto whitespace-nowrap px-3 py-2 font-normal text-foreground"
+                className={cn(
+                  "h-auto whitespace-nowrap py-2 font-normal text-foreground",
+                  print ? "px-2" : "px-3",
+                )}
               >
                 {r.label}
               </TableHead>
@@ -65,7 +74,10 @@ export function SeriesTable({
                 <TableCell
                   key={model.columns[i]?.key ?? i}
                   data-col={model.columns[i]?.key}
-                  className="whitespace-nowrap px-3 py-2 text-right tabular-nums"
+                  className={cn(
+                    "whitespace-nowrap py-2 text-right tabular-nums",
+                    print ? "px-2" : "px-3",
+                  )}
                 >
                   {cell}
                 </TableCell>
