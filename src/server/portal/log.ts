@@ -22,7 +22,12 @@ export interface PortalLogContext {
 
 export interface PortalLogEntry {
   event: PortalEventEnum;
-  targetType?: "memberReport" | "memberReportAttachment" | "document";
+  /** "financials": a dashboard export (no id; the name describes the view). */
+  targetType?:
+    | "memberReport"
+    | "memberReportAttachment"
+    | "document"
+    | "financials";
   targetId?: string;
   /** The name at the time, so the log still reads after a delete. */
   targetName?: string;

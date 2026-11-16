@@ -11,6 +11,7 @@ import {
   ChartFrame,
   type ChartSpan,
   type ChartView,
+  useChartPrintMode,
 } from "@/components/charts/chart-frame";
 import {
   ChartHitLayer,
@@ -74,6 +75,7 @@ export function CashFlowChart({
 }) {
   const [view, setView] = useState<ChartView>("chart");
   const { ref, width } = useElementWidth<HTMLDivElement>();
+  const print = useChartPrintMode();
   const v = period?.values ?? null;
   const steps = v !== null && opening !== null ? cashFlowSteps(v, opening) : [];
   const title = "Cash flow of the period";
@@ -94,6 +96,31 @@ export function CashFlowChart({
       ? `${label}: Available Cash from ${formatValue("cents", opening)} to ${formatValue("cents", v.availableCash)}.`
       : "Available Cash at the start of the period is not available.";
 
+  const tableView = (
+    <SeriesTable
+      model={table}
+      firstColumn="Step"
+      caption={`${title}, ${label}`}
+      testId="table-cash-flow"
+    />
+  );
+  const plot = (
+    <>
+      <ChartLegend
+        chartId="cash-flow"
+        items={(["in", "out", "total"] as const).map((k) => ({
+          key: k,
+          label: KIND_LABEL[k],
+          slot: KIND_SLOT[k],
+          mark: "bar",
+        }))}
+      />
+      <div ref={ref} className="relative w-full" style={{ height: HEIGHT }}>
+        {width > 0 ? <Waterfall steps={steps} width={width} tip={tip} /> : null}
+      </div>
+    </>
+  );
+
   return (
     <ChartFrame
       id="cash-flow"
@@ -107,30 +134,15 @@ export function CashFlowChart({
         <p className="text-sm text-muted-foreground">
           No figures for this period.
         </p>
-      ) : view === "table" ? (
-        <SeriesTable
-          model={table}
-          firstColumn="Step"
-          caption={`${title}, ${label}`}
-          testId="table-cash-flow"
-        />
-      ) : (
+      ) : print ? (
         <>
-          <ChartLegend
-            chartId="cash-flow"
-            items={(["in", "out", "total"] as const).map((k) => ({
-              key: k,
-              label: KIND_LABEL[k],
-              slot: KIND_SLOT[k],
-              mark: "bar",
-            }))}
-          />
-          <div ref={ref} className="relative w-full" style={{ height: HEIGHT }}>
-            {width > 0 ? (
-              <Waterfall steps={steps} width={width} tip={tip} />
-            ) : null}
-          </div>
+          {plot}
+          {tableView}
         </>
+      ) : view === "table" ? (
+        tableView
+      ) : (
+        plot
       )}
     </ChartFrame>
   );

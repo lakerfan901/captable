@@ -4,10 +4,12 @@ import {
   type Cell,
   type CellKind,
   cellValue,
+  columnLetter,
   numberFormat,
   type SheetModel,
   sheetLayout,
   sheetTotals,
+  valueKind,
   type WorkbookModel,
 } from "@/lib/xlsx/workbook-model";
 
@@ -74,7 +76,7 @@ function writeCell(
   opts: { strong?: boolean; indent?: boolean; rule?: boolean },
 ) {
   const target = sheet.getCell(row, col + 1);
-  const kind = cell?.kind ?? columnKind;
+  const kind = valueKind(cell) ?? columnKind;
   target.value = cellValue(cell);
   const format = numberFormat(kind);
   if (format) target.numFmt = format;
@@ -198,14 +200,16 @@ function writeSheet(sheet: Worksheet, model: SheetModel, footerLeft: string) {
     };
   }
 
-  // Frozen header, no gridlines.
+  // Frozen header (and row labels when asked), no gridlines.
+  const xSplit = model.freezeColumns ?? 0;
+  const topLeft = `${columnLetter(xSplit)}${layout.headerRow + 1}`;
   sheet.views = [
     {
       state: "frozen",
-      xSplit: 0,
+      xSplit,
       ySplit: layout.headerRow,
-      topLeftCell: `A${layout.headerRow + 1}`,
-      activeCell: `A${layout.headerRow + 1}`,
+      topLeftCell: topLeft,
+      activeCell: topLeft,
       showGridLines: false,
     },
   ];

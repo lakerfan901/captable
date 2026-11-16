@@ -247,3 +247,44 @@
     @apply text-lg font-medium sm:text-xl;
   }
 }
+
+/*
+ * Print layout of the financial dashboard (04-investor-portal.md 5.9 "PDF";
+ * package P17, `src/components/financials/print-layout.tsx`). The layout is
+ * mounted as a direct child of <body>: on screen it covers the app (a print
+ * preview); in print it is the only thing printed (navigation, sidebar,
+ * toasts and every other child of <body> are not), in the normal flow so
+ * the browser paginates it, with background colours kept.
+ */
+[data-print-root] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: auto;
+  background: #fff;
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body:has(> [data-print-root]) > :not([data-print-root]) {
+    display: none !important;
+  }
+
+  html:has(> body > [data-print-root]),
+  body:has(> [data-print-root]) {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  [data-print-root] {
+    position: static;
+    inset: auto;
+    overflow: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

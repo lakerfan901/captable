@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +66,26 @@ export function SegmentedControl<K extends string>({
   );
 }
 
+/**
+ * Print mode (04-investor-portal.md 5.9 "PDF", package P17): inside the
+ * print layout every chart shows its plot AND its table, without the view
+ * switch, and a card is never split across pages.
+ */
+const ChartPrintContext = createContext(false);
+
+export function ChartPrintMode({ children }: { children: ReactNode }) {
+  return (
+    <ChartPrintContext.Provider value={true}>
+      {children}
+    </ChartPrintContext.Provider>
+  );
+}
+
+/** True inside the print layout. */
+export function useChartPrintMode(): boolean {
+  return useContext(ChartPrintContext);
+}
+
 export type ChartView = "chart" | "table" | "share";
 
 /** Width of a chart card in the dashboard grid (`ChartGrid`). */
@@ -106,12 +126,14 @@ export function ChartFrame({
   span?: ChartSpan;
   children: ReactNode;
 }) {
+  const print = useChartPrintMode();
   return (
     <Card
       id={`chart-${id}`}
       data-chart={id}
       className={cn(
         "flex min-w-0 flex-col",
+        print && "break-inside-avoid",
         span === "full" && "col-span-full",
         span === "half" && "col-span-full @min-[52rem]:col-span-3",
         span === "third" &&
@@ -129,15 +151,17 @@ export function ChartFrame({
             <p className="text-sm text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        <SegmentedControl
-          options={views}
-          value={view}
-          onChange={onViewChange}
-          label={`Show ${title} as`}
-          size="sm"
-          className="shrink-0"
-          testId={`view-${id}`}
-        />
+        {print ? null : (
+          <SegmentedControl
+            options={views}
+            value={view}
+            onChange={onViewChange}
+            label={`Show ${title} as`}
+            size="sm"
+            className="shrink-0"
+            testId={`view-${id}`}
+          />
+        )}
       </CardHeader>
       <CardContent className="mt-auto">{children}</CardContent>
     </Card>
@@ -146,6 +170,13 @@ export function ChartFrame({
 
 /** The dashboard's chart grid: six columns on wide containers, one on narrow ones. */
 export function ChartGrid({ children }: { children: ReactNode }) {
+  // printed: one chart under the other, the charts starting on a new page
+  const print = useChartPrintMode();
+  if (print) {
+    return (
+      <div className="flex break-before-page flex-col gap-6">{children}</div>
+    );
+  }
   return (
     <div className="@container">
       <div className="grid grid-cols-6 gap-6">{children}</div>

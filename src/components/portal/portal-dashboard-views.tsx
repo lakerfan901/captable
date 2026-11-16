@@ -14,6 +14,7 @@ import {
   HOLDER_TILES,
   tileViews,
 } from "@/components/financials/dashboard-model";
+import { exportRequestOf } from "@/components/financials/export-request";
 import { FundDashboard } from "@/components/financials/fund-dashboard";
 import { InvestmentDashboard } from "@/components/financials/investment-dashboard";
 import { KpiGrid, KpiTile } from "@/components/financials/kpi-tile";
@@ -66,6 +67,7 @@ import {
   type ReportSummary,
   reportsForPeriod,
 } from "@/lib/portal/portal-dashboard";
+import { PortalDashboardExport } from "./portal-dashboard-export";
 import type { DocumentSummary, PortalFinancials } from "./portal-financials";
 
 // The investor's dashboard pages (04-investor-portal.md 6.3; package P15):
@@ -221,10 +223,8 @@ export function PortalFinancialsView({
       </div>
     );
   }
-  const view = resolveView(state, {
-    inception: series.inception,
-    last: series.last,
-  });
+  const span = { inception: series.inception, last: series.last };
+  const view = resolveView(state, span);
   const rows = reportsForPeriod(
     access,
     data.periods,
@@ -241,6 +241,13 @@ export function PortalFinancialsView({
         onStateChange={setState}
         restatements={data.restatements}
         targetSaleDate={data.termClock?.targetSaleDate ?? null}
+        actions={
+          <PortalDashboardExport
+            access={access}
+            page="financials"
+            request={exportRequestOf(state, span, "fund")}
+          />
+        }
       />
       <PeriodReportsCard label={periodLabel(view.focus.key)} rows={rows} />
     </div>
@@ -291,7 +298,7 @@ function HistoryCard({
   );
 }
 
-function MyTables({
+export function MyTables({
   mine,
   restatements,
 }: {
@@ -422,10 +429,8 @@ export function PortalInvestmentView({
       </div>
     );
   }
-  const view = resolveView(state, {
-    inception: series.inception,
-    last: series.last,
-  });
+  const span = { inception: series.inception, last: series.last };
+  const view = resolveView(state, span);
   const rows = reportsForPeriod(
     access,
     data.periods,
@@ -442,6 +447,13 @@ export function PortalInvestmentView({
         state={state}
         onStateChange={setState}
         restatements={data.restatements}
+        actions={
+          <PortalDashboardExport
+            access={access}
+            page="investment"
+            request={exportRequestOf(state, span, "mine")}
+          />
+        }
       />
       <MyTables mine={series.mine} restatements={data.restatements} />
       <PeriodReportsCard label={periodLabel(view.focus.key)} rows={rows} />

@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useChartPrintMode } from "./chart-frame";
 import type { TableModel } from "./chart-model";
 
 /**
@@ -27,8 +28,13 @@ export function SeriesTable({
   caption: string;
   testId?: string;
 }) {
+  // printed whole: no scroll box (a clipped table would print cut off)
+  const print = useChartPrintMode();
   return (
-    <div className="max-h-[22rem] overflow-auto" data-testid={testId}>
+    <div
+      className={print ? "mt-4" : "max-h-[22rem] overflow-auto"}
+      data-testid={testId}
+    >
       <Table>
         <caption className="sr-only">{caption}</caption>
         <TableHeader>
