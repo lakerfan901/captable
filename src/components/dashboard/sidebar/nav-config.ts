@@ -15,7 +15,8 @@ export type NavIconKey =
   | "folderChart"
   | "list"
   | "equalizer"
-  | "fileText";
+  | "fileText"
+  | "userShared";
 
 export type NavSubItem = { name: string; href: string };
 
@@ -201,6 +202,12 @@ const llcSections: NavSection[] = [
           ...documentsSubNav,
           { name: "Books and records", href: "/books" },
         ],
+      },
+      {
+        name: "Investor portal",
+        href: "/investor-portal",
+        icon: "userShared",
+        subject: "portal",
       },
       { name: "Updates", href: "/updates", icon: "mailSend" },
       {

@@ -46,6 +46,8 @@ export interface AudiencePickerHolder {
   hasK1?: boolean;
   /** A short note after the name, e.g. "transferor". */
   note?: string;
+  /** Lines under the name, e.g. the people who can sign in for this holder (P9). */
+  details?: readonly string[];
 }
 
 export interface AudiencePickerPreset {
@@ -68,6 +70,8 @@ export interface AudiencePickerProps {
   /** After "{n} of {m} selected.", e.g. "Prospects cannot receive a report and are not listed." */
   countNote?: string;
   disabled?: boolean;
+  /** The "Notice email" column; on by default (the share dialog of P9 lists people instead). */
+  showNoticeEmail?: boolean;
 }
 
 export function AudiencePicker({
@@ -80,6 +84,7 @@ export function AudiencePicker({
   showK1 = false,
   countNote,
   disabled = false,
+  showNoticeEmail = true,
 }: AudiencePickerProps) {
   const [query, setQuery] = useState("");
   const searchId = useId();
@@ -137,7 +142,11 @@ export function AudiencePicker({
               <TableHead className="whitespace-nowrap">
                 Class and units
               </TableHead>
-              <TableHead className="whitespace-nowrap">Notice email</TableHead>
+              {showNoticeEmail ? (
+                <TableHead className="whitespace-nowrap">
+                  Notice email
+                </TableHead>
+              ) : null}
               {showPortal ? <TableHead>Portal</TableHead> : null}
               {showK1 ? <TableHead>K-1 attached</TableHead> : null}
             </TableRow>
@@ -146,7 +155,12 @@ export function AudiencePicker({
             {shown.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4 + (showPortal ? 1 : 0) + (showK1 ? 1 : 0)}
+                  colSpan={
+                    3 +
+                    (showNoticeEmail ? 1 : 0) +
+                    (showPortal ? 1 : 0) +
+                    (showK1 ? 1 : 0)
+                  }
                   className="text-center text-muted-foreground"
                 >
                   No holder matches.
@@ -180,17 +194,28 @@ export function AudiencePicker({
                           ({note})
                         </span>
                       ) : null}
+                      {h.details && h.details.length > 0 ? (
+                        <ul className="mt-1 space-y-0.5 text-xs font-normal text-muted-foreground">
+                          {h.details.map((d) => (
+                            <li key={d} className="break-all">
+                              {d}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {unitsText(h)}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {h.noticeEmail || (
-                        <span className="text-muted-foreground">
-                          No notice email
-                        </span>
-                      )}
-                    </TableCell>
+                    {showNoticeEmail ? (
+                      <TableCell className="whitespace-nowrap">
+                        {h.noticeEmail || (
+                          <span className="text-muted-foreground">
+                            No notice email
+                          </span>
+                        )}
+                      </TableCell>
+                    ) : null}
                     {showPortal ? (
                       <TableCell className="whitespace-nowrap">
                         {h.portal ? PORTAL_STATE_LABEL[h.portal] : "—"}
