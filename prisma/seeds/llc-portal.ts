@@ -463,197 +463,209 @@ export async function seedLlcPortal(
   // --- Reports, released in date order (portal only) ----------------------
   // Each release queues the filing job (the report PDF), for the app's
   // workers. `queueJobs: false` (a test run) leaves the queue alone.
-  if (opts.queueJobs !== false) await queue.start();
-  const currentMembers = [alice.id, bob.id, carol.id, octagon.id];
-  setEconomicsToday("2026-10-05");
+  const useQueue = opts.queueJobs !== false;
+  if (useQueue) await queue.start();
   try {
-    async function quarterly(fiscalYear: number, fiscalQuarter: 1 | 2 | 3 | 4) {
-      const { publicId } = await reports.create({
-        type: "QUARTERLY",
-        fiscalYear,
-        fiscalQuarter,
+    const currentMembers = [alice.id, bob.id, carol.id, octagon.id];
+    setEconomicsToday("2026-10-05");
+    try {
+      async function quarterly(
+        fiscalYear: number,
+        fiscalQuarter: 1 | 2 | 3 | 4,
+      ) {
+        const { publicId } = await reports.create({
+          type: "QUARTERLY",
+          fiscalYear,
+          fiscalQuarter,
+        });
+        const row = await db.memberReport.findFirstOrThrow({
+          where: { publicId, companyId: company.id },
+        });
+        // biome-ignore lint/suspicious/noExplicitAny: seed edits the figures JSON
+        const figures = JSON.parse(JSON.stringify(row.figures)) as any;
+        figures.utilization.bps ??= 8_000;
+        figures.managerPayments.confirmedNone = true;
+        await reports.update({
+          publicId,
+          title: `Q${fiscalQuarter} ${fiscalYear} report to Members`,
+          figures,
+          commentary: [
+            paragraph(
+              `Operations in Q${fiscalQuarter} ${fiscalYear}: utilization rose and the colocation contract was renewed.`,
+            ),
+          ],
+        });
+        await reports.release({
+          publicId,
+          stakeholderIds: currentMembers,
+          email: false,
+        });
+        return publicId;
+      }
+
+      await quarterly(2025, 4);
+
+      // The 2025 annual report, with its two statements.
+      const annual = await reports.create({ type: "ANNUAL", fiscalYear: 2025 });
+      const annualRow = await db.memberReport.findFirstOrThrow({
+        where: { publicId: annual.publicId, companyId: company.id },
       });
-      const row = await db.memberReport.findFirstOrThrow({
-        where: { publicId, companyId: company.id },
-      });
+      for (const [kind, label] of [
+        ["BALANCE_SHEET", "Balance sheet 2025"],
+        ["INCOME_STATEMENT", "Income statement 2025"],
+      ] as const) {
+        const b = await pdfBucket(`${label}.pdf`, label);
+        await db.memberReportAttachment.create({
+          data: {
+            reportId: annualRow.id,
+            companyId: company.id,
+            kind,
+            name: `${label}.pdf`,
+            bucketId: b.id,
+          },
+        });
+      }
       // biome-ignore lint/suspicious/noExplicitAny: seed edits the figures JSON
-      const figures = JSON.parse(JSON.stringify(row.figures)) as any;
-      figures.utilization.bps ??= 8_000;
-      figures.managerPayments.confirmedNone = true;
+      const af = JSON.parse(JSON.stringify(annualRow.figures)) as any;
+      if (af?.managerPayments) af.managerPayments.confirmedNone = true;
       await reports.update({
-        publicId,
-        title: `Q${fiscalQuarter} ${fiscalYear} report to Members`,
-        figures,
+        publicId: annual.publicId,
+        title: "2025 annual report to Members",
+        figures: af,
         commentary: [
-          paragraph(
-            `Operations in Q${fiscalQuarter} ${fiscalYear}: utilization rose and the colocation contract was renewed.`,
-          ),
+          paragraph("The first (short) fiscal year of the Company."),
         ],
       });
       await reports.release({
-        publicId,
+        publicId: annual.publicId,
         stakeholderIds: currentMembers,
         email: false,
       });
-      return publicId;
+
+      await quarterly(2026, 1);
+      await quarterly(2026, 2);
+      await quarterly(2026, 3);
+    } finally {
+      setEconomicsToday(null);
     }
 
-    await quarterly(2025, 4);
-
-    // The 2025 annual report, with its two statements.
-    const annual = await reports.create({ type: "ANNUAL", fiscalYear: 2025 });
-    const annualRow = await db.memberReport.findFirstOrThrow({
-      where: { publicId: annual.publicId, companyId: company.id },
+    // A 2025 TAX_K1 report with K-1 files for Alice and Bob.
+    await db.$transaction(
+      (tx) => syncComplianceDeadlines(tx, company.id, new Date()),
+      TX,
+    );
+    const k1Target = await db.complianceDeadline.findFirst({
+      where: { companyId: company.id, dedupeKey: "K1_TARGET:2025" },
+      select: { id: true },
     });
-    for (const [kind, label] of [
-      ["BALANCE_SHEET", "Balance sheet 2025"],
-      ["INCOME_STATEMENT", "Income statement 2025"],
-    ] as const) {
-      const b = await pdfBucket(`${label}.pdf`, label);
-      await db.memberReportAttachment.create({
-        data: {
-          reportId: annualRow.id,
-          companyId: company.id,
-          kind,
-          name: `${label}.pdf`,
-          bucketId: b.id,
-        },
+    if (k1Target) {
+      const k1 = await reports.create({
+        type: "TAX_K1",
+        fiscalYear: 2025,
+        relatedType: "COMPLIANCE_DEADLINE",
+        relatedId: k1Target.id,
       });
+      const k1Row = await db.memberReport.findFirstOrThrow({
+        where: { publicId: k1.publicId, companyId: company.id },
+      });
+      for (const h of [alice, bob]) {
+        const b = await pdfBucket(
+          `Schedule K-1 2025 ${h.name}.pdf`,
+          `Schedule K-1 (2025) for ${h.name}`,
+        );
+        await db.memberReportAttachment.create({
+          data: {
+            reportId: k1Row.id,
+            companyId: company.id,
+            kind: "K1",
+            name: `Schedule K-1 2025 ${h.name}.pdf`,
+            bucketId: b.id,
+            stakeholderId: h.id,
+          },
+        });
+      }
+      await reports.release({
+        publicId: k1.publicId,
+        stakeholderIds: [alice.id, bob.id],
+        email: false,
+      });
+    } else {
+      console.log(
+        "⚠️  no 2025 K-1 deadline: the TAX_K1 report is not seeded".yellow,
+      );
     }
-    // biome-ignore lint/suspicious/noExplicitAny: seed edits the figures JSON
-    const af = JSON.parse(JSON.stringify(annualRow.figures)) as any;
-    if (af?.managerPayments) af.managerPayments.confirmedNone = true;
+
+    // A notice with a shared letter.
+    const notice = await reports.create({
+      type: "NOTICE",
+      noticeKind: "GENERAL",
+    });
+    const noticeRow = await db.memberReport.findFirstOrThrow({
+      where: { publicId: notice.publicId, companyId: company.id },
+    });
+    const letter = await pdfBucket(
+      "Letter to Members.pdf",
+      "Letter to Members",
+    );
+    await db.memberReportAttachment.create({
+      data: {
+        reportId: noticeRow.id,
+        companyId: company.id,
+        kind: "GENERAL",
+        name: "Letter to Members.pdf",
+        bucketId: letter.id,
+      },
+    });
     await reports.update({
-      publicId: annual.publicId,
-      title: "2025 annual report to Members",
-      figures: af,
-      commentary: [paragraph("The first (short) fiscal year of the Company.")],
+      publicId: notice.publicId,
+      title: "Notice: new colocation site",
+      figures: {},
+      commentary: [
+        paragraph("The servers move to the new colocation site in November."),
+      ],
     });
     await reports.release({
-      publicId: annual.publicId,
+      publicId: notice.publicId,
       stakeholderIds: currentMembers,
       email: false,
     });
 
-    await quarterly(2026, 1);
-    await quarterly(2026, 2);
-    await quarterly(2026, 3);
-  } finally {
-    setEconomicsToday(null);
-  }
-
-  // A 2025 TAX_K1 report with K-1 files for Alice and Bob.
-  await db.$transaction(
-    (tx) => syncComplianceDeadlines(tx, company.id, new Date()),
-    TX,
-  );
-  const k1Target = await db.complianceDeadline.findFirst({
-    where: { companyId: company.id, dedupeKey: "K1_TARGET:2025" },
-    select: { id: true },
-  });
-  if (k1Target) {
-    const k1 = await reports.create({
-      type: "TAX_K1",
-      fiscalYear: 2025,
-      relatedType: "COMPLIANCE_DEADLINE",
-      relatedId: k1Target.id,
-    });
-    const k1Row = await db.memberReport.findFirstOrThrow({
-      where: { publicId: k1.publicId, companyId: company.id },
-    });
-    for (const h of [alice, bob]) {
-      const b = await pdfBucket(
-        `Schedule K-1 2025 ${h.name}.pdf`,
-        `Schedule K-1 (2025) for ${h.name}`,
-      );
-      await db.memberReportAttachment.create({
-        data: {
-          reportId: k1Row.id,
-          companyId: company.id,
-          kind: "K1",
-          name: `Schedule K-1 2025 ${h.name}.pdf`,
-          bucketId: b.id,
-          stakeholderId: h.id,
-        },
-      });
-    }
-    await reports.release({
-      publicId: k1.publicId,
-      stakeholderIds: [alice.id, bob.id],
-      email: false,
-    });
-  } else {
-    console.log(
-      "⚠️  no 2025 K-1 deadline: the TAX_K1 report is not seeded".yellow,
-    );
-  }
-
-  // A notice with a shared letter.
-  const notice = await reports.create({
-    type: "NOTICE",
-    noticeKind: "GENERAL",
-  });
-  const noticeRow = await db.memberReport.findFirstOrThrow({
-    where: { publicId: notice.publicId, companyId: company.id },
-  });
-  const letter = await pdfBucket("Letter to Members.pdf", "Letter to Members");
-  await db.memberReportAttachment.create({
-    data: {
-      reportId: noticeRow.id,
-      companyId: company.id,
-      kind: "GENERAL",
-      name: "Letter to Members.pdf",
-      bucketId: letter.id,
-    },
-  });
-  await reports.update({
-    publicId: notice.publicId,
-    title: "Notice: new colocation site",
-    figures: {},
-    commentary: [
-      paragraph("The servers move to the new colocation site in November."),
-    ],
-  });
-  await reports.release({
-    publicId: notice.publicId,
-    stakeholderIds: currentMembers,
-    email: false,
-  });
-
-  // A notice sent before the portal existed (publishedAt never set).
-  const legacy = await db.memberReport.create({
-    data: {
-      publicId: generatePublicId(),
-      companyId: company.id,
-      type: "NOTICE",
-      status: "SENT",
-      noticeKind: "GENERAL",
-      title: "Welcome letter (sent before the portal)",
-      commentary: [],
-      figures: {},
-      frozenContent: {
+    // A notice sent before the portal existed (publishedAt never set).
+    const legacy = await db.memberReport.create({
+      data: {
+        publicId: generatePublicId(),
+        companyId: company.id,
+        type: "NOTICE",
+        status: "SENT",
+        noticeKind: "GENERAL",
         title: "Welcome letter (sent before the portal)",
-        doc: [paragraph("Welcome to the Company.")],
+        commentary: [],
+        figures: {},
+        frozenContent: {
+          title: "Welcome letter (sent before the portal)",
+          doc: [paragraph("Welcome to the Company.")],
+        },
+        frozenHash: "seed",
+        sentAt: new Date("2025-10-02T16:00:00Z"),
+        authorId: member.id,
       },
-      frozenHash: "seed",
-      sentAt: new Date("2025-10-02T16:00:00Z"),
-      authorId: member.id,
-    },
-  });
-  await db.memberReportRecipient.create({
-    data: {
-      reportId: legacy.id,
-      companyId: company.id,
-      stakeholderId: alice.id,
-      name: alice.name,
-      email: alice.email,
-      tokenExpiresAt: new Date(Date.now() + 365 * 86_400_000),
-      sentAt: new Date("2025-10-02T16:00:00Z"),
-      sendCount: 1,
-    },
-  });
-
-  if (opts.queueJobs !== false) await queue.stop({ graceful: true });
+    });
+    await db.memberReportRecipient.create({
+      data: {
+        reportId: legacy.id,
+        companyId: company.id,
+        stakeholderId: alice.id,
+        name: alice.name,
+        email: alice.email,
+        tokenExpiresAt: new Date(Date.now() + 365 * 86_400_000),
+        sentAt: new Date("2025-10-02T16:00:00Z"),
+        sendCount: 1,
+      },
+    });
+  } finally {
+    // a failed release must not leave pg-boss running (the seed would hang)
+    if (useQueue) await queue.stop({ graceful: true });
+  }
 
   // --- One restatement (P35): reopen, back-date, restate, close -------------
   const term = await db.llcTerm.findUnique({
