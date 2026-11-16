@@ -17,6 +17,7 @@ import {
   ChartFrame,
   type ChartSpan,
   type ChartView,
+  useChartPrintMode,
 } from "./chart-frame";
 import {
   ChartHitLayer,
@@ -136,6 +137,7 @@ export function PeriodChart<V>({
   const [view, setView] = useState<ChartView>("chart");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const { ref, width } = useElementWidth<HTMLDivElement>();
+  const print = useChartPrintMode();
 
   const rows = useMemo(
     () => buildPeriodRows(periods, series, extras),
@@ -155,6 +157,54 @@ export function PeriodChart<V>({
       ),
     );
 
+  const table = (
+    <SeriesTable
+      model={tableModel(rows, series, extras)}
+      caption={title}
+      testId={`table-${id}`}
+    />
+  );
+  const plot = (
+    <>
+      <ChartLegend
+        chartId={id}
+        items={series.map((s) => ({
+          key: s.key,
+          label: s.label,
+          slot: s.slot,
+          mark: s.mark,
+        }))}
+        hidden={hidden}
+        onToggle={toggle}
+      />
+      <div ref={ref} className="relative w-full" style={{ height }}>
+        {!anyData ? (
+          <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            No figures for these periods.
+          </p>
+        ) : width > 0 ? (
+          <PlotBody
+            id={id}
+            title={title}
+            rows={rows}
+            series={series}
+            shown={shown}
+            extras={extras}
+            unit={axisUnit}
+            width={width}
+            height={height}
+            highlightKey={highlightKey}
+            activation={activation}
+            focusRequest={focusRequest}
+            endLabels={endLabels}
+            fixedMax={fixedMax}
+            fadePartial={fadePartial}
+          />
+        ) : null}
+      </div>
+    </>
+  );
+
   return (
     <ChartFrame
       id={id}
@@ -165,53 +215,17 @@ export function PeriodChart<V>({
       onViewChange={setView}
       span={span}
     >
-      {view === "share" && share ? (
+      {print ? (
+        <>
+          {plot}
+          {table}
+        </>
+      ) : view === "share" && share ? (
         share()
       ) : view === "table" ? (
-        <SeriesTable
-          model={tableModel(rows, series, extras)}
-          caption={title}
-          testId={`table-${id}`}
-        />
+        table
       ) : (
-        <>
-          <ChartLegend
-            chartId={id}
-            items={series.map((s) => ({
-              key: s.key,
-              label: s.label,
-              slot: s.slot,
-              mark: s.mark,
-            }))}
-            hidden={hidden}
-            onToggle={toggle}
-          />
-          <div ref={ref} className="relative w-full" style={{ height }}>
-            {!anyData ? (
-              <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No figures for these periods.
-              </p>
-            ) : width > 0 ? (
-              <PlotBody
-                id={id}
-                title={title}
-                rows={rows}
-                series={series}
-                shown={shown}
-                extras={extras}
-                unit={axisUnit}
-                width={width}
-                height={height}
-                highlightKey={highlightKey}
-                activation={activation}
-                focusRequest={focusRequest}
-                endLabels={endLabels}
-                fixedMax={fixedMax}
-                fadePartial={fadePartial}
-              />
-            ) : null}
-          </div>
-        </>
+        plot
       )}
     </ChartFrame>
   );

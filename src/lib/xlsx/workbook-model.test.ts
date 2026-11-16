@@ -4,8 +4,10 @@ import {
   cleanText,
   columnLetter,
   date,
+  formula,
   integer,
   money,
+  multiple,
   NUMBER_FORMATS,
   numberFormat,
   parseYmd,
@@ -15,6 +17,8 @@ import {
   sheetName,
   sheetTotals,
   text,
+  units,
+  valueKind,
   workbookFileName,
 } from "./workbook-model";
 
@@ -33,6 +37,37 @@ describe("cells", () => {
     expect(cellValue(percent(0))).toBe(0);
     expect(percent(null)).toBeNull();
     expect(() => percent(12.5)).toThrow();
+  });
+
+  test("multiples and units", () => {
+    expect(cellValue(multiple(1200))).toBe(0.12);
+    expect(cellValue(units(12_345_678))).toBe(12.345678);
+    expect(multiple(null)).toBeNull();
+    expect(() => units(0.5)).toThrow();
+    expect(numberFormat("multiple")).toBe('0.00"x"');
+    expect(numberFormat("units")).toBe("#,##0.00####");
+  });
+
+  test("formulas: only references and SUM of a range, with a number result", () => {
+    const f = formula("SUM(C7:F7)", money(1_000));
+    expect(cellValue(f)).toEqual({ formula: "SUM(C7:F7)", result: 10 });
+    expect(valueKind(f)).toBe("money");
+    expect(cellValue(formula("F7", multiple(1250)))).toEqual({
+      formula: "F7",
+      result: 0.125,
+    });
+    for (const bad of [
+      "=1+1",
+      "SUM(A1)",
+      "HYPERLINK(A1)",
+      "A0",
+      "a1",
+      "C7:F7",
+    ]) {
+      expect(() => formula(bad, money(1))).toThrow();
+    }
+    expect(() => formula("A1", text("x"))).toThrow();
+    expect(() => formula("A1", null)).toThrow();
   });
 
   test("integers", () => {

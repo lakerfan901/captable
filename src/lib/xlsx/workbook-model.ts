@@ -11,14 +11,35 @@
 // total. Text is always a text value: the renderer never turns a string into
 // a formula (spreadsheet formula injection, S20).
 
-export type CellKind = "text" | "money" | "percent" | "date" | "integer";
+export type CellKind =
+  | "text"
+  | "money"
+  | "percent"
+  | "date"
+  | "integer"
+  | "multiple"
+  | "units";
+
+/** A number cell: the value a formula cell caches as its result. */
+export type NumberCell =
+  | { kind: "money"; cents: number }
+  | { kind: "percent"; bps: number }
+  | { kind: "integer"; value: number }
+  /** a multiple in basis points of "x" (DPI: 1200 = 0.12x) */
+  | { kind: "multiple"; bps: number }
+  /** units in micro-units (6 decimals) */
+  | { kind: "units"; micro: number };
 
 export type Cell =
   | { kind: "text"; value: string }
-  | { kind: "money"; cents: number }
-  | { kind: "percent"; bps: number }
   | { kind: "date"; ymd: string }
-  | { kind: "integer"; value: number }
+  | NumberCell
+  /**
+   * A formula built by the workbook code from cell addresses (`SUM(C7:F7)`,
+   * `F7`), never from user text, with its result cached (ExcelJS does not
+   * calculate). Formatted as its result.
+   */
+  | { kind: "formula"; formula: string; result: NumberCell }
   | null; // blank
 
 export interface Column {
@@ -49,6 +70,11 @@ export interface SheetModel {
   heading: HeadingLine[];
   columns: Column[];
   rows: SheetRow[];
+  /**
+   * Columns frozen at the left (with the header rows): 1 keeps the row
+   * labels in view on a wide sheet. Default 0.
+   */
+  freezeColumns?: number;
   /** Line written under the header row when `rows` is empty. */
   emptyText?: string;
   /**
@@ -123,6 +149,46 @@ export function integer(value: number | null): Cell {
   return { kind: "integer", value };
 }
 
+/** A multiple in basis points of "x" (10000 = 1.00x); null gives a blank cell. */
+export function multiple(bps: number | null): Cell {
+  if (bps === null) return null;
+  assertSafeInteger(bps, "Multiple basis points");
+  return { kind: "multiple", bps };
+}
+
+/** Units in micro-units (1_000_000 = 1 unit); null gives a blank cell. */
+export function units(micro: number | null): Cell {
+  if (micro === null) return null;
+  assertSafeInteger(micro, "Micro-units");
+  return { kind: "units", micro };
+}
+
+/** References and the one function the workbook code writes: `F7`, `SUM(C7:F7)`. */
+const SAFE_FORMULA =
+  /^(?:[A-Z]{1,3}[1-9]\d{0,6}|SUM\([A-Z]{1,3}[1-9]\d{0,6}:[A-Z]{1,3}[1-9]\d{0,6}\))$/;
+
+/** A formula cell with its cached result; refuses anything but a cell reference or a SUM of a range. */
+export function formula(expression: string, result: Cell): Cell {
+  if (!SAFE_FORMULA.test(expression)) {
+    throw new Error(`Not a formula the workbook writes: ${expression}`);
+  }
+  if (
+    result === null ||
+    result.kind === "text" ||
+    result.kind === "date" ||
+    result.kind === "formula"
+  ) {
+    throw new Error("A formula caches a number result");
+  }
+  return { kind: "formula", formula: expression, result };
+}
+
+/** The kind that decides a cell's number format (a formula: its result's). */
+export function valueKind(cell: Cell): CellKind | null {
+  if (cell === null) return null;
+  return cell.kind === "formula" ? cell.result.kind : cell.kind;
+}
+
 const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** Year, month (1–12) and day of a valid "YYYY-MM-DD", or null. */
@@ -157,9 +223,20 @@ export function date(ymd: string | null): Cell {
  * midnight (ExcelJS converts a Date to a serial day from its UTC time, so the
  * calendar day never shifts with the server's zone).
  */
-export function cellValue(cell: Cell): string | number | Date | null {
+export function cellValue(
+  cell: Cell,
+): string | number | Date | { formula: string; result: number } | null {
   if (cell === null) return null;
   switch (cell.kind) {
+    case "formula":
+      return {
+        formula: cell.formula,
+        result: cellValue(cell.result) as number,
+      };
+    case "multiple":
+      return cell.bps / 10_000;
+    case "units":
+      return cell.micro / 1_000_000;
     case "text":
       return cell.value;
     case "money":
@@ -185,6 +262,8 @@ export const NUMBER_FORMATS = {
   percent: "0.00%",
   date: "mmm d, yyyy",
   integer: "#,##0",
+  multiple: '0.00"x"',
+  units: "#,##0.00####",
 } as const;
 
 export function numberFormat(kind: CellKind): string | null {
@@ -293,7 +372,8 @@ export function sheetTotals(sheet: SheetModel): TotalCell[] {
     }
     let sum = 0;
     for (const row of sheet.rows) {
-      const cell = row.cells[column] ?? null;
+      let cell = row.cells[column] ?? null;
+      if (cell?.kind === "formula") cell = cell.result;
       if (cell?.kind === "money") sum += cell.cents;
       else if (cell?.kind === "integer") sum += cell.value;
     }

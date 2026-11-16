@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useMemo } from "react";
-import { ChartGrid } from "@/components/charts/chart-frame";
+import { ChartGrid, useChartPrintMode } from "@/components/charts/chart-frame";
 import { partialOf } from "@/components/charts/chart-model";
 import { compareIso, type IsoDate } from "@/lib/llc/dates";
 import { type MonthKey, periodLabel } from "@/lib/llc/financial-periods";
@@ -88,6 +88,7 @@ function Body({
   actions?: ReactNode;
 }) {
   const opts = { inceptionMonth: inception };
+  const print = useChartPrintMode();
   const view = resolveView(state, { inception, last });
   const { backRef, activationFor, focusFor, onControlsChange } = useDrillFocus(
     state,
@@ -161,14 +162,20 @@ function Body({
 
   return (
     <div className="flex flex-col gap-6" data-testid="investment-dashboard">
-      <PeriodControls
-        ref={backRef}
-        state={state}
-        view={view}
-        onChange={onControlsChange}
-        partialNote={partialNote}
-        actions={actions}
-      />
+      {print ? (
+        partialNote ? (
+          <p className="text-sm text-muted-foreground">{partialNote}</p>
+        ) : null
+      ) : (
+        <PeriodControls
+          ref={backRef}
+          state={state}
+          view={view}
+          onChange={onControlsChange}
+          partialNote={partialNote}
+          actions={actions}
+        />
+      )}
       <PeriodHeading period={focus} restatedOn={restatedOn} />
       {before || focus.values === null ? (
         <div

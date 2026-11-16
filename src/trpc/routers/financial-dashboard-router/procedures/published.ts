@@ -21,7 +21,7 @@ import { withLlcAccessControl } from "@/trpc/api/trpc";
 import { ZPublishedInput } from "../schema";
 
 /** P39: "Preview as" also needs `portal: read`. */
-function assertMayPreview(permissions: TPermission[]): void {
+export function assertMayPreview(permissions: TPermission[]): void {
   const check = new RBAC()
     .addPolicies({ portal: { allow: ["read"] } })
     .enforce(permissions);

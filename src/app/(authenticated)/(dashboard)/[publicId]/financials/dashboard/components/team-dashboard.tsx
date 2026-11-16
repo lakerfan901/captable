@@ -12,6 +12,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
 import { SegmentedControl } from "@/components/charts/chart-frame";
 import { ThroughLine } from "@/components/financials/dashboard-header";
+import { exportRequestOf } from "@/components/financials/export-request";
 import { FundDashboard } from "@/components/financials/fund-dashboard";
 import { InvestmentDashboard } from "@/components/financials/investment-dashboard";
 import {
@@ -31,11 +32,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  type FundMonth,
   fundMonthFromJson,
   holderMonthFromJson,
 } from "@/lib/llc/financial-series";
 import { api } from "@/trpc/react";
 import type { RouterOutputs } from "@/trpc/shared";
+import { TeamDashboardExport } from "./dashboard-export";
 import { DashboardStatus } from "./dashboard-status";
 
 type View = RouterOutputs["financialDashboard"]["live"];
@@ -47,13 +50,15 @@ export interface PreviewHolder {
 
 const QUERY_OPTS = { refetchOnWindowFocus: false, staleTime: 60_000 } as const;
 
-export function TeamDashboard({
+/**
+ * The source state from the URL and the query of the active source (only
+ * that one is fetched). Shared by the dashboard and its print layout.
+ */
+export function useTeamDashboardSource({
   canPreview,
-  canRestate,
   holders,
 }: {
   canPreview: boolean;
-  canRestate: boolean;
   holders: PreviewHolder[];
 }) {
   const params = useSearchParams();
@@ -62,7 +67,6 @@ export function TeamDashboard({
     () => parseSourceState((k) => params.get(k), { canPreview, holderIds }),
     [params, canPreview, holderIds],
   );
-  const [period, setPeriod] = usePeriodState();
 
   const setSource = useCallback((next: SourceState) => {
     const qs = serializeSourceState(
@@ -99,6 +103,23 @@ export function TeamDashboard({
         : preview;
   const holderName =
     holders.find((h) => h.id === src.holder)?.name ?? "this holder";
+  return { src, setSource, query, holderName };
+}
+
+export function TeamDashboard({
+  canPreview,
+  canRestate,
+  holders,
+}: {
+  canPreview: boolean;
+  canRestate: boolean;
+  holders: PreviewHolder[];
+}) {
+  const { src, setSource, query, holderName } = useTeamDashboardSource({
+    canPreview,
+    holders,
+  });
+  const [period, setPeriod] = usePeriodState();
 
   return (
     <div className="flex flex-col gap-6" data-testid="team-dashboard">
@@ -239,6 +260,17 @@ function SourceBody({
   }
 
   const inProgress = fundMonths.some((m) => m.inProgress);
+  const span = {
+    inception: inception ?? (fundMonths[0] as FundMonth).month,
+    last: (fundMonths[fundMonths.length - 1] as FundMonth).month,
+  };
+  const mine = src.source === "preview" && src.section === "mine";
+  const actions = (
+    <TeamDashboardExport
+      src={src}
+      request={exportRequestOf(period, span, mine ? "mine" : "fund")}
+    />
+  );
   return (
     <div className="flex flex-col gap-6">
       {src.source === "live" ? (
@@ -279,7 +311,7 @@ function SourceBody({
           />
         </>
       )}
-      {src.source === "preview" && src.section === "mine" ? (
+      {mine ? (
         <InvestmentDashboard
           holderMonths={holderMonths}
           fundMonths={fundMonths}
@@ -287,6 +319,7 @@ function SourceBody({
           state={period}
           onStateChange={setPeriod}
           restatements={view.restatements}
+          actions={actions}
         />
       ) : (
         <FundDashboard
@@ -296,6 +329,7 @@ function SourceBody({
           onStateChange={setPeriod}
           restatements={view.restatements}
           targetSaleDate={targetSaleDate}
+          actions={actions}
         />
       )}
     </div>
