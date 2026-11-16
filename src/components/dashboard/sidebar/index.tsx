@@ -26,6 +26,8 @@ import {
   RiPieChartLine,
   RiSafeFill,
   RiSafeLine,
+  RiUserSharedFill,
+  RiUserSharedLine,
 } from "@remixicon/react";
 import { usePathname } from "next/navigation";
 
@@ -69,6 +71,7 @@ const ICONS: Record<
   list: { icon: RiListIndefinite, activeIcon: RiListCheck3 },
   equalizer: { icon: RiEqualizer2Line, activeIcon: RiEqualizer2Fill },
   fileText: { icon: RiFileTextLine, activeIcon: RiFileTextFill },
+  userShared: { icon: RiUserSharedLine, activeIcon: RiUserSharedFill },
 };
 
 interface SideBarProps {

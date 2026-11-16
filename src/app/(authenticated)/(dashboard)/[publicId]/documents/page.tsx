@@ -5,14 +5,46 @@ import { PageLayout } from "@/components/dashboard/page-layout";
 import { Card } from "@/components/ui/card";
 import { UnAuthorizedState } from "@/components/ui/un-authorized-state";
 import { serverAccessControl } from "@/lib/rbac/access-control";
-import { withServerComponentSession } from "@/server/auth";
+import { checkMembership, withServerComponentSession } from "@/server/auth";
+import { db } from "@/server/db";
+import { getSessionEntity } from "@/server/entity";
+import { currentMailDelivery } from "@/server/mail-delivery";
 import { api } from "@/trpc/server";
-import DocumentsTable from "./components/table";
+import DocumentsTable, { type DocumentsPortalProps } from "./components/table";
 import { DocumentUploadButton } from "./document-upload-button";
 
 export const metadata: Metadata = {
   title: "Documents",
 };
+
+/**
+ * Holders on each document's share list (04-investor-portal.md 6.2,
+ * "Shared with"; package P9a). Rows of a holder that no longer exists are
+ * not counted: the portal never shows them.
+ */
+async function sharedCounts(
+  companyId: string,
+): Promise<Record<string, number>> {
+  const grants = await db.portalDocumentGrant.findMany({
+    where: { companyId },
+    select: { documentId: true, stakeholderId: true },
+  });
+  if (grants.length === 0) return {};
+  const holders = await db.stakeholder.findMany({
+    where: {
+      companyId,
+      id: { in: [...new Set(grants.map((g) => g.stakeholderId))] },
+    },
+    select: { id: true },
+  });
+  const live = new Set(holders.map((h) => h.id));
+  const out: Record<string, number> = {};
+  for (const g of grants) {
+    if (!live.has(g.stakeholderId)) continue;
+    out[g.documentId] = (out[g.documentId] ?? 0) + 1;
+  }
+  return out;
+}
 
 const DocumentsPage = async () => {
   const { allow } = await serverAccessControl();
@@ -24,6 +56,20 @@ const DocumentsPage = async () => {
 
   if (!documents) {
     return <UnAuthorizedState />;
+  }
+
+  // The investor portal exists only for an LLC and a role with `portal:
+  // read`; otherwise its column and actions are absent (P29).
+  const entity = await getSessionEntity();
+  let portal: DocumentsPortalProps | null = null;
+  if (entity.isLlc && allow(true, ["portal", "read"], false)) {
+    const { companyId } = await checkMembership({ session, tx: db });
+    portal = {
+      sharedCounts: await sharedCounts(companyId),
+      canShare: allow(true, ["portal", "create"], false) === true,
+      canRemove: allow(true, ["portal", "delete"], false) === true,
+      mailDelivery: currentMailDelivery("MEMBER_EMAIL"),
+    };
   }
 
   if (documents.length === 0) {
@@ -62,6 +108,7 @@ const DocumentsPage = async () => {
           <DocumentsTable
             companyPublicId={session.user.companyPublicId}
             documents={documents}
+            portal={portal}
           />
         </div>
       </Card>

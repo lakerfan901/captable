@@ -30,7 +30,13 @@ import { InviteDialog } from "./invite-dialog";
 
 type AccessRow = RouterOutputs["portalAdmin"]["accessForHolder"][number];
 
-function AccessStatus({ row }: { row: AccessRow }) {
+/** What the status badges and the row actions read (the member card and the Investor portal page). */
+export type AccessRowView = Pick<
+  AccessRow,
+  "accessId" | "status" | "passwordSet" | "locked"
+>;
+
+export function AccessStatus({ row }: { row: AccessRowView }) {
   if (row.status === "DISABLED") {
     return <Badge variant="secondary">Disabled</Badge>;
   }
@@ -52,11 +58,11 @@ function AccessStatus({ row }: { row: AccessRow }) {
   );
 }
 
-function RowActions({
+export function RowActions({
   row,
   onChanged,
 }: {
-  row: AccessRow;
+  row: AccessRowView;
   onChanged: () => void;
 }) {
   const onError = (e: { message: string }) => toast.error(e.message);
