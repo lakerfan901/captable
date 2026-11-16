@@ -333,16 +333,20 @@ export function ReportEditor({
     }
   };
 
-  const onRefresh = async () => {
+  // Also the release dialog's "Refresh from ledger" (P38): resolves true
+  // when the draft and this editor's figures were replaced.
+  const onRefresh = async (): Promise<boolean> => {
     // Save first: the refresh keeps the stored notes and utilization.
-    if (figures !== null && !(await save())) return;
+    if (figures !== null && !(await save())) return false;
     try {
       const res = await refresh.mutateAsync({ publicId: report.publicId });
       setFigures(res.figures);
       toast.success("Figures refreshed from the ledger.");
       router.refresh();
+      return true;
     } catch (e) {
       toast.error(errorText(e, "The figures could not be refreshed."));
+      return false;
     }
   };
 
@@ -565,6 +569,7 @@ export function ReportEditor({
             setSendOpen(false);
             router.refresh();
           }}
+          onRefreshFromLedger={withFigures ? onRefresh : undefined}
         />
       ) : null}
     </div>

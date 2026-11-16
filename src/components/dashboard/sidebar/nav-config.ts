@@ -145,6 +145,7 @@ const llcSections: NavSection[] = [
         icon: "folderChart",
         subject: "llc-financials",
         subNav: [
+          { name: "Dashboard", href: "/dashboard" },
           { name: "Revenue", href: "/revenue" },
           { name: "Manager payments", href: "/manager-payments" },
           { name: "Reserves", href: "/reserves" },
