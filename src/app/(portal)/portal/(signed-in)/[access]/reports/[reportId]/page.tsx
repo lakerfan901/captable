@@ -10,7 +10,7 @@ import { PortalReportFiles } from "@/components/portal/report-files";
 import { Card } from "@/components/ui/card";
 import {
   dashboardPeriodOfReport,
-  financialsHref,
+  reportFinancialsHref,
 } from "@/lib/portal/portal-dashboard";
 import { formatDay } from "@/lib/portal/portal-files-view";
 import { accessBasePath } from "@/lib/portal/portal-nav";
@@ -30,8 +30,9 @@ import { api } from "@/trpc/server";
 // has gone in the meantime, which then shows "not available".
 //
 // "See this period in Financials" (6.3) sits beside "All reports" when the
-// report covers one dashboard period (a whole quarter or year) and the
-// holder has published financials (the tab row's own test).
+// report covers one dashboard period (a whole quarter or year) and that
+// period is on the holder's dashboard now (`reportFinancialsHref`), so the
+// link never lands on an empty Financials page.
 
 export default async function PortalReportPage(props: {
   params: Promise<{ access: string; reportId: string }>;
@@ -42,12 +43,14 @@ export default async function PortalReportPage(props: {
     api.portal.reports.get({ access, reportId }),
   );
   const { report } = data;
-  const period = dashboardPeriodOfReport(report);
-  const financials = period ? await loadPortalFinancials(access) : null;
-  const periodHref =
-    period && financials?.publishedThrough != null
-      ? financialsHref(access, period)
-      : null;
+  // The dashboard is read only for a report that has a period of its own.
+  const periodHref = dashboardPeriodOfReport(report)
+    ? reportFinancialsHref(
+        access,
+        report,
+        (await loadPortalFinancials(access)).periods,
+      )
+    : null;
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">

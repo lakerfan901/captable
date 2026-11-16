@@ -68,7 +68,7 @@ export function MemberViewDialog({
         )}
       </DialogTrigger>
       <DialogContent
-        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl [&>*]:min-w-0"
         data-testid="member-view-dialog"
       >
         <DialogHeader>
@@ -93,10 +93,12 @@ function MemberViewBody({ stakeholderId }: { stakeholderId: string }) {
     subject: "llc-financials",
     action: "read",
   });
-  // Always fresh: a share or unpublish a moment ago must show.
+  // Always fresh: a share or unpublish a moment ago must show. No cache is
+  // kept once the dialog closes (gcTime 0), so reopening never shows the
+  // old lists while the new ones load.
   const query = api.portalAdmin.holderView.useQuery(
     { stakeholderId },
-    { staleTime: 0, refetchOnMount: "always" },
+    { staleTime: 0, gcTime: 0, refetchOnMount: "always" },
   );
 
   if (query.isLoading) {
@@ -123,7 +125,7 @@ function MemberViewBody({ stakeholderId }: { stakeholderId: string }) {
       </Alert>
 
       <section className="flex flex-col gap-2" aria-labelledby="mv-reports">
-        <h3 id="mv-reports" className="font-medium">
+        <h3 id="mv-reports" className="text-sm font-medium">
           Reports{" "}
           <span className="font-normal text-muted-foreground">
             ({v.reports.length})
@@ -161,7 +163,7 @@ function MemberViewBody({ stakeholderId }: { stakeholderId: string }) {
       </section>
 
       <section className="flex flex-col gap-2" aria-labelledby="mv-documents">
-        <h3 id="mv-documents" className="font-medium">
+        <h3 id="mv-documents" className="text-sm font-medium">
           Documents{" "}
           <span className="font-normal text-muted-foreground">
             ({v.documents.length})
@@ -204,15 +206,20 @@ function MemberViewBody({ stakeholderId }: { stakeholderId: string }) {
       </section>
 
       <section className="flex flex-col gap-2" aria-labelledby="mv-financials">
-        <h3 id="mv-financials" className="font-medium">
+        <h3 id="mv-financials" className="text-sm font-medium">
           Financials
         </h3>
         <p data-testid="member-view-financials">
-          {financialsLine(v.publishedThrough)}
+          {financialsLine(v.publishedThrough, v.hasFigures)}
         </p>
         {preview ? (
           <div>
-            <Button asChild variant="outline" size="sm">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-auto whitespace-normal py-1.5 text-left"
+            >
               <Link href={preview} data-testid="member-view-preview">
                 Open the dashboard as {v.holderName} sees it
               </Link>

@@ -92,12 +92,17 @@ describe("accessNote", () => {
 
 describe("financialsLine", () => {
   it("reads the published-through date", () => {
-    expect(financialsLine("2026-09-30")).toBe(
+    expect(financialsLine("2026-09-30", true)).toBe(
       "Financials and My investment show figures through Sep 30, 2026.",
     );
   });
+  it("says when the released periods have no month figures", () => {
+    expect(financialsLine("2026-09-30", false)).toMatch(
+      /^Reports through Sep 30, 2026 are released to this member, but there are no month figures/,
+    );
+  });
   it("says nothing is published", () => {
-    expect(financialsLine(null)).toMatch(/^No financial period/);
+    expect(financialsLine(null, false)).toMatch(/^No financial period/);
   });
 });
 

@@ -41,6 +41,7 @@ import { reportFileJob } from "@/jobs/governance-report-file";
 import { todayInZone } from "@/lib/governance/dates";
 import { syncComplianceDeadlines } from "@/server/governance/compliance";
 import {
+  actor,
   check,
   createAdmin,
   createCompany,
@@ -58,6 +59,11 @@ import {
   type TestCompany,
   usd,
 } from "@/server/llc/__integration__/harness";
+import {
+  createCommitment,
+  decideCommitment,
+  recordCapitalReceipt,
+} from "@/server/llc/commitments";
 import {
   mintTokenForDelivery,
   peekToken,
@@ -1097,6 +1103,49 @@ async function viewSession(portalUserId: string) {
   return token;
 }
 
+/** A subscription signed, paid and accepted on `on` (so the ledger, and the month records of a release, start then). */
+async function subscribeOn(
+  c: TestCompany,
+  stakeholderId: string,
+  cents: bigint,
+  on: string,
+) {
+  setToday(on);
+  await inTx(async (tx) => {
+    const commitment = await createCommitment(
+      tx,
+      {
+        companyId: c.id,
+        stakeholderId,
+        unitClassId: c.preferredId,
+        committedCents: cents,
+        signedOn: on,
+      },
+      actor,
+    );
+    await recordCapitalReceipt(
+      tx,
+      {
+        companyId: c.id,
+        commitmentId: commitment.id,
+        receivedOn: on,
+        amountCents: cents,
+      },
+      actor,
+    );
+    await decideCommitment(
+      tx,
+      {
+        companyId: c.id,
+        commitmentId: commitment.id,
+        decision: "ACCEPT",
+        acceptedOn: on,
+      },
+      actor,
+    );
+  });
+}
+
 async function holderViewSetup() {
   section("H1. holderView fixture");
   const v1 = await createCompany("view-one");
@@ -1105,14 +1154,9 @@ async function holderViewSetup() {
   const Q = await newMember(v1, "Q Preferred");
   const R = await newMember(v1, "R Common");
   const G = await newMember(v2, "G Preferred");
-  await subscribe(v1, P.id, usd(100_000), {
-    cents: usd(100_000),
-    receivedOn: "2026-11-10",
-  });
-  await subscribe(v1, Q.id, usd(50_000), {
-    cents: usd(50_000),
-    receivedOn: "2026-11-10",
-  });
+  // Paid in July: releasing Q3 writes Jul-Sep month records (P34).
+  await subscribeOn(v1, P.id, usd(100_000), "2026-07-10");
+  await subscribeOn(v1, Q.id, usd(50_000), "2026-07-10");
   await issueCommon(v1, R.id, "100", "2026-11-11");
   await subscribe(v2, G.id, usd(50_000), {
     cents: usd(50_000),
@@ -1269,7 +1313,12 @@ async function portalLists(h: ViewHolder) {
     caller.documents.list({ access }),
     caller.financials.get({ access }),
   ]);
-  return { reports, documents, publishedThrough: financials.publishedThrough };
+  return {
+    reports,
+    documents,
+    publishedThrough: financials.publishedThrough,
+    hasFigures: financials.fundMonths.length > 0,
+  };
 }
 
 function teamView(h: ViewHolder) {
@@ -1294,6 +1343,11 @@ async function assertSame(label: string, h: ViewHolder) {
     `${label}: ${h}'s published-through date equals the portal's`,
     mine.publishedThrough,
     portal.publishedThrough,
+  );
+  eq(
+    `${label}: ${h}'s Financials have figures exactly when the portal's do`,
+    mine.hasFigures,
+    portal.hasFigures,
   );
   return mine;
 }
@@ -1329,11 +1383,20 @@ async function holderViewEquality() {
   eq("R sees no document", r.documents.length, 0);
   eq("P's name is the holder's", p.holderName, vw.P.name);
   eq("P has one active access", p.activeAccesses, 1);
-  check(
-    "previewable is a boolean",
-    typeof p.previewable === "boolean" && typeof r.previewable === "boolean",
+  eq(
+    "P's published-through date is the end of Q3",
+    p.publishedThrough,
+    "2026-09-30",
   );
+  eq("P's Financials have figures (Jul–Sep month records)", p.hasFigures, true);
+  eq("P can be previewed on the team dashboard", p.previewable, true);
   eq("R has no published-through date", r.publishedThrough, null);
+  eq("R has no figures", r.hasFigures, false);
+  eq(
+    "R cannot be previewed (no month record of its own)",
+    r.previewable,
+    false,
+  );
   check(
     "no storage key or bucket id in the answer",
     !/bucketId|"key"|zz-portal-admin\//.test(JSON.stringify([p, q, r])),

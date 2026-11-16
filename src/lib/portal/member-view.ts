@@ -79,11 +79,22 @@ export function accessNote(activeAccesses: number): string {
     : `The ${activeAccesses} people with active portal access for this member see exactly this.`;
 }
 
-/** The Financials line: what the member's dashboard shows, by the published-through date (P33). */
-export function financialsLine(publishedThrough: string | null): string {
-  return publishedThrough === null
-    ? "No financial period has been published to this member yet: the portal shows no Financials or My investment."
-    : `Financials and My investment show figures through ${formatDateOnly(publishedThrough)}.`;
+/**
+ * The Financials line: what the member's dashboard shows, by the
+ * published-through date (P33) and whether there are month figures through
+ * it (the portal's empty state otherwise).
+ */
+export function financialsLine(
+  publishedThrough: string | null,
+  hasFigures: boolean,
+): string {
+  if (publishedThrough === null) {
+    return "No financial period has been published to this member yet: the portal shows no Financials or My investment.";
+  }
+  const through = formatDateOnly(publishedThrough);
+  return hasFigures
+    ? `Financials and My investment show figures through ${through}.`
+    : `Reports through ${through} are released to this member, but there are no month figures for those periods, so Financials says that no period has been published yet.`;
 }
 
 /**

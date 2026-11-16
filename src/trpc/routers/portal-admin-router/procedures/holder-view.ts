@@ -11,8 +11,10 @@
 // Besides the lists, the facts the dialog needs to explain them:
 // - how many portal accesses of this holder are ACTIVE (with none, nobody
 //   sees these lists in the portal now; they are what an access would show);
-// - the holder's published-through date (`publishedThroughFor`, P33), the
-//   same rule as the portal's Financials;
+// - the holder's Financials as `portal.financials.get` computes them
+//   (`readHolderFinancialView`, P33, P34): the published-through date and
+//   whether there are figures to show; the figures themselves are not
+//   repeated here (the dialog links to the team dashboard's preview);
 // - whether the team dashboard's "Preview as investor" lists this holder
 //   (the predicate of `previewHolders` on that page: a current month record
 //   of its own), so the dialog links there only when the preview really
@@ -21,7 +23,7 @@
 // The holder is looked up within the caller's company: an unknown id and a
 // holder of another company are the same NOT_FOUND (S3). Output built field
 // by field (G4): public ids, names and dates; no storage key or bucket id.
-import { publishedThroughFor } from "@/server/portal/financial-snapshots";
+import { readHolderFinancialView } from "@/server/portal/financial-view";
 import {
   listVisibleDocuments,
   portalDocumentListItem,
@@ -38,19 +40,19 @@ export const holderViewProcedure = withLlcAccessControl
     const companyId = ctx.membership.companyId;
     const found = await ctx.db.stakeholder.findFirst({
       where: { id: input.stakeholderId, companyId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, company: { select: { timezone: true } } },
     });
     if (found === null) memberNotFound();
     const holder = { companyId, stakeholderId: found.id };
 
-    const [reports, documents, activeAccesses, publishedThrough, snapshot] =
+    const [reports, documents, activeAccesses, financials, snapshot] =
       await Promise.all([
         listVisibleReports(ctx.db, holder),
         listVisibleDocuments(ctx.db, holder),
         ctx.db.portalAccess.count({
           where: { companyId, stakeholderId: found.id, status: "ACTIVE" },
         }),
-        publishedThroughFor(ctx.db, holder),
+        readHolderFinancialView(ctx.db, holder, found.company),
         ctx.db.holderFinancialSnapshot.findFirst({
           where: { companyId, stakeholderId: found.id, supersededAt: null },
           select: { id: true },
@@ -62,7 +64,9 @@ export const holderViewProcedure = withLlcAccessControl
       activeAccesses,
       reports,
       documents: documents.map(portalDocumentListItem),
-      publishedThrough,
+      publishedThrough: financials.publishedThrough,
+      /** The portal's Financials show figures (not only its empty state). */
+      hasFigures: financials.fundMonths.length > 0,
       previewable: snapshot !== null,
     };
   });
