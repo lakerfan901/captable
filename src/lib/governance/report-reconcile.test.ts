@@ -5,6 +5,7 @@ import {
 } from "../../server/llc/economics/report-data.logic";
 import type { CashLedger } from "../llc/available-cash";
 import { managementFeeForMonth } from "../llc/management-fee";
+import { figureLabel } from "./reconcile-refusal";
 import { figuresFromPeriodData, type ReportFigures } from "./report-figures";
 import {
   periodReportInputFromEconomics,
@@ -167,6 +168,20 @@ describe("reconcileFigures (P38)", () => {
       "distributions.residualCents",
       "managerPayments.lines[2027-05-10 | Manager LLC | MANAGEMENT_FEE | TO |  | ]",
     ]);
+  });
+
+  it("refuses a report marked 'No distribution' while the ledger has one", () => {
+    const f = fresh();
+    expect(f.distributions.totalCents).toBeGreaterThan(0);
+    f.distributions.none = true; // the tick box, totals left as prefilled
+    expect(reconcileFigures(f, pe)).toEqual([
+      {
+        field: "distributions.none",
+        reportCents: 0,
+        ledgerCents: f.distributions.totalCents,
+      },
+    ]);
+    expect(figureLabel("distributions.none")).toContain("No distribution");
   });
 
   it("includes the insider distribution of the Common Member", () => {
