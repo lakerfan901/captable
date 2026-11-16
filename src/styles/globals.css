@@ -264,11 +264,12 @@
   background: #fff;
 }
 
-@media print {
-  @page {
-    margin: 12mm;
-  }
+/* a named page: the margins apply to this layout only, not to other printing */
+@page financials-print {
+  margin: 12mm;
+}
 
+@media print {
   body:has(> [data-print-root]) > :not([data-print-root]) {
     display: none !important;
   }
@@ -281,6 +282,7 @@
   }
 
   [data-print-root] {
+    page: financials-print;
     position: static;
     inset: auto;
     overflow: visible;

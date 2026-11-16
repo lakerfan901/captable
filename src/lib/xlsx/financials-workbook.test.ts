@@ -240,6 +240,41 @@ describe("Last 4 quarters", () => {
   });
 });
 
+describe("years", () => {
+  it("one column per year, partial years marked; the Totals equal aggregate over the whole range", () => {
+    const m = financialsWorkbook(
+      input({ grain: "year", from: all.from, to: all.to, focus: "2027" }),
+    );
+    const income = sheet(m, "Income");
+    // the world runs Nov 2026 – May 2028
+    expect(income.columns.slice(2).map((c) => c.header)).toEqual([
+      "FY2026 (2 of 12 months)",
+      "FY2027",
+      "FY2028 (5 of 12 months)",
+      "Total",
+    ]);
+    const years = aggregate(fundMonths, "year", all, {
+      inceptionMonth: world.inception,
+    });
+    const [whole] = aggregate(fundMonths, "inception", all, {
+      inceptionMonth: world.inception,
+    });
+    const rev = rowOf(income, "Gross Revenue");
+    years.forEach((y, k) => {
+      expect(cents(rev.cells[2 + k] ?? null)).toBe(
+        Number(y.values?.grossRevenue),
+      );
+    });
+    expect(cents(rev.cells[5] ?? null)).toBe(
+      Number(whole?.values?.grossRevenue),
+    );
+    const cash = rowOf(income, "Available Cash").cells[5];
+    expect(cash?.kind === "formula" && cash.formula.startsWith("E")).toBe(true);
+    expect(cents(cash ?? null)).toBe(Number(whole?.values?.availableCash));
+    expect(sheet(m, "Summary").columns[1]?.header).toBe("FY2027");
+  });
+});
+
 describe("range, partial periods and the published-through date", () => {
   it("a range past the last month is cut: no column and no figure after it", () => {
     const through: MonthKey = "2027-08-01";

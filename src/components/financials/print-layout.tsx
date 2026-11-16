@@ -28,7 +28,7 @@ const CHART_WAIT_MS = 4_000;
 function chartsDrawn(root: HTMLElement): boolean {
   const cards = root.querySelectorAll("[data-chart]");
   for (const card of cards) {
-    const plotted = card.querySelector("svg.recharts-surface, svg");
+    const plotted = card.querySelector("svg.recharts-surface");
     const empty = card.textContent?.includes("No figures") ?? false;
     if (!plotted && !empty) return false;
   }
