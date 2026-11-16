@@ -328,7 +328,7 @@ async function invitationFlow() {
   eq(
     "investorProcedure with the user's own access passes the base",
     await codeOf(() => caller.portal.home({ access: accessA.publicId })),
-    "NOT_IMPLEMENTED",
+    "OK",
   );
   eq(
     "another user's access is NOT_FOUND",
@@ -438,7 +438,7 @@ async function invitationFlow() {
   eq(
     "F still works",
     await codeOf(() => caller.portal.home({ access: accessF.publicId })),
-    "NOT_IMPLEMENTED",
+    "OK",
   );
   eq("portal.me lists only F", (await caller.portal.me()).holders.length, 1);
   // A holder deleted without its access row: no access.
